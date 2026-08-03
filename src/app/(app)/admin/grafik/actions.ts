@@ -5,6 +5,15 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { generateMonthStructure, runDraftGenerator } from "@/lib/schedule-generator";
+import { buildAvailabilityMap, isHardUnavailable, type HardConstraint } from "@/lib/unavailability";
+
+// Poniższe akcje wywoływane są bezpośrednio z klienta (nie przez
+// `<form action={...}>`) i celowo NIE wołają revalidatePath: komponent
+// tabeli grafiku trzyma cały stan po swojej stronie i aktualizuje go
+// bezpośrednio z tego, co użytkownik kliknął — odświeżanie trasy przez
+// Reacta po akcji formularza potrafi na chwilę cofnąć widok do stanu
+// sprzed zapisu (reset formularza po udanej akcji), więc świadomie tego
+// unikamy dla częstych, drobnoziarnistych zmian.
 
 export async function generateStructure(formData: FormData) {
   await requireAdmin();
@@ -16,17 +25,13 @@ export async function generateStructure(formData: FormData) {
   revalidatePath("/admin/grafik");
 }
 
-export async function runDraft(formData: FormData) {
+export async function runDraft(scheduleMonthId: string) {
   await requireAdmin();
-  const scheduleMonthId = String(formData.get("schedule_month_id") ?? "");
   await runDraftGenerator(scheduleMonthId);
-  revalidatePath("/admin/grafik");
 }
 
-export async function assignShift(formData: FormData) {
+export async function assignShift(shiftId: string, employeeIdRaw: string) {
   await requireAdmin();
-  const shiftId = String(formData.get("shift_id") ?? "");
-  const employeeIdRaw = String(formData.get("employee_id") ?? "");
   const supabase = createServerSupabaseClient();
 
   if (employeeIdRaw === "__closed__") {
@@ -43,111 +48,69 @@ export async function assignShift(formData: FormData) {
       .eq("id", shiftId);
     if (error) throw new Error(dbErrorMessage(error));
   }
-
-  revalidatePath("/admin/grafik");
 }
 
-export async function updateShiftTimes(formData: FormData) {
+export async function addEvent(
+  scheduleDayId: string,
+  data: { type: string; start_time: string | null; label: string | null; note: string | null; participant_employee_ids: string[] }
+) {
   await requireAdmin();
-  const shiftId = String(formData.get("shift_id") ?? "");
-  const start_time = String(formData.get("start_time") ?? "");
-  const end_time = String(formData.get("end_time") ?? "");
   const supabase = createServerSupabaseClient();
-
-  const { error } = await supabase
-    .from("schedule_shift")
-    .update({ start_time, end_time })
-    .eq("id", shiftId);
-  if (error) throw new Error(dbErrorMessage(error));
-
-  revalidatePath("/admin/grafik");
-}
-
-export async function addEvent(formData: FormData) {
-  await requireAdmin();
-  const schedule_day_id = String(formData.get("schedule_day_id") ?? "");
-  const type = String(formData.get("type") ?? "custom");
-  const start_time = String(formData.get("start_time") ?? "") || null;
-  const label = String(formData.get("label") ?? "").trim() || null;
-  const note = String(formData.get("note") ?? "").trim() || null;
-  const participant_employee_ids = formData.getAll("participant_employee_ids").map(String);
-
-  const supabase = createServerSupabaseClient();
-  const { error } = await supabase.from("schedule_event").insert({
-    schedule_day_id,
-    type,
-    start_time,
-    label,
-    note,
-    participant_employee_ids,
-  });
-  if (error) throw new Error(dbErrorMessage(error));
-
-  revalidatePath("/admin/grafik");
+  const { data: created, error } = await supabase
+    .from("schedule_event")
+    .insert({ schedule_day_id: scheduleDayId, ...data })
+    .select("id, type, start_time, label, note, participant_employee_ids")
+    .single();
+  if (error || !created) throw new Error(dbErrorMessage(error));
+  return created;
 }
 
 // Zamyka wszystkie zmiany danego dnia jednym kliknięciem — do świąt i innych
 // niestandardowych dni, kiedy klub w ogóle nie działa.
-export async function closeWholeDay(formData: FormData) {
+export async function closeWholeDay(scheduleDayId: string) {
   await requireAdmin();
-  const schedule_day_id = String(formData.get("schedule_day_id") ?? "");
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("schedule_shift")
     .update({ employee_id: null, is_closed: true })
-    .eq("schedule_day_id", schedule_day_id);
+    .eq("schedule_day_id", scheduleDayId);
   if (error) throw new Error(dbErrorMessage(error));
-
-  revalidatePath("/admin/grafik");
 }
 
 // Dodaje niestandardową zmianę do konkretnego dnia (np. inne godziny w
 // święto) — niezależnie od szablonu dla danego dnia tygodnia.
-export async function addCustomShift(formData: FormData) {
+export async function addCustomShift(scheduleDayId: string, startTime: string, endTime: string, nextSlotIndex: number) {
   await requireAdmin();
-  const schedule_day_id = String(formData.get("schedule_day_id") ?? "");
-  const start_time = String(formData.get("start_time") ?? "");
-  const end_time = String(formData.get("end_time") ?? "");
-
-  if (!start_time || !end_time) {
-    throw new Error("Podaj godziny rozpoczęcia i zakończenia zmiany.");
-  }
-
   const supabase = createServerSupabaseClient();
-  const { data: existing } = await supabase
+
+  const { data: created, error } = await supabase
     .from("schedule_shift")
-    .select("slot_index")
-    .eq("schedule_day_id", schedule_day_id)
-    .order("slot_index", { ascending: false })
-    .limit(1);
-  const nextSlotIndex = (existing?.[0]?.slot_index ?? -1) + 1;
-
-  const { error } = await supabase.from("schedule_shift").insert({
-    schedule_day_id,
-    slot_index: nextSlotIndex,
-    start_time,
-    end_time,
-  });
-  if (error) throw new Error(dbErrorMessage(error));
-
-  revalidatePath("/admin/grafik");
+    .insert({
+      schedule_day_id: scheduleDayId,
+      slot_index: nextSlotIndex,
+      start_time: startTime,
+      end_time: endTime,
+    })
+    .select("id, slot_index, start_time, end_time, employee_id, is_closed")
+    .single();
+  if (error || !created) throw new Error(dbErrorMessage(error));
+  return created;
 }
 
-export async function deleteShift(formData: FormData) {
+export async function deleteShift(shiftId: string) {
   await requireAdmin();
-  const shiftId = String(formData.get("shift_id") ?? "");
   const supabase = createServerSupabaseClient();
   const { error } = await supabase.from("schedule_shift").delete().eq("id", shiftId);
   if (error) throw new Error(dbErrorMessage(error));
-
-  revalidatePath("/admin/grafik");
 }
 
 // Przypisuje uczestników wydarzenia (np. liga) do pustych zmian danego dnia,
-// w kolejności zmian — szybki sposób ułożenia dnia z ligą.
-export async function assignEventParticipantsToShifts(formData: FormData) {
+// w kolejności zmian — szybki sposób ułożenia dnia z ligą. Zwraca listę
+// przypisań, żeby klient mógł zaktualizować swój stan bez przeładowania.
+export async function assignEventParticipantsToShifts(
+  eventId: string
+): Promise<{ shiftId: string; employeeId: string }[]> {
   await requireAdmin();
-  const eventId = String(formData.get("event_id") ?? "");
   const supabase = createServerSupabaseClient();
 
   const { data: event } = await supabase
@@ -162,67 +125,95 @@ export async function assignEventParticipantsToShifts(formData: FormData) {
     throw new Error("To wydarzenie nie ma przypisanych pracowników.");
   }
 
+  const { data: day } = await supabase
+    .from("schedule_day")
+    .select("date, weekday, schedule_month_id")
+    .eq("id", event.schedule_day_id)
+    .single();
+  if (!day) throw new Error("Nie znaleziono dnia.");
+
   const { data: shifts } = await supabase
     .from("schedule_shift")
-    .select("id, slot_index")
+    .select("id, slot_index, start_time, end_time")
     .eq("schedule_day_id", event.schedule_day_id)
     .order("slot_index");
 
-  for (let i = 0; i < (shifts?.length ?? 0) && i < participantIds.length; i++) {
-    await supabase
-      .from("schedule_shift")
-      .update({ employee_id: participantIds[i], is_closed: false })
-      .eq("id", shifts![i].id);
+  // Nie przypisujemy niedostępnego pracownika nawet przez ten skrót —
+  // sprawdzamy te same twarde reguły co przy ręcznym przypisaniu.
+  const { data: constraints } = await supabase
+    .from("weekly_recurring_constraint")
+    .select("employee_id, weekday, start_time, end_time")
+    .eq("type", "unavailable")
+    .in("employee_id", participantIds);
+  const hardConstraintsByEmployee = new Map<string, HardConstraint[]>();
+  for (const c of constraints ?? []) {
+    if (!hardConstraintsByEmployee.has(c.employee_id)) hardConstraintsByEmployee.set(c.employee_id, []);
+    hardConstraintsByEmployee.get(c.employee_id)!.push({ weekday: c.weekday, start_time: c.start_time, end_time: c.end_time });
   }
 
-  revalidatePath("/admin/grafik");
+  const { data: submissions } = await supabase
+    .from("availability_submission")
+    .select("id, employee_id")
+    .eq("schedule_month_id", day.schedule_month_id)
+    .in("employee_id", participantIds);
+  const submissionIds = (submissions ?? []).map((s) => s.id);
+  const employeeIdBySubmission = new Map((submissions ?? []).map((s) => [s.id, s.employee_id]));
+  let availabilityEntries: { availability_submission_id: string; date: string; whole_day: boolean; slot_index: number | null }[] = [];
+  if (submissionIds.length > 0) {
+    const { data } = await supabase
+      .from("availability_entry")
+      .select("availability_submission_id, date, whole_day, slot_index")
+      .in("availability_submission_id", submissionIds);
+    availabilityEntries = data ?? [];
+  }
+  const availabilityMap = buildAvailabilityMap(availabilityEntries, employeeIdBySubmission);
+
+  const remaining = [...participantIds];
+  const assignments: { shiftId: string; employeeId: string }[] = [];
+  for (const shift of shifts ?? []) {
+    const pickIndex = remaining.findIndex(
+      (empId) =>
+        !isHardUnavailable(empId, day.date, day.weekday, shift.slot_index, shift.start_time, shift.end_time, availabilityMap, hardConstraintsByEmployee)
+    );
+    if (pickIndex === -1) continue;
+    const employeeId = remaining.splice(pickIndex, 1)[0];
+    await supabase.from("schedule_shift").update({ employee_id: employeeId, is_closed: false }).eq("id", shift.id);
+    assignments.push({ shiftId: shift.id, employeeId });
+  }
+
+  return assignments;
 }
 
-export async function updateEventTime(formData: FormData) {
+export async function updateEventTime(eventId: string, startTime: string | null) {
   await requireAdmin();
-  const eventId = String(formData.get("event_id") ?? "");
-  const start_time = String(formData.get("start_time") ?? "") || null;
   const supabase = createServerSupabaseClient();
-  const { error } = await supabase.from("schedule_event").update({ start_time }).eq("id", eventId);
+  const { error } = await supabase.from("schedule_event").update({ start_time: startTime }).eq("id", eventId);
   if (error) throw new Error(dbErrorMessage(error));
-
-  revalidatePath("/admin/grafik");
 }
 
-export async function deleteEvent(formData: FormData) {
+export async function deleteEvent(eventId: string) {
   await requireAdmin();
-  const eventId = String(formData.get("event_id") ?? "");
   const supabase = createServerSupabaseClient();
   const { error } = await supabase.from("schedule_event").delete().eq("id", eventId);
   if (error) throw new Error(dbErrorMessage(error));
-
-  revalidatePath("/admin/grafik");
 }
 
-export async function publishMonth(formData: FormData) {
+export async function publishMonth(scheduleMonthId: string) {
   await requireAdmin();
-  const scheduleMonthId = String(formData.get("schedule_month_id") ?? "");
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("schedule_month")
     .update({ status: "published", published_at: new Date().toISOString() })
     .eq("id", scheduleMonthId);
   if (error) throw new Error(dbErrorMessage(error));
-
-  revalidatePath("/admin/grafik");
-  revalidatePath("/grafik");
 }
 
-export async function unpublishMonth(formData: FormData) {
+export async function unpublishMonth(scheduleMonthId: string) {
   await requireAdmin();
-  const scheduleMonthId = String(formData.get("schedule_month_id") ?? "");
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("schedule_month")
     .update({ status: "draft", published_at: null })
     .eq("id", scheduleMonthId);
   if (error) throw new Error(dbErrorMessage(error));
-
-  revalidatePath("/admin/grafik");
-  revalidatePath("/grafik");
 }

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { savePreferredDaysOff } from "./actions";
-import { SubmitButton } from "@/components/SubmitButton";
 
 export function PreferredDaysOff({
   initialWeekdays,
@@ -13,6 +12,10 @@ export function PreferredDaysOff({
   initialNote: string;
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set(initialWeekdays));
+  const [note, setNote] = useState(initialNote);
+  const [pending, setPending] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
+  const savedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function toggle(weekday: number) {
     setSelected((prev) => {
@@ -23,8 +26,29 @@ export function PreferredDaysOff({
     });
   }
 
+  // Wysyłka ręczna (bez natywnego action={}) — formularze z action={} są przez
+  // Reacta resetowane do stanu z pierwszego renderu po udanym zapisie, co
+  // cofałoby zaznaczone dni z powrotem do tego, co było przy wejściu na stronę.
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPending(true);
+    const formData = new FormData();
+    for (const weekday of selected) {
+      formData.append("weekday", String(weekday));
+    }
+    formData.append("note", note);
+    try {
+      await savePreferredDaysOff(formData);
+      setShowSaved(true);
+      if (savedTimeout.current) clearTimeout(savedTimeout.current);
+      savedTimeout.current = setTimeout(() => setShowSaved(false), 2500);
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
-    <form action={savePreferredDaysOff} className="flex flex-col gap-3">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <p className="text-sm text-zinc-500">
         Dni tygodnia, w które najchętniej miałbyś/miałabyś wolne (np. gdy nie masz wyjazdów).
         Zapisuje się między miesiącami — jeśli nie wypełnisz dyspozycyjności na kolejny miesiąc,
@@ -35,7 +59,6 @@ export function PreferredDaysOff({
           <label key={weekday}>
             <input
               type="checkbox"
-              name="weekday"
               value={weekday}
               checked={selected.has(weekday)}
               onChange={() => toggle(weekday)}
@@ -50,15 +73,20 @@ export function PreferredDaysOff({
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-semibold text-zinc-900">Notatka (opcjonalnie)</label>
         <input
-          name="note"
-          defaultValue={initialNote}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
           className="w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none focus:border-brand-blue"
         />
       </div>
-      <div>
-        <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
-          Zapisz preferencje
-        </SubmitButton>
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-xl bg-brand-orange px-4 py-2 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+        >
+          {pending ? "Zapisywanie…" : "Zapisz preferencje"}
+        </button>
+        {showSaved && <span className="text-sm font-semibold text-emerald-600">✓ Zapisano</span>}
       </div>
     </form>
   );

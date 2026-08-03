@@ -57,7 +57,10 @@ export async function toggleWholeDayUnavailable(scheduleMonthId: string, date: s
     });
   }
 
-  revalidatePath("/dyspozycyjnosc");
+  // Bez revalidatePath — kalendarz zarządza własnym stanem optymistycznie po
+  // stronie klienta; odświeżenie trasy potrafi na chwilę cofnąć widok do
+  // poprzedniego stanu (znany efekt Router Cache Next.js), zanim pokaże
+  // faktycznie zapisane dane.
 }
 
 export async function toggleSlotUnavailable(
@@ -89,7 +92,7 @@ export async function toggleSlotUnavailable(
     });
   }
 
-  revalidatePath("/dyspozycyjnosc");
+  // Bez revalidatePath — patrz komentarz w toggleWholeDayUnavailable.
 }
 
 export async function submitAvailability(formData: FormData) {
@@ -137,5 +140,5 @@ export async function savePreferredDaysOff(formData: FormData) {
     }
   }
 
-  revalidatePath("/dyspozycyjnosc");
+  // Bez revalidatePath — patrz komentarz w toggleWholeDayUnavailable.
 }
