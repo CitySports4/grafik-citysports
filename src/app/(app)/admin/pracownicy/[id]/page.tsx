@@ -1,0 +1,274 @@
+import { notFound } from "next/navigation";
+import { createServerSupabaseClient } from "@/lib/supabase";
+import { Card } from "@/components/Card";
+import { SubmitButton } from "@/components/SubmitButton";
+import { ConfirmButton } from "@/components/ConfirmButton";
+import { WEEKDAY_LABELS, weekdayLabel } from "@/lib/weekdays";
+import { formatHm } from "@/lib/time";
+import {
+  updateEmployee,
+  clearEmployeePassword,
+  addClassScheduleEntry,
+  deleteClassScheduleEntry,
+  addRecurringConstraint,
+  deleteRecurringConstraint,
+} from "../actions";
+
+const INPUT =
+  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]";
+const LABEL = "text-sm font-semibold text-zinc-900";
+const DANGER_BTN = "rounded-lg px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50";
+
+export default async function EmployeeDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = createServerSupabaseClient();
+
+  const { data: employee } = await supabase.from("employee").select("*").eq("id", id).single();
+  if (!employee) notFound();
+
+  const [{ data: classSchedule }, { data: constraints }] = await Promise.all([
+    supabase
+      .from("employee_class_schedule")
+      .select("id, weekday, start_time, end_time, note")
+      .eq("employee_id", id)
+      .order("weekday"),
+    supabase
+      .from("weekly_recurring_constraint")
+      .select("id, weekday, start_time, end_time, type, note")
+      .eq("employee_id", id)
+      .order("weekday"),
+  ]);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-lg font-bold text-zinc-900">{employee.name}</h1>
+        <p className="text-sm text-zinc-500">Edycja danych pracownika.</p>
+      </div>
+
+      <Card>
+        <h2 className="mb-3 font-semibold text-zinc-900">Dane podstawowe</h2>
+        <form action={updateEmployee} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <input type="hidden" name="id" value={employee.id} />
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Imię</label>
+            <input name="name" defaultValue={employee.name} required className={INPUT} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Numer telefonu</label>
+            <input name="phone" defaultValue={employee.phone} required className={INPUT} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Rola</label>
+            <select name="role" defaultValue={employee.role} className={INPUT}>
+              <option value="employee">Pracownik</option>
+              <option value="admin">Administrator</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Kolor</label>
+            <input
+              type="color"
+              name="color_hex"
+              defaultValue={employee.color_hex}
+              className="h-10 w-full rounded-xl border-[1.5px] border-zinc-300"
+            />
+          </div>
+          <div className="flex items-center gap-2 pt-6">
+            <input
+              type="checkbox"
+              id="is_instructor"
+              name="is_instructor"
+              defaultChecked={employee.is_instructor}
+              className="h-4 w-4"
+            />
+            <label htmlFor="is_instructor" className="text-sm text-zinc-900">
+              Jest instruktorem (ma zajęcia)
+            </label>
+          </div>
+          <div className="flex items-center gap-2 pt-6">
+            <input type="checkbox" id="active" name="active" defaultChecked={employee.active} className="h-4 w-4" />
+            <label htmlFor="active" className="text-sm text-zinc-900">
+              Konto aktywne
+            </label>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Minimalna liczba godzin / mies.</label>
+            <input
+              type="number"
+              step="0.5"
+              name="min_hours_month"
+              defaultValue={employee.min_hours_month}
+              className={INPUT}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Docelowa liczba godzin / mies.</label>
+            <input
+              type="number"
+              step="0.5"
+              name="target_hours_month"
+              defaultValue={employee.target_hours_month}
+              className={INPUT}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <SubmitButton className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+              Zapisz zmiany
+            </SubmitButton>
+          </div>
+        </form>
+      </Card>
+
+      <Card>
+        <h2 className="mb-1 font-semibold text-zinc-900">Hasło</h2>
+        <p className="mb-3 text-sm text-zinc-500">
+          {employee.password_hash
+            ? "Pracownik ma już ustawione hasło."
+            : "Pracownik jeszcze nie ustawił hasła — zrobi to sam przy pierwszym logowaniu."}
+        </p>
+        {employee.password_hash && (
+          <form action={clearEmployeePassword}>
+            <input type="hidden" name="id" value={employee.id} />
+            <ConfirmButton
+              confirmText="Wyczyścić hasło? Pracownik będzie musiał ustawić nowe przy następnym logowaniu."
+              className="rounded-xl bg-zinc-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-900"
+            >
+              Wyczyść hasło (zapomniane)
+            </ConfirmButton>
+          </form>
+        )}
+      </Card>
+
+      {employee.is_instructor && (
+        <Card>
+          <h2 className="mb-1 font-semibold text-zinc-900">Zajęcia instruktora</h2>
+          <p className="mb-3 text-sm text-zinc-500">
+            Jeśli zmiana pokrywa się z zajęciami o więcej niż 1h, przy generowaniu grafiku ten
+            pracownik jest przypisywany do niej w ostatniej kolejności.
+          </p>
+          <ul className="mb-3 flex flex-col gap-1.5">
+            {classSchedule?.map((c) => (
+              <li key={c.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                <span>
+                  <span className="font-medium capitalize">{weekdayLabel(c.weekday)}</span>{" "}
+                  {formatHm(c.start_time)}–{formatHm(c.end_time)} {c.note && <span className="text-zinc-500">({c.note})</span>}
+                </span>
+                <form action={deleteClassScheduleEntry}>
+                  <input type="hidden" name="id" value={c.id} />
+                  <input type="hidden" name="employee_id" value={employee.id} />
+                  <ConfirmButton confirmText="Usunąć te zajęcia?" className={DANGER_BTN}>
+                    Usuń
+                  </ConfirmButton>
+                </form>
+              </li>
+            ))}
+            {classSchedule?.length === 0 && <li className="text-sm text-zinc-400">Brak zajęć.</li>}
+          </ul>
+          <form action={addClassScheduleEntry} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="employee_id" value={employee.id} />
+            <div className="flex flex-col gap-1.5">
+              <label className={LABEL}>Dzień</label>
+              <select name="weekday" className={INPUT} defaultValue={1}>
+                {WEEKDAY_LABELS.map((label, idx) => (
+                  <option key={idx} value={idx} className="capitalize">
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className={LABEL}>Od</label>
+              <input type="time" name="start_time" required className={INPUT} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className={LABEL}>Do</label>
+              <input type="time" name="end_time" required className={INPUT} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className={LABEL}>Notatka (opcjonalnie)</label>
+              <input name="note" className={INPUT} />
+            </div>
+            <SubmitButton className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+              Dodaj
+            </SubmitButton>
+          </form>
+        </Card>
+      )}
+
+      <Card>
+        <h2 className="mb-1 font-semibold text-zinc-900">Cykliczne reguły dostępności</h2>
+        <p className="mb-3 text-sm text-zinc-500">
+          &quot;Niedostępny&quot; — nigdy nie przypisuj na tę zmianę. &quot;Preferowany&quot; —
+          pierwszy wybór przy rozkładaniu grafiku, ale może zostać nadpisany dla sprawiedliwego
+          rozkładu dni wolnych.
+        </p>
+        <ul className="mb-3 flex flex-col gap-1.5">
+          {constraints?.map((c) => (
+            <li key={c.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+              <span>
+                <span
+                  className={`mr-2 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    c.type === "unavailable" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {c.type === "unavailable" ? "Niedostępny" : "Preferowany"}
+                </span>
+                <span className="font-medium capitalize">{weekdayLabel(c.weekday)}</span>{" "}
+                {c.start_time && c.end_time ? `${formatHm(c.start_time)}–${formatHm(c.end_time)}` : "cały dzień"}{" "}
+                {c.note && <span className="text-zinc-500">({c.note})</span>}
+              </span>
+              <form action={deleteRecurringConstraint}>
+                <input type="hidden" name="id" value={c.id} />
+                <input type="hidden" name="employee_id" value={employee.id} />
+                <ConfirmButton confirmText="Usunąć tę regułę?" className={DANGER_BTN}>
+                  Usuń
+                </ConfirmButton>
+              </form>
+            </li>
+          ))}
+          {constraints?.length === 0 && <li className="text-sm text-zinc-400">Brak reguł.</li>}
+        </ul>
+        <form action={addRecurringConstraint} className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="employee_id" value={employee.id} />
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Typ</label>
+            <select name="type" className={INPUT} defaultValue="unavailable">
+              <option value="unavailable">Niedostępny</option>
+              <option value="preferred">Preferowany</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Dzień</label>
+            <select name="weekday" className={INPUT} defaultValue={1}>
+              {WEEKDAY_LABELS.map((label, idx) => (
+                <option key={idx} value={idx} className="capitalize">
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Od (opcjonalnie)</label>
+            <input type="time" name="start_time" className={INPUT} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Do (opcjonalnie)</label>
+            <input type="time" name="end_time" className={INPUT} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Notatka (opcjonalnie)</label>
+            <input name="note" className={INPUT} />
+          </div>
+          <SubmitButton className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+            Dodaj regułę
+          </SubmitButton>
+        </form>
+      </Card>
+    </div>
+  );
+}
