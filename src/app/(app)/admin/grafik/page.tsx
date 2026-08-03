@@ -15,6 +15,10 @@ import {
   addEvent,
   deleteEvent,
   updateEventTime,
+  closeWholeDay,
+  addCustomShift,
+  deleteShift,
+  assignEventParticipantsToShifts,
   publishMonth,
   unpublishMonth,
 } from "./actions";
@@ -50,7 +54,7 @@ export default async function ScheduleBuilderPage({
   const { data: days } = await supabase
     .from("schedule_day")
     .select(
-      "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, label, note)"
+      "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, label, note, participant_employee_ids)"
     )
     .eq("schedule_month_id", scheduleMonth.id)
     .order("date");
@@ -136,7 +140,7 @@ export default async function ScheduleBuilderPage({
             <input type="hidden" name="schedule_month_id" value={scheduleMonth.id} />
             <input type="hidden" name="year" value={year} />
             <input type="hidden" name="month" value={month} />
-            <SubmitButton className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Generuj strukturę miesiąca
             </SubmitButton>
           </form>
@@ -178,84 +182,157 @@ export default async function ScheduleBuilderPage({
                     <span className="text-sm font-semibold capitalize text-zinc-900">
                       {dateLabel} — {weekdayLabel(day.weekday)}
                     </span>
-                    {hints?.wholeDay && hints.wholeDay.length > 0 && (
-                      <span className="text-xs text-red-600">
-                        Cały dzień niedostępni: {hints.wholeDay.join(", ")}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-3">
+                      {hints?.wholeDay && hints.wholeDay.length > 0 && (
+                        <span className="text-xs text-red-600">
+                          Cały dzień niedostępni: {hints.wholeDay.join(", ")}
+                        </span>
+                      )}
+                      {shifts.length > 0 && (
+                        <form action={closeWholeDay}>
+                          <input type="hidden" name="schedule_day_id" value={day.id} />
+                          <ConfirmButton
+                            confirmText="Zamknąć cały dzień (np. święto)? Wszystkie zmiany zostaną oznaczone jako NIECZYNNE."
+                            className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-500 hover:bg-zinc-100 hover:text-red-600"
+                          >
+                            Zamknij cały dzień
+                          </ConfirmButton>
+                        </form>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap gap-3">
                     {shifts.map((shift) => {
                       const unavailableNames = hints?.bySlot.get(shift.slot_index) ?? [];
                       return (
-                        <form key={shift.id} action={assignShift} className="flex flex-col gap-1">
-                          <input type="hidden" name="shift_id" value={shift.id} />
+                        <div key={shift.id} className="flex flex-col gap-1">
                           <span className="text-xs font-semibold text-zinc-500">
                             {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
                           </span>
-                          <AutoSubmitSelect
-                            name="employee_id"
-                            defaultValue={shift.is_closed ? "__closed__" : shift.employee_id ?? ""}
-                            className="min-w-[140px] rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-sm"
-                          >
-                            <option value="">— nieprzypisane —</option>
-                            {employees?.map((e) => (
-                              <option key={e.id} value={e.id}>
-                                {e.name}
-                              </option>
-                            ))}
-                            <option value="__closed__">NIECZYNNE</option>
-                          </AutoSubmitSelect>
+                          <form action={assignShift} className="flex items-center gap-1">
+                            <input type="hidden" name="shift_id" value={shift.id} />
+                            <AutoSubmitSelect
+                              name="employee_id"
+                              defaultValue={shift.is_closed ? "__closed__" : shift.employee_id ?? ""}
+                              className="min-w-[140px] rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-sm"
+                            >
+                              <option value="">— nieprzypisane —</option>
+                              {employees?.map((e) => (
+                                <option key={e.id} value={e.id}>
+                                  {e.name}
+                                </option>
+                              ))}
+                              <option value="__closed__">NIECZYNNE</option>
+                            </AutoSubmitSelect>
+                          </form>
+                          <form action={deleteShift}>
+                            <input type="hidden" name="shift_id" value={shift.id} />
+                            <ConfirmButton
+                              confirmText="Usunąć tę zmianę z tego dnia?"
+                              className="text-[10px] font-semibold text-red-500 hover:underline"
+                            >
+                              Usuń zmianę
+                            </ConfirmButton>
+                          </form>
                           {unavailableNames.length > 0 && (
                             <span className="text-[10px] text-red-500">
                               niedostępni: {unavailableNames.join(", ")}
                             </span>
                           )}
-                        </form>
+                        </div>
                       );
                     })}
                     {shifts.length === 0 && <span className="text-sm text-zinc-400">Brak zmian tego dnia.</span>}
                   </div>
 
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    {events.map((ev) => (
-                      <div key={ev.id} className="flex items-center gap-2 rounded-lg bg-zinc-50 px-2.5 py-1.5 text-xs">
-                        <span className="font-semibold text-zinc-700">{EVENT_TYPE_LABELS[ev.type] ?? ev.type}</span>
-                        {ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] && <span>{ev.label}</span>}
-                        <form action={updateEventTime} className="flex items-center gap-1">
-                          <input type="hidden" name="event_id" value={ev.id} />
-                          <AutoSubmitInput
-                            type="time"
-                            name="start_time"
-                            defaultValue={ev.start_time ?? ""}
-                            className="rounded border border-zinc-300 px-1 py-0.5 text-xs"
-                          />
-                        </form>
-                        {ev.note && <span className="text-zinc-500">({ev.note})</span>}
-                        <form action={deleteEvent} className="ml-auto">
-                          <input type="hidden" name="event_id" value={ev.id} />
-                          <ConfirmButton confirmText="Usunąć to wydarzenie?" className="text-red-500 hover:underline">
-                            Usuń
-                          </ConfirmButton>
-                        </form>
+                  <details className="mt-1.5 text-xs">
+                    <summary className="cursor-pointer text-zinc-500 hover:text-zinc-700">+ dodaj zmianę</summary>
+                    <form action={addCustomShift} className="mt-1.5 flex flex-wrap items-end gap-2">
+                      <input type="hidden" name="schedule_day_id" value={day.id} />
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold text-zinc-500">Od</label>
+                        <input type="time" name="start_time" required className="rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
                       </div>
-                    ))}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold text-zinc-500">Do</label>
+                        <input type="time" name="end_time" required className="rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+                      </div>
+                      <button type="submit" className="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs font-semibold text-white hover:bg-zinc-900">
+                        Dodaj
+                      </button>
+                    </form>
+                  </details>
+
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    {events.map((ev) => {
+                      const participantNames = (ev.participant_employee_ids ?? [])
+                        .map((id: string) => employeeById.get(id)?.name)
+                        .filter(Boolean);
+                      return (
+                        <div key={ev.id} className="flex flex-col gap-1 rounded-lg bg-zinc-50 px-2.5 py-1.5 text-xs">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-zinc-700">{EVENT_TYPE_LABELS[ev.type] ?? ev.type}</span>
+                            {ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] && <span>{ev.label}</span>}
+                            <form action={updateEventTime} className="flex items-center gap-1">
+                              <input type="hidden" name="event_id" value={ev.id} />
+                              <AutoSubmitInput
+                                type="time"
+                                name="start_time"
+                                defaultValue={ev.start_time ?? ""}
+                                className="rounded border border-zinc-300 px-1 py-0.5 text-xs"
+                              />
+                            </form>
+                            {ev.note && <span className="text-zinc-500">({ev.note})</span>}
+                            <form action={deleteEvent} className="ml-auto">
+                              <input type="hidden" name="event_id" value={ev.id} />
+                              <ConfirmButton confirmText="Usunąć to wydarzenie?" className="text-red-500 hover:underline">
+                                Usuń
+                              </ConfirmButton>
+                            </form>
+                          </div>
+                          {participantNames.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-zinc-500">Pracownicy: {participantNames.join(", ")}</span>
+                              <form action={assignEventParticipantsToShifts}>
+                                <input type="hidden" name="event_id" value={ev.id} />
+                                <button type="submit" className="font-semibold text-brand-blue hover:underline">
+                                  Przypisz do zmian tego dnia
+                                </button>
+                              </form>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                     <details className="text-xs">
                       <summary className="cursor-pointer text-zinc-500 hover:text-zinc-700">+ dodaj wydarzenie</summary>
-                      <form action={addEvent} className="mt-1.5 flex flex-wrap items-end gap-2">
+                      <form action={addEvent} className="mt-1.5 flex flex-col gap-2">
                         <input type="hidden" name="schedule_day_id" value={day.id} />
-                        <select name="type" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs" defaultValue="liga_open">
-                          {Object.entries(EVENT_TYPE_LABELS).map(([value, label]) => (
-                            <option key={value} value={value}>
-                              {label}
-                            </option>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <select name="type" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs" defaultValue="liga_open">
+                            {Object.entries(EVENT_TYPE_LABELS).map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                          <input type="time" name="start_time" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+                          <input name="label" placeholder="Etykieta" className="w-24 rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+                          <input name="note" placeholder="Notatka" className="w-28 rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {employees?.map((e) => (
+                            <label key={e.id} className="flex items-center gap-1 text-zinc-600">
+                              <input type="checkbox" name="participant_employee_ids" value={e.id} className="h-3.5 w-3.5" />
+                              {e.name}
+                            </label>
                           ))}
-                        </select>
-                        <input type="time" name="start_time" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
-                        <input name="label" placeholder="Etykieta" className="w-24 rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
-                        <input name="note" placeholder="Notatka" className="w-28 rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
-                        <button type="submit" className="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs font-semibold text-white hover:bg-zinc-900">
+                        </div>
+                        <button
+                          type="submit"
+                          className="self-start rounded-lg bg-zinc-800 px-2.5 py-1 text-xs font-semibold text-white hover:bg-zinc-900"
+                        >
                           Dodaj
                         </button>
                       </form>

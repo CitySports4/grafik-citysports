@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
@@ -102,18 +103,18 @@ export async function clearEmployeePassword(formData: FormData) {
   revalidatePath(`/admin/pracownicy/${id}`);
 }
 
-export async function deactivateEmployee(formData: FormData) {
+export async function deleteEmployee(formData: FormData) {
   await requireAdmin();
 
   const id = String(formData.get("id") ?? "");
   const supabase = createServerSupabaseClient();
-  const { error } = await supabase.from("employee").update({ active: false }).eq("id", id);
+  const { error } = await supabase.from("employee").delete().eq("id", id);
 
   if (error) {
     throw new Error(dbErrorMessage(error));
   }
 
-  revalidatePath("/admin/pracownicy");
+  redirect("/admin/pracownicy");
 }
 
 export async function addClassScheduleEntry(formData: FormData) {

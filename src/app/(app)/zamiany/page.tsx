@@ -111,7 +111,7 @@ export default async function SwapsPage() {
                 ))}
               </select>
             </div>
-            <SubmitButton className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Wyślij prośbę
             </SubmitButton>
           </form>

@@ -25,7 +25,7 @@ export function CardLink({
   return (
     <Link
       href={href}
-      className={`${BASE} block hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-md active:translate-y-0 ${className ?? ""}`}
+      className={`${BASE} block hover:-translate-y-0.5 hover:border-brand-blue-light hover:shadow-md active:translate-y-0 ${className ?? ""}`}
     >
       {children}
     </Link>

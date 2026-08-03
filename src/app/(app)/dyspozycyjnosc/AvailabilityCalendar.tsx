@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toggleWholeDayUnavailable, toggleSlotUnavailable } from "./actions";
-import { WEEKDAY_LABELS } from "@/lib/weekdays";
+import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 
 type ShiftSlot = { slot_index: number; default_start_time: string; default_end_time: string; label: string | null };
@@ -45,14 +45,15 @@ export function AvailabilityCalendar({
     });
   }
 
-  // Puste komórki na początku siatki, żeby dni ustawiły się pod właściwą kolumną dnia tygodnia.
-  const leadingBlanks = days.length > 0 ? days[0].weekday : 0;
+  // Tydzień zaczyna się w poniedziałek — kolumna 0 to poniedziałek (weekday
+  // 1), kolumna 6 to niedziela (weekday 0), stąd przesunięcie (weekday+6)%7.
+  const leadingBlanks = days.length > 0 ? (days[0].weekday + 6) % 7 : 0;
 
   return (
     <div>
       <div className="mb-2 grid grid-cols-7 gap-1.5 text-center text-xs font-semibold uppercase text-zinc-500">
-        {WEEKDAY_LABELS.map((label) => (
-          <div key={label}>{label.slice(0, 3)}</div>
+        {WEEK_DISPLAY_ORDER.map((weekday) => (
+          <div key={weekday}>{weekdayLabel(weekday).slice(0, 3)}</div>
         ))}
       </div>
       <div className="grid grid-cols-7 gap-1.5">

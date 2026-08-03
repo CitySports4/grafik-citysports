@@ -2,12 +2,12 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
-import { WEEKDAY_LABELS } from "@/lib/weekdays";
+import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 import { addShiftSlot, deleteShiftSlot, toggleShiftSlotActive, seedDefaultShiftTemplate } from "./actions";
 
 const INPUT =
-  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3 py-1.5 text-sm outline-none transition-colors focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]";
+  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3 py-1.5 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const DANGER_BTN = "rounded-lg px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50";
 
 export default async function ShiftTemplatePage() {
@@ -40,11 +40,11 @@ export default async function ShiftTemplatePage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {WEEKDAY_LABELS.map((label, weekday) => {
+        {WEEK_DISPLAY_ORDER.map((weekday) => {
           const daySlots = slots?.filter((s) => s.weekday === weekday) ?? [];
           return (
             <Card key={weekday}>
-              <h2 className="mb-3 font-semibold capitalize text-zinc-900">{label}</h2>
+              <h2 className="mb-3 font-semibold capitalize text-zinc-900">{weekdayLabel(weekday)}</h2>
               <ul className="mb-3 flex flex-col gap-1.5">
                 {daySlots.map((s) => (
                   <li
@@ -89,7 +89,7 @@ export default async function ShiftTemplatePage() {
                   <label className="text-xs font-semibold text-zinc-600">Etykieta (opcjonalnie)</label>
                   <input name="label" className={INPUT} />
                 </div>
-                <SubmitButton className="rounded-xl bg-blue-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+                <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
                   Dodaj
                 </SubmitButton>
               </form>

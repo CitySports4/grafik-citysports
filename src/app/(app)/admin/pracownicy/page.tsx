@@ -5,7 +5,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { createEmployee } from "./actions";
 
 const INPUT =
-  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]";
+  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const LABEL = "text-sm font-semibold text-zinc-900";
 
 export default async function EmployeesPage() {
@@ -62,7 +62,7 @@ export default async function EmployeesPage() {
             <input type="number" step="0.5" name="target_hours_month" defaultValue={0} className={INPUT} />
           </div>
           <div className="sm:col-span-2">
-            <SubmitButton className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Dodaj pracownika
             </SubmitButton>
           </div>

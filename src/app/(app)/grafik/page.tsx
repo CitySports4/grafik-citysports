@@ -97,7 +97,7 @@ export default async function MyGrafikPage({
             month: "short",
           });
           return (
-            <Card key={day.id} className={`!p-3 ${isMyDay ? "border-blue-400 bg-blue-50/40" : ""}`}>
+            <Card key={day.id} className={`!p-3 ${isMyDay ? "border-brand-orange bg-brand-orange/5" : ""}`}>
               <div className="mb-1.5 text-sm font-semibold capitalize text-zinc-900">
                 {dateLabel} — {weekdayLabel(day.weekday)}
               </div>
@@ -109,7 +109,7 @@ export default async function MyGrafikPage({
                     <div
                       key={shift.id}
                       className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs ${
-                        isMe ? "bg-blue-600 text-white" : "bg-zinc-50 text-zinc-600"
+                        isMe ? "bg-brand-orange text-white" : "bg-zinc-50 text-zinc-600"
                       } ${shift.is_closed ? "opacity-50" : ""}`}
                     >
                       <span className="font-semibold">

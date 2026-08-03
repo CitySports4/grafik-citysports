@@ -1,26 +1,32 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f8fa;
+  --foreground: #1a1a1a;
+
+  /* Paleta City Sports (z citysports.com.pl / logo). */
+  --brand-orange: #f06037;
+  --brand-orange-dark: #d94e28;
+  --brand-navy: #0c2e64;
+  --brand-blue: #234e93;
+  --brand-blue-light: #4671b6;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-dark: var(--brand-orange-dark);
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-blue-light: var(--brand-blue-light);
+  --font-sans: var(--font-montserrat);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* Aplikacja ma jeden, spójny (jasny) motyw dopasowany do marki City Sports —
+   celowo bez wariantu ciemnego, żeby uniknąć jasnego tekstu na jasnym tle
+   (lub odwrotnie) gdy system użytkownika jest w trybie ciemnym. */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }

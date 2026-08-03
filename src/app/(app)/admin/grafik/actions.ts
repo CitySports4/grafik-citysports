@@ -70,6 +70,7 @@ export async function addEvent(formData: FormData) {
   const start_time = String(formData.get("start_time") ?? "") || null;
   const label = String(formData.get("label") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
+  const participant_employee_ids = formData.getAll("participant_employee_ids").map(String);
 
   const supabase = createServerSupabaseClient();
   const { error } = await supabase.from("schedule_event").insert({
@@ -78,8 +79,101 @@ export async function addEvent(formData: FormData) {
     start_time,
     label,
     note,
+    participant_employee_ids,
   });
   if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/admin/grafik");
+}
+
+// Zamyka wszystkie zmiany danego dnia jednym kliknięciem — do świąt i innych
+// niestandardowych dni, kiedy klub w ogóle nie działa.
+export async function closeWholeDay(formData: FormData) {
+  await requireAdmin();
+  const schedule_day_id = String(formData.get("schedule_day_id") ?? "");
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("schedule_shift")
+    .update({ employee_id: null, is_closed: true })
+    .eq("schedule_day_id", schedule_day_id);
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/admin/grafik");
+}
+
+// Dodaje niestandardową zmianę do konkretnego dnia (np. inne godziny w
+// święto) — niezależnie od szablonu dla danego dnia tygodnia.
+export async function addCustomShift(formData: FormData) {
+  await requireAdmin();
+  const schedule_day_id = String(formData.get("schedule_day_id") ?? "");
+  const start_time = String(formData.get("start_time") ?? "");
+  const end_time = String(formData.get("end_time") ?? "");
+
+  if (!start_time || !end_time) {
+    throw new Error("Podaj godziny rozpoczęcia i zakończenia zmiany.");
+  }
+
+  const supabase = createServerSupabaseClient();
+  const { data: existing } = await supabase
+    .from("schedule_shift")
+    .select("slot_index")
+    .eq("schedule_day_id", schedule_day_id)
+    .order("slot_index", { ascending: false })
+    .limit(1);
+  const nextSlotIndex = (existing?.[0]?.slot_index ?? -1) + 1;
+
+  const { error } = await supabase.from("schedule_shift").insert({
+    schedule_day_id,
+    slot_index: nextSlotIndex,
+    start_time,
+    end_time,
+  });
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/admin/grafik");
+}
+
+export async function deleteShift(formData: FormData) {
+  await requireAdmin();
+  const shiftId = String(formData.get("shift_id") ?? "");
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("schedule_shift").delete().eq("id", shiftId);
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/admin/grafik");
+}
+
+// Przypisuje uczestników wydarzenia (np. liga) do pustych zmian danego dnia,
+// w kolejności zmian — szybki sposób ułożenia dnia z ligą.
+export async function assignEventParticipantsToShifts(formData: FormData) {
+  await requireAdmin();
+  const eventId = String(formData.get("event_id") ?? "");
+  const supabase = createServerSupabaseClient();
+
+  const { data: event } = await supabase
+    .from("schedule_event")
+    .select("schedule_day_id, participant_employee_ids")
+    .eq("id", eventId)
+    .single();
+  if (!event) throw new Error("Nie znaleziono wydarzenia.");
+
+  const participantIds: string[] = event.participant_employee_ids ?? [];
+  if (participantIds.length === 0) {
+    throw new Error("To wydarzenie nie ma przypisanych pracowników.");
+  }
+
+  const { data: shifts } = await supabase
+    .from("schedule_shift")
+    .select("id, slot_index")
+    .eq("schedule_day_id", event.schedule_day_id)
+    .order("slot_index");
+
+  for (let i = 0; i < (shifts?.length ?? 0) && i < participantIds.length; i++) {
+    await supabase
+      .from("schedule_shift")
+      .update({ employee_id: participantIds[i], is_closed: false })
+      .eq("id", shifts![i].id);
+  }
 
   revalidatePath("/admin/grafik");
 }

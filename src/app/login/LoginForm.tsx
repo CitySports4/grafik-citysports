@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { checkEmployeePhoneStatus, setInitialPassword, loginEmployee } from "./actions";
 import { validatePassword, PASSWORD_HINT } from "@/lib/password";
 import { Banner } from "@/components/Banner";
@@ -8,9 +9,9 @@ import { Banner } from "@/components/Banner";
 type Step = "phone" | "set_password" | "login";
 
 const INPUT =
-  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]";
+  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const PRIMARY_BTN =
-  "mt-1.5 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50";
+  "mt-1.5 rounded-xl bg-brand-orange px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
 
 export function LoginForm() {
   const [step, setStep] = useState<Step>("phone");
@@ -64,8 +65,8 @@ export function LoginForm() {
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-6">
-      <div className="flex flex-col items-center gap-1.5">
-        <h1 className="text-xl font-bold text-zinc-900">City Sports</h1>
+      <div className="flex flex-col items-center gap-2">
+        <Image src="/logo.png" alt="City Sports" width={219} height={48} className="h-12 w-auto" priority />
         <p className="text-sm font-semibold text-zinc-500">Grafik pracy</p>
       </div>
 
@@ -109,7 +110,7 @@ export function LoginForm() {
             <button
               type="button"
               onClick={() => setStep("phone")}
-              className="text-sm text-zinc-500 hover:text-blue-600 hover:underline"
+              className="text-sm text-zinc-500 hover:text-brand-orange hover:underline"
             >
               ← wróć
             </button>
@@ -129,7 +130,7 @@ export function LoginForm() {
             <button
               type="button"
               onClick={() => setStep("phone")}
-              className="text-sm text-zinc-500 hover:text-blue-600 hover:underline"
+              className="text-sm text-zinc-500 hover:text-brand-orange hover:underline"
             >
               ← wróć
             </button>

@@ -3,11 +3,12 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
-import { WEEKDAY_LABELS, weekdayLabel } from "@/lib/weekdays";
+import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 import {
   updateEmployee,
   clearEmployeePassword,
+  deleteEmployee,
   addClassScheduleEntry,
   deleteClassScheduleEntry,
   addRecurringConstraint,
@@ -15,7 +16,7 @@ import {
 } from "../actions";
 
 const INPUT =
-  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]";
+  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const LABEL = "text-sm font-semibold text-zinc-900";
 const DANGER_BTN = "rounded-lg px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50";
 
@@ -117,7 +118,7 @@ export default async function EmployeeDetailPage({
             />
           </div>
           <div className="sm:col-span-2">
-            <SubmitButton className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Zapisz zmiany
             </SubmitButton>
           </div>
@@ -174,9 +175,9 @@ export default async function EmployeeDetailPage({
             <div className="flex flex-col gap-1.5">
               <label className={LABEL}>Dzień</label>
               <select name="weekday" className={INPUT} defaultValue={1}>
-                {WEEKDAY_LABELS.map((label, idx) => (
+                {WEEK_DISPLAY_ORDER.map((idx) => (
                   <option key={idx} value={idx} className="capitalize">
-                    {label}
+                    {weekdayLabel(idx)}
                   </option>
                 ))}
               </select>
@@ -193,7 +194,7 @@ export default async function EmployeeDetailPage({
               <label className={LABEL}>Notatka (opcjonalnie)</label>
               <input name="note" className={INPUT} />
             </div>
-            <SubmitButton className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Dodaj
             </SubmitButton>
           </form>
@@ -245,9 +246,9 @@ export default async function EmployeeDetailPage({
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Dzień</label>
             <select name="weekday" className={INPUT} defaultValue={1}>
-              {WEEKDAY_LABELS.map((label, idx) => (
+              {WEEK_DISPLAY_ORDER.map((idx) => (
                 <option key={idx} value={idx} className="capitalize">
-                  {label}
+                  {weekdayLabel(idx)}
                 </option>
               ))}
             </select>
@@ -264,9 +265,27 @@ export default async function EmployeeDetailPage({
             <label className={LABEL}>Notatka (opcjonalnie)</label>
             <input name="note" className={INPUT} />
           </div>
-          <SubmitButton className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+          <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
             Dodaj regułę
           </SubmitButton>
+        </form>
+      </Card>
+
+      <Card className="border-red-200">
+        <h2 className="mb-1 font-semibold text-zinc-900">Usuń pracownika</h2>
+        <p className="mb-3 text-sm text-zinc-500">
+          Usuwa konto na stałe, razem z jego dyspozycyjnością, regułami i prośbami o zamianę.
+          Zmiany przypisane w opublikowanych grafikach staną się nieprzypisane. Tej operacji nie
+          można cofnąć.
+        </p>
+        <form action={deleteEmployee}>
+          <input type="hidden" name="id" value={employee.id} />
+          <ConfirmButton
+            confirmText={`Na pewno trwale usunąć pracownika "${employee.name}"? Tej operacji nie można cofnąć.`}
+            className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700"
+          >
+            Usuń pracownika na stałe
+          </ConfirmButton>
         </form>
       </Card>
     </div>
