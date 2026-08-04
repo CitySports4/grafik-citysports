@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee } from "@/lib/session";
 import { findScheduleMonth, currentMonth, monthLabel } from "@/lib/schedule-month";
-import { hoursBetween, formatHm, effectiveShiftHours } from "@/lib/time";
+import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
@@ -74,11 +74,10 @@ export default async function MyGrafikPage({
 
   let myHours = 0;
   for (const day of days ?? []) {
-    for (const shift of day.schedule_shift ?? []) {
-      if (shift.employee_id === employee.id) {
-        myHours += effectiveShiftHours(shift.start_time, shift.end_time, day.weekday, myClasses ?? []);
-      }
-    }
+    const myShiftsToday = (day.schedule_shift ?? [])
+      .filter((s) => s.employee_id === employee.id)
+      .map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
+    myHours += dailyEffectiveHours(myShiftsToday, day.weekday, myClasses ?? []);
     for (const ev of day.schedule_event ?? []) {
       if (ev.end_time && ev.participant_employee_ids?.includes(employee.id)) {
         myHours += hoursBetween(ev.start_time ?? "00:00", ev.end_time);

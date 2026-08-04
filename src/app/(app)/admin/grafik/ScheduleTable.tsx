@@ -15,7 +15,7 @@ import {
   publishMonth,
   unpublishMonth,
 } from "./actions";
-import { hoursBetween, formatHm, effectiveShiftHours } from "@/lib/time";
+import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
 import { ColorDot } from "@/components/ColorDot";
 
@@ -65,6 +65,7 @@ export function ScheduleTable({
   classByEmployee,
   unavailableByDayAndSlot,
   unavailableWholeDay,
+  sameDayExceptionByDate,
 }: {
   scheduleMonthId: string;
   scheduleMonthStatus: "draft" | "published";
@@ -73,6 +74,7 @@ export function ScheduleTable({
   classByEmployee: Record<string, ClassEntry[]>;
   unavailableByDayAndSlot: Record<string, Record<number, string[]>>;
   unavailableWholeDay: Record<string, string[]>;
+  sameDayExceptionByDate: Record<string, string[]>;
 }) {
   const [days, setDays] = useState(initialDays);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -84,13 +86,27 @@ export function ScheduleTable({
 
   const hoursByEmployee = useMemo(() => {
     const map = new Map<string, number>();
+    // Grupujemy zmiany danego pracownika w danym dniu i liczymy je jako
+    // POŁĄCZONE przedziały czasu — gdyby ta sama osoba miała 2 nakładające
+    // się zmiany tego dnia (nie powinno się zdarzać, ale liczymy bezpiecznie
+    // na wszelki wypadek), godziny nakładania nie policzą się dwa razy.
+    const shiftsByEmployeeDay = new Map<string, { start_time: string; end_time: string }[]>();
     for (const day of days) {
       for (const shift of day.shifts) {
-        if (shift.employee_id) {
-          const h = effectiveShiftHours(shift.start_time, shift.end_time, day.weekday, classByEmployee[shift.employee_id] ?? []);
-          map.set(shift.employee_id, (map.get(shift.employee_id) ?? 0) + h);
-        }
+        if (!shift.employee_id) continue;
+        const key = `${shift.employee_id}|${day.date}`;
+        if (!shiftsByEmployeeDay.has(key)) shiftsByEmployeeDay.set(key, []);
+        shiftsByEmployeeDay.get(key)!.push({ start_time: shift.start_time, end_time: shift.end_time });
       }
+    }
+    const weekdayByDate = new Map(days.map((d) => [d.date, d.weekday]));
+    for (const [key, shiftsList] of shiftsByEmployeeDay) {
+      const [empId, date] = key.split("|");
+      const weekday = weekdayByDate.get(date) ?? 0;
+      const h = dailyEffectiveHours(shiftsList, weekday, classByEmployee[empId] ?? []);
+      map.set(empId, (map.get(empId) ?? 0) + h);
+    }
+    for (const day of days) {
       for (const ev of day.events) {
         if (!ev.end_time) continue;
         const h = hoursBetween(ev.start_time ?? "00:00", ev.end_time);
@@ -325,6 +341,7 @@ export function ScheduleTable({
                 });
                 const wholeDayUnavailable = (unavailableWholeDay[day.date] ?? []).map((id) => employeeById.get(id)?.name).filter(Boolean);
                 const isExpanded = expanded.has(day.id);
+                const exceptionIds = sameDayExceptionByDate[day.date] ?? [];
 
                 return (
                   <Fragment key={day.id}>
@@ -349,7 +366,19 @@ export function ScheduleTable({
                         }
                         const unavailableIds = unavailableByDayAndSlot[day.date]?.[slotIndex] ?? [];
                         const unavailableNames = unavailableIds.map((id) => employeeById.get(id)?.name).filter(Boolean);
-                        const options = employees.filter((e) => !unavailableIds.includes(e.id) || e.id === shift.employee_id);
+                        // Jedna osoba = jedna zmiana dziennie (stąd w ogóle są 3 zmiany —
+                        // żeby dzień rozkładał się na różne osoby, a nie żeby ktoś siedział
+                        // od rana do wieczora). Wyjątek: patrz sameDayExceptionByDate.
+                        const workingElsewhereTodayIds = new Set(
+                          day.shifts
+                            .filter((s) => s.id !== shift.id && s.employee_id)
+                            .map((s) => s.employee_id as string)
+                        );
+                        const options = employees.filter(
+                          (e) =>
+                            (!unavailableIds.includes(e.id) || e.id === shift.employee_id) &&
+                            (!workingElsewhereTodayIds.has(e.id) || e.id === shift.employee_id || exceptionIds.includes(e.id))
+                        );
                         const selectValue = shift.is_closed ? "__closed__" : shift.employee_id ?? "";
                         const currentEmployee = shift.employee_id ? employeeById.get(shift.employee_id) : null;
                         return (

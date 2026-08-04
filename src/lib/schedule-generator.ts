@@ -1,5 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { effectiveShiftHours, hoursBetween, overlapMinutes, timeToMinutes } from "@/lib/time";
+import { dailyEffectiveHours, effectiveShiftHours, hoursBetween, overlapMinutes, timeToMinutes } from "@/lib/time";
 import { daysInMonth, toDateKey } from "@/lib/schedule-month";
 
 // Tworzy dni i zmiany miesiąca na podstawie szablonu (shift_template) —
@@ -83,12 +83,22 @@ type Employee = {
 type ClassEntry = { weekday: number; start_time: string; end_time: string };
 
 // Heurystyczny generator wersji roboczej: wypełnia tylko puste, otwarte
-// zmiany — nie nadpisuje ręcznych przypisań. Rotuje pracowników wg
-// aktualnie zsumowanych (efektywnych, czyli pomniejszonych o zajęcia
-// instruktorów) godzin dążąc do celu/minimum, unika twardych blokad, a
-// instruktorów z >1h nakładających się zajęć stawia w ostatniej kolejności
-// (tylko gdy nie ma innego wyboru). Na koniec dobiera 2 uczestników do
-// sobotniego sprzątania spośród osób, które mogą sprzątać.
+// zmiany — nie nadpisuje ręcznych przypisań.
+//
+// Zasada nadrzędna: jedna osoba = jedna zmiana danego dnia (stąd w ogóle są
+// 3 zmiany, żeby dzień rozkładał się na 3 różne osoby, a wieczorem 14–21 i
+// 17–22 nakładają się właśnie po to, by w godzinach 17–21 były 2 różne
+// osoby). Jedyny wyjątek: pracownik z ustawioną cykliczną preferencją
+// "cały dzień, niedziela" może pokryć więcej niż jedną zmianę w niedzielę,
+// gdy jest tego dnia liga open (typowo szef klubu).
+//
+// Kolejność wyboru: najpierw dobija każdego do JEGO minimum (im większy
+// niedobór, tym wyższy priorytet), potem wyrównuje względem CELU
+// (proporcjonalnie, nie w godzinach absolutnych — inaczej ktoś z celem
+// 160h i ktoś z celem 80h nie są porównywalni). Instruktorów z >1h
+// nakładających się zajęć stawia w ostatniej kolejności (tylko gdy nie ma
+// innego wyboru). Na koniec dobiera 2 uczestników do sobotniego
+// sprzątania spośród osób, które mogą sprzątać.
 export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assignedCount: number; skippedCount: number }> {
   const supabase = createServerSupabaseClient();
 
@@ -142,10 +152,14 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
 
   const hardUnavailableByEmployee = new Map<string, { weekday: number; start: string | null; end: string | null }[]>();
   const preferredByEmployee = new Map<string, { weekday: number; start: string | null; end: string | null }[]>();
+  const sundayAllDayException = new Set<string>();
   for (const c of constraints ?? []) {
     const target = c.type === "unavailable" ? hardUnavailableByEmployee : preferredByEmployee;
     if (!target.has(c.employee_id)) target.set(c.employee_id, []);
     target.get(c.employee_id)!.push({ weekday: c.weekday, start: c.start_time, end: c.end_time });
+    if (c.type === "preferred" && c.weekday === 0 && !c.start_time && !c.end_time) {
+      sundayAllDayException.add(c.employee_id);
+    }
   }
 
   const classByEmployee = new Map<string, ClassEntry[]>();
@@ -156,22 +170,46 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
 
   const hoursAssigned = new Map<string, number>((employees ?? []).map((e) => [e.id, 0]));
   const daysAssigned = new Map<string, Set<string>>((employees ?? []).map((e) => [e.id, new Set<string>()]));
+  const usedTodayByDate = new Map<string, Set<string>>();
 
+  function markUsedToday(date: string, employeeId: string) {
+    if (!usedTodayByDate.has(date)) usedTodayByDate.set(date, new Set());
+    usedTodayByDate.get(date)!.add(employeeId);
+  }
+
+  // Zsumuj istniejące (ręczne) przypisania — z połączeniem nakładających
+  // się przedziałów, żeby ewentualne wcześniejsze błędne dublowanie tej
+  // samej osoby na nakładających się zmianach nie zawyżało jej godzin ani
+  // nie psuło dalszego wyrównywania.
+  const shiftsByEmployeeDate = new Map<string, Map<string, { start_time: string; end_time: string }[]>>();
+  const weekdayByDate = new Map<string, number>();
+  const ligaOpenDates = new Set<string>();
   for (const day of days ?? []) {
+    weekdayByDate.set(day.date, day.weekday);
     for (const shift of day.schedule_shift ?? []) {
-      if (shift.employee_id) {
-        const h = effectiveShiftHours(shift.start_time, shift.end_time, day.weekday, classByEmployee.get(shift.employee_id) ?? []);
-        hoursAssigned.set(shift.employee_id, (hoursAssigned.get(shift.employee_id) ?? 0) + h);
-        daysAssigned.get(shift.employee_id)?.add(day.date);
-      }
+      if (!shift.employee_id) continue;
+      markUsedToday(day.date, shift.employee_id);
+      if (!shiftsByEmployeeDate.has(shift.employee_id)) shiftsByEmployeeDate.set(shift.employee_id, new Map());
+      const byDate = shiftsByEmployeeDate.get(shift.employee_id)!;
+      if (!byDate.has(day.date)) byDate.set(day.date, []);
+      byDate.get(day.date)!.push({ start_time: shift.start_time, end_time: shift.end_time });
     }
     for (const ev of day.schedule_event ?? []) {
+      if (ev.type === "liga_open") ligaOpenDates.add(day.date);
       if (ev.end_time) {
         for (const empId of ev.participant_employee_ids ?? []) {
           const h = hoursBetween(ev.start_time ?? "00:00", ev.end_time);
           hoursAssigned.set(empId, (hoursAssigned.get(empId) ?? 0) + h);
         }
       }
+    }
+  }
+  for (const [empId, byDate] of shiftsByEmployeeDate) {
+    for (const [date, shiftsList] of byDate) {
+      const weekday = weekdayByDate.get(date) ?? 0;
+      const h = dailyEffectiveHours(shiftsList, weekday, classByEmployee.get(empId) ?? []);
+      hoursAssigned.set(empId, (hoursAssigned.get(empId) ?? 0) + h);
+      daysAssigned.get(empId)?.add(date);
     }
   }
 
@@ -181,11 +219,15 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
   for (const day of sortedDays) {
     const weekday = day.weekday;
     const shiftsForDay = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
+    const isSundayLeagueDay = weekday === 0 && ligaOpenDates.has(day.date);
 
     for (const shift of shiftsForDay) {
       if (shift.employee_id || shift.is_closed) continue;
 
       const candidates = (employees ?? []).filter((emp) => {
+        const alreadyUsedToday = usedTodayByDate.get(day.date)?.has(emp.id) ?? false;
+        if (alreadyUsedToday && !(isSundayLeagueDay && sundayAllDayException.has(emp.id))) return false;
+
         const hardRules = hardUnavailableByEmployee.get(emp.id) ?? [];
         for (const r of hardRules) {
           if (r.weekday !== weekday) continue;
@@ -217,9 +259,14 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
           }
         }
         const hrs = hoursAssigned.get(emp.id) ?? 0;
-        score += hrs * 2;
+        // Priorytet nr 1: kto najbardziej brakuje do WŁASNEGO minimum.
+        const deficitToMin = Math.max(0, emp.min_hours_month - hrs);
+        score -= deficitToMin * 10;
+        // Priorytet nr 2: wyrównanie względem WŁASNEGO celu, proporcjonalnie
+        // (inaczej cel 160h i cel 80h nie są porównywalne w godzinach).
+        const targetRatio = emp.target_hours_month > 0 ? hrs / emp.target_hours_month : hrs > 0 ? 1 : 0;
+        score += targetRatio * 60;
         score += (daysAssigned.get(emp.id)?.size ?? 0) * 1;
-        if (hrs < emp.min_hours_month) score -= 30;
         return score;
       };
 
@@ -230,6 +277,7 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       hoursAssigned.set(chosen.id, (hoursAssigned.get(chosen.id) ?? 0) + h);
       if (!daysAssigned.has(chosen.id)) daysAssigned.set(chosen.id, new Set());
       daysAssigned.get(chosen.id)!.add(day.date);
+      markUsedToday(day.date, chosen.id);
 
       updates.push({ id: shift.id, employee_id: chosen.id });
     }
@@ -240,8 +288,8 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
   }
 
   // Sobotnie sprzątanie — dobierz 2 osoby spośród tych, które mogą sprzątać
-  // (can_clean), nie są tego dnia całkowicie niedostępne, wg najniższych
-  // dotychczasowych godzin (to samo rozłożenie co przy zmianach).
+  // (can_clean), nie są tego dnia całkowicie niedostępne, wg tych samych
+  // priorytetów (niedobór do minimum, potem proporcja do celu).
   const cleaningUpdates: { eventId: string; participantIds: string[] }[] = [];
   for (const day of sortedDays) {
     if (day.weekday !== 6) continue;
@@ -261,7 +309,16 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
         }
         return true;
       });
-      eligible.sort((a, b) => (hoursAssigned.get(a.id) ?? 0) - (hoursAssigned.get(b.id) ?? 0));
+      eligible.sort((a, b) => {
+        const aHrs = hoursAssigned.get(a.id) ?? 0;
+        const bHrs = hoursAssigned.get(b.id) ?? 0;
+        const aDeficit = Math.max(0, a.min_hours_month - aHrs);
+        const bDeficit = Math.max(0, b.min_hours_month - bHrs);
+        if (aDeficit !== bDeficit) return bDeficit - aDeficit;
+        const aRatio = a.target_hours_month > 0 ? aHrs / a.target_hours_month : 0;
+        const bRatio = b.target_hours_month > 0 ? bHrs / b.target_hours_month : 0;
+        return aRatio - bRatio;
+      });
 
       const picked = [...existingParticipants];
       for (const emp of eligible) {

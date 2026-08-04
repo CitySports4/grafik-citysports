@@ -6,6 +6,7 @@ import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { generateStructure } from "./actions";
 import { ScheduleTable } from "./ScheduleTable";
+import { ResetStructureButton } from "./ResetStructureButton";
 
 export default async function ScheduleBuilderPage({
   searchParams,
@@ -50,12 +51,25 @@ export default async function ScheduleBuilderPage({
 
   const unavailableByDayAndSlot: Record<string, Record<number, string[]>> = {};
   const unavailableWholeDay: Record<string, string[]> = {};
+  const sameDayExceptionByDate: Record<string, string[]> = {};
 
   if (hasStructure) {
-    const { data: constraints } = await supabase
+    const { data: allConstraints } = await supabase
       .from("weekly_recurring_constraint")
-      .select("employee_id, weekday, start_time, end_time, type")
-      .eq("type", "unavailable");
+      .select("employee_id, weekday, start_time, end_time, type");
+    const constraints = (allConstraints ?? []).filter((c) => c.type === "unavailable");
+
+    // Jedyny wyjątek od reguły "1 osoba = 1 zmiana dziennie": pracownik z
+    // cykliczną preferencją "cały dzień, niedziela" może pokryć więcej niż
+    // jedną zmianę w niedzielę z ligą open (typowo szef klubu).
+    const sundayAllDayPreferred = (allConstraints ?? [])
+      .filter((c) => c.type === "preferred" && c.weekday === 0 && !c.start_time && !c.end_time)
+      .map((c) => c.employee_id);
+    for (const day of days ?? []) {
+      if (day.weekday !== 0) continue;
+      const hasLigaOpen = (day.schedule_event ?? []).some((ev) => ev.type === "liga_open");
+      if (hasLigaOpen) sameDayExceptionByDate[day.date] = sundayAllDayPreferred;
+    }
 
     const hardConstraintsByEmployee = new Map<string, HardConstraint[]>();
     for (const c of constraints ?? []) {
@@ -138,6 +152,10 @@ export default async function ScheduleBuilderPage({
         </div>
       </div>
 
+      {hasStructure && scheduleMonth.status === "draft" && (
+        <ResetStructureButton scheduleMonthId={scheduleMonth.id} year={year} month={month} />
+      )}
+
       {!hasStructure && (
         <Card>
           <p className="mb-3 text-sm text-zinc-600">
@@ -170,6 +188,7 @@ export default async function ScheduleBuilderPage({
           classByEmployee={classByEmployee}
           unavailableByDayAndSlot={unavailableByDayAndSlot}
           unavailableWholeDay={unavailableWholeDay}
+          sameDayExceptionByDate={sameDayExceptionByDate}
         />
       )}
     </div>

@@ -25,6 +25,27 @@ export async function generateStructure(formData: FormData) {
   revalidatePath("/admin/grafik");
 }
 
+// Usuwa całą strukturę dni/zmian/wydarzeń danego miesiąca i generuje ją
+// ponownie od zera na podstawie AKTUALNEJ konfiguracji zmian — przydatne,
+// gdy admin zmienił szablon (np. godziny w piątek/sobotę/niedzielę) PO już
+// wygenerowanym miesiącu, bo sama zmiana szablonu nie nadpisuje istniejących
+// dni. Niszczy wszystkie przypisania i wydarzenia tego miesiąca, więc tylko
+// dla miesięcy w statusie "draft".
+export async function resetMonthStructure(scheduleMonthId: string, year: number, month: number) {
+  await requireAdmin();
+  const supabase = createServerSupabaseClient();
+
+  const { data: monthRow } = await supabase.from("schedule_month").select("status").eq("id", scheduleMonthId).single();
+  if (!monthRow || monthRow.status !== "draft") {
+    throw new Error("Można zresetować tylko miesiąc w statusie roboczym (draft).");
+  }
+
+  const { error: deleteError } = await supabase.from("schedule_day").delete().eq("schedule_month_id", scheduleMonthId);
+  if (deleteError) throw new Error(dbErrorMessage(deleteError));
+
+  await generateMonthStructure(scheduleMonthId, year, month);
+}
+
 export async function runDraft(scheduleMonthId: string) {
   await requireAdmin();
   await runDraftGenerator(scheduleMonthId);
