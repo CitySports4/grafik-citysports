@@ -6,6 +6,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { createSwapRequest, respondSwapRequest, cancelSwapRequest } from "./actions";
 import { formatHm } from "@/lib/time";
+import { ColorDot } from "@/components/ColorDot";
 
 const DANGER_BTN = "rounded-lg px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50";
 
@@ -19,8 +20,8 @@ export default async function SwapsPage() {
   const supabase = createServerSupabaseClient();
   const today = toDateKey(new Date());
 
-  const { data: employees } = await supabase.from("employee").select("id, name").eq("active", true);
-  const employeeById = new Map((employees ?? []).map((e) => [e.id, e.name]));
+  const { data: employees } = await supabase.from("employee").select("id, name, color_hex").eq("active", true);
+  const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
 
   const { data: myShiftsRaw } = await supabase
     .from("schedule_shift")
@@ -105,8 +106,8 @@ export default async function SwapsPage() {
               <label className="text-sm font-semibold text-zinc-900">Zmiana kolegi/koleżanki</label>
               <select name="target_shift_id" required className="rounded-xl border-[1.5px] border-zinc-300 px-3 py-2 text-sm">
                 {otherShifts.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {employeeById.get(s.employee_id ?? "")} — {shiftLabel(s.schedule_day.date, s.start_time, s.end_time)}
+                  <option key={s.id} value={s.id} style={{ color: employeeById.get(s.employee_id ?? "")?.color_hex }}>
+                    {employeeById.get(s.employee_id ?? "")?.name} — {shiftLabel(s.schedule_day.date, s.start_time, s.end_time)}
                   </option>
                 ))}
               </select>
@@ -130,10 +131,12 @@ export default async function SwapsPage() {
             return (
               <li key={r.id} className="rounded-lg border border-zinc-200 p-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    <strong>{employeeById.get(r.requester_employee_id)}</strong>{" "}
-                    ({mine ? shiftLabel(mine.date, mine.start_time, mine.end_time) : "?"}) ↔{" "}
-                    <strong>{employeeById.get(r.target_employee_id ?? "")}</strong>{" "}
+                  <span className="inline-flex flex-wrap items-center gap-1">
+                    <ColorDot color={employeeById.get(r.requester_employee_id)?.color_hex ?? "#999"} />
+                    <strong>{employeeById.get(r.requester_employee_id)?.name}</strong>
+                    ({mine ? shiftLabel(mine.date, mine.start_time, mine.end_time) : "?"}) ↔
+                    <ColorDot color={employeeById.get(r.target_employee_id ?? "")?.color_hex ?? "#999"} />
+                    <strong>{employeeById.get(r.target_employee_id ?? "")?.name}</strong>
                     ({theirs ? shiftLabel(theirs.date, theirs.start_time, theirs.end_time) : "?"})
                   </span>
                   <span

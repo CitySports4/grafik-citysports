@@ -52,14 +52,21 @@ export async function assignShift(shiftId: string, employeeIdRaw: string) {
 
 export async function addEvent(
   scheduleDayId: string,
-  data: { type: string; start_time: string | null; label: string | null; note: string | null; participant_employee_ids: string[] }
+  data: {
+    type: string;
+    start_time: string | null;
+    end_time: string | null;
+    label: string | null;
+    note: string | null;
+    participant_employee_ids: string[];
+  }
 ) {
   await requireAdmin();
   const supabase = createServerSupabaseClient();
   const { data: created, error } = await supabase
     .from("schedule_event")
     .insert({ schedule_day_id: scheduleDayId, ...data })
-    .select("id, type, start_time, label, note, participant_employee_ids")
+    .select("id, type, start_time, end_time, label, note, participant_employee_ids")
     .single();
   if (error || !created) throw new Error(dbErrorMessage(error));
   return created;
@@ -184,10 +191,23 @@ export async function assignEventParticipantsToShifts(
   return assignments;
 }
 
-export async function updateEventTime(eventId: string, startTime: string | null) {
+export async function updateEventTimes(eventId: string, startTime: string | null, endTime: string | null) {
   await requireAdmin();
   const supabase = createServerSupabaseClient();
-  const { error } = await supabase.from("schedule_event").update({ start_time: startTime }).eq("id", eventId);
+  const { error } = await supabase
+    .from("schedule_event")
+    .update({ start_time: startTime, end_time: endTime })
+    .eq("id", eventId);
+  if (error) throw new Error(dbErrorMessage(error));
+}
+
+export async function updateEventParticipants(eventId: string, participantIds: string[]) {
+  await requireAdmin();
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("schedule_event")
+    .update({ participant_employee_ids: participantIds })
+    .eq("id", eventId);
   if (error) throw new Error(dbErrorMessage(error));
 }
 

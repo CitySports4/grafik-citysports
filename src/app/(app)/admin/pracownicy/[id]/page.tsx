@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { ColorDot } from "@/components/ColorDot";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 import {
@@ -47,7 +48,10 @@ export default async function EmployeeDetailPage({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-lg font-bold text-zinc-900">{employee.name}</h1>
+        <h1 className="flex items-center gap-2 text-lg font-bold text-zinc-900">
+          <ColorDot color={employee.color_hex} className="h-3 w-3" />
+          {employee.name}
+        </h1>
         <p className="text-sm text-zinc-500">Edycja danych pracownika.</p>
       </div>
 
@@ -95,6 +99,18 @@ export default async function EmployeeDetailPage({
             <input type="checkbox" id="active" name="active" defaultChecked={employee.active} className="h-4 w-4" />
             <label htmlFor="active" className="text-sm text-zinc-900">
               Konto aktywne
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="can_clean"
+              name="can_clean"
+              defaultChecked={employee.can_clean}
+              className="h-4 w-4"
+            />
+            <label htmlFor="can_clean" className="text-sm text-zinc-900">
+              Może sprzątać (sobotnie sprzątanie)
             </label>
           </div>
           <div className="flex flex-col gap-1.5">

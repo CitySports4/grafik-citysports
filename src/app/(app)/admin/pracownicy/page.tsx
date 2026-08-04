@@ -12,7 +12,7 @@ export default async function EmployeesPage() {
   const supabase = createServerSupabaseClient();
   const { data: employees } = await supabase
     .from("employee")
-    .select("id, name, phone, role, color_hex, is_instructor, min_hours_month, target_hours_month, active, password_hash")
+    .select("id, name, phone, role, color_hex, is_instructor, can_clean, min_hours_month, target_hours_month, active, password_hash")
     .order("name");
 
   return (
@@ -53,6 +53,12 @@ export default async function EmployeesPage() {
               Jest instruktorem (ma zajęcia)
             </label>
           </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="can_clean" name="can_clean" defaultChecked className="h-4 w-4" />
+            <label htmlFor="can_clean" className="text-sm text-zinc-900">
+              Może sprzątać (sobotnie sprzątanie)
+            </label>
+          </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Minimalna liczba godzin / mies.</label>
             <input type="number" step="0.5" name="min_hours_month" defaultValue={0} className={INPUT} />
@@ -77,6 +83,7 @@ export default async function EmployeesPage() {
               <th className="px-4 py-2.5">Telefon</th>
               <th className="px-4 py-2.5">Rola</th>
               <th className="px-4 py-2.5">Instruktor</th>
+              <th className="px-4 py-2.5">Sprząta</th>
               <th className="px-4 py-2.5">Min / Cel h</th>
               <th className="px-4 py-2.5">Status</th>
               <th className="px-4 py-2.5">Hasło</th>
@@ -94,6 +101,7 @@ export default async function EmployeesPage() {
                 <td className="px-4 py-2.5 text-zinc-600">{e.phone}</td>
                 <td className="px-4 py-2.5 text-zinc-600">{e.role === "admin" ? "Administrator" : "Pracownik"}</td>
                 <td className="px-4 py-2.5 text-zinc-600">{e.is_instructor ? "Tak" : "—"}</td>
+                <td className="px-4 py-2.5 text-zinc-600">{e.can_clean ? "Tak" : "—"}</td>
                 <td className="px-4 py-2.5 text-zinc-600">
                   {e.min_hours_month} / {e.target_hours_month}
                 </td>
@@ -117,7 +125,7 @@ export default async function EmployeesPage() {
             ))}
             {employees?.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-zinc-400">
+                <td colSpan={8} className="px-4 py-6 text-center text-zinc-400">
                   Brak pracowników.
                 </td>
               </tr>

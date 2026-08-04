@@ -3,6 +3,7 @@ import { Card } from "@/components/Card";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { respondSwapRequest, cancelSwapRequest } from "../../zamiany/actions";
 import { formatHm } from "@/lib/time";
+import { ColorDot } from "@/components/ColorDot";
 
 const DANGER_BTN = "rounded-lg px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50";
 const STATUS_LABELS: Record<string, string> = {
@@ -20,8 +21,8 @@ function shiftLabel(date: string, start: string, end: string) {
 export default async function AdminSwapsPage() {
   const supabase = createServerSupabaseClient();
 
-  const { data: employees } = await supabase.from("employee").select("id, name");
-  const employeeById = new Map((employees ?? []).map((e) => [e.id, e.name]));
+  const { data: employees } = await supabase.from("employee").select("id, name, color_hex");
+  const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
 
   const { data: requests } = await supabase
     .from("shift_swap_request")
@@ -58,10 +59,12 @@ export default async function AdminSwapsPage() {
             return (
               <li key={r.id} className="rounded-lg border border-zinc-200 p-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    <strong>{employeeById.get(r.requester_employee_id)}</strong>{" "}
-                    ({mine ? shiftLabel(mine.date, mine.start_time, mine.end_time) : "?"}) ↔{" "}
-                    <strong>{employeeById.get(r.target_employee_id ?? "")}</strong>{" "}
+                  <span className="inline-flex flex-wrap items-center gap-1">
+                    <ColorDot color={employeeById.get(r.requester_employee_id)?.color_hex ?? "#999"} />
+                    <strong>{employeeById.get(r.requester_employee_id)?.name}</strong>
+                    ({mine ? shiftLabel(mine.date, mine.start_time, mine.end_time) : "?"}) ↔
+                    <ColorDot color={employeeById.get(r.target_employee_id ?? "")?.color_hex ?? "#999"} />
+                    <strong>{employeeById.get(r.target_employee_id ?? "")?.name}</strong>
                     ({theirs ? shiftLabel(theirs.date, theirs.start_time, theirs.end_time) : "?"})
                   </span>
                   <span

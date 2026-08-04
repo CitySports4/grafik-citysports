@@ -8,14 +8,16 @@ import {
   addCustomShift,
   deleteShift,
   assignEventParticipantsToShifts,
-  updateEventTime,
+  updateEventTimes,
+  updateEventParticipants,
   deleteEvent,
   runDraft,
   publishMonth,
   unpublishMonth,
 } from "./actions";
-import { hoursBetween, formatHm } from "@/lib/time";
+import { hoursBetween, formatHm, effectiveShiftHours } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
+import { ColorDot } from "@/components/ColorDot";
 
 type ShiftRow = {
   id: string;
@@ -29,17 +31,25 @@ type EventRow = {
   id: string;
   type: string;
   start_time: string | null;
+  end_time: string | null;
   label: string | null;
   note: string | null;
   participant_employee_ids: string[];
 };
 type DayRow = { id: string; date: string; weekday: number; shifts: ShiftRow[]; events: EventRow[] };
-type Employee = { id: string; name: string; color_hex: string; min_hours_month: number; target_hours_month: number };
+type Employee = {
+  id: string;
+  name: string;
+  color_hex: string;
+  can_clean: boolean;
+  min_hours_month: number;
+  target_hours_month: number;
+};
+type ClassEntry = { weekday: number; start_time: string; end_time: string };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   liga_open: "Liga open",
   liga_deblowa: "Liga deblowa",
-  liga_singlowa: "Liga singlowa",
   sprzatanie: "Sprzątanie",
   warsztaty: "Warsztaty",
   custom: "Inne",
@@ -52,6 +62,7 @@ export function ScheduleTable({
   scheduleMonthStatus,
   days: initialDays,
   employees,
+  classByEmployee,
   unavailableByDayAndSlot,
   unavailableWholeDay,
 }: {
@@ -59,6 +70,7 @@ export function ScheduleTable({
   scheduleMonthStatus: "draft" | "published";
   days: DayRow[];
   employees: Employee[];
+  classByEmployee: Record<string, ClassEntry[]>;
   unavailableByDayAndSlot: Record<string, Record<number, string[]>>;
   unavailableWholeDay: Record<string, string[]>;
 }) {
@@ -75,12 +87,20 @@ export function ScheduleTable({
     for (const day of days) {
       for (const shift of day.shifts) {
         if (shift.employee_id) {
-          map.set(shift.employee_id, (map.get(shift.employee_id) ?? 0) + hoursBetween(shift.start_time, shift.end_time));
+          const h = effectiveShiftHours(shift.start_time, shift.end_time, day.weekday, classByEmployee[shift.employee_id] ?? []);
+          map.set(shift.employee_id, (map.get(shift.employee_id) ?? 0) + h);
+        }
+      }
+      for (const ev of day.events) {
+        if (!ev.end_time) continue;
+        const h = hoursBetween(ev.start_time ?? "00:00", ev.end_time);
+        for (const empId of ev.participant_employee_ids) {
+          map.set(empId, (map.get(empId) ?? 0) + h);
         }
       }
     }
     return map;
-  }, [days]);
+  }, [days, classByEmployee]);
 
   function toggleExpanded(dayId: string) {
     setExpanded((prev) => {
@@ -103,6 +123,12 @@ export function ScheduleTable({
   function updateShiftLocal(dayId: string, shiftId: string, patch: Partial<ShiftRow>) {
     setDays((prev) =>
       prev.map((d) => (d.id !== dayId ? d : { ...d, shifts: d.shifts.map((s) => (s.id === shiftId ? { ...s, ...patch } : s)) }))
+    );
+  }
+
+  function updateEventLocal(dayId: string, eventId: string, patch: Partial<EventRow>) {
+    setDays((prev) =>
+      prev.map((d) => (d.id !== dayId ? d : { ...d, events: d.events.map((e) => (e.id === eventId ? { ...e, ...patch } : e)) }))
     );
   }
 
@@ -147,7 +173,14 @@ export function ScheduleTable({
 
   async function handleAddEvent(
     day: DayRow,
-    data: { type: string; start_time: string | null; label: string | null; note: string | null; participant_employee_ids: string[] }
+    data: {
+      type: string;
+      start_time: string | null;
+      end_time: string | null;
+      label: string | null;
+      note: string | null;
+      participant_employee_ids: string[];
+    }
   ) {
     setBusy(true);
     setError(null);
@@ -167,13 +200,21 @@ export function ScheduleTable({
     void guard(() => deleteEvent(eventId));
   }
 
-  function handleEventTime(day: DayRow, eventId: string, time: string) {
-    setDays((prev) =>
-      prev.map((d) =>
-        d.id !== day.id ? d : { ...d, events: d.events.map((e) => (e.id === eventId ? { ...e, start_time: time || null } : e)) }
-      )
-    );
-    void guard(() => updateEventTime(eventId, time || null));
+  function handleEventStart(day: DayRow, ev: EventRow, time: string) {
+    updateEventLocal(day.id, ev.id, { start_time: time || null });
+    void guard(() => updateEventTimes(ev.id, time || null, ev.end_time));
+  }
+
+  function handleEventEnd(day: DayRow, ev: EventRow, time: string) {
+    updateEventLocal(day.id, ev.id, { end_time: time || null });
+    void guard(() => updateEventTimes(ev.id, ev.start_time, time || null));
+  }
+
+  function handleToggleParticipant(day: DayRow, ev: EventRow, employeeId: string) {
+    const has = ev.participant_employee_ids.includes(employeeId);
+    const nextIds = has ? ev.participant_employee_ids.filter((id) => id !== employeeId) : [...ev.participant_employee_ids, employeeId];
+    updateEventLocal(day.id, ev.id, { participant_employee_ids: nextIds });
+    void guard(() => updateEventParticipants(ev.id, nextIds));
   }
 
   async function handleAssignParticipants(day: DayRow, eventId: string) {
@@ -247,8 +288,8 @@ export function ScheduleTable({
             <div>
               <h2 className="font-semibold text-zinc-900">Generator propozycji</h2>
               <p className="text-sm text-zinc-500">
-                Wypełnia tylko puste zmiany — nie nadpisuje ręcznych przypisań. Uwzględnia
-                dyspozycyjność, zajęcia instruktorów i wyrównuje godziny.
+                Wypełnia tylko puste zmiany i sobotnie sprzątanie — nie nadpisuje ręcznych
+                przypisań. Uwzględnia dyspozycyjność, zajęcia instruktorów i wyrównuje godziny.
               </p>
             </div>
             <button
@@ -310,24 +351,29 @@ export function ScheduleTable({
                         const unavailableNames = unavailableIds.map((id) => employeeById.get(id)?.name).filter(Boolean);
                         const options = employees.filter((e) => !unavailableIds.includes(e.id) || e.id === shift.employee_id);
                         const selectValue = shift.is_closed ? "__closed__" : shift.employee_id ?? "";
+                        const currentEmployee = shift.employee_id ? employeeById.get(shift.employee_id) : null;
                         return (
                           <td key={shift.id} className="px-2 py-2">
                             <div className="text-[11px] font-semibold text-zinc-500">
                               {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
                             </div>
-                            <select
-                              value={selectValue}
-                              onChange={(e) => handleAssign(day, shift.id, e.target.value)}
-                              className={SELECT_CLS}
-                            >
-                              <option value="">— nieprzypisane —</option>
-                              {options.map((e) => (
-                                <option key={e.id} value={e.id}>
-                                  {e.name}
-                                </option>
-                              ))}
-                              <option value="__closed__">NIECZYNNE</option>
-                            </select>
+                            <div className="mt-0.5 flex items-center gap-1.5">
+                              {currentEmployee && <ColorDot color={currentEmployee.color_hex} />}
+                              <select
+                                value={selectValue}
+                                onChange={(e) => handleAssign(day, shift.id, e.target.value)}
+                                className={SELECT_CLS}
+                                style={currentEmployee ? { borderColor: currentEmployee.color_hex } : undefined}
+                              >
+                                <option value="">— nieprzypisane —</option>
+                                {options.map((e) => (
+                                  <option key={e.id} value={e.id} style={{ color: e.color_hex }}>
+                                    {e.name}
+                                  </option>
+                                ))}
+                                <option value="__closed__">NIECZYNNE</option>
+                              </select>
+                            </div>
                             {unavailableNames.length > 0 && (
                               <div className="mt-1 text-[11px] font-bold text-red-600">⚠ {unavailableNames.join(", ")}</div>
                             )}
@@ -335,16 +381,36 @@ export function ScheduleTable({
                         );
                       })}
                       <td className="px-2 py-2">
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-col gap-1">
                           {day.events.map((ev) => (
-                            <span
+                            <div
                               key={ev.id}
-                              className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-600"
+                              className="flex flex-wrap items-center gap-1 rounded-lg bg-zinc-100 px-1.5 py-1 text-[11px]"
                               title={ev.label ?? undefined}
                             >
-                              {ev.start_time ? `${formatHm(ev.start_time)} ` : ""}
-                              {EVENT_TYPE_LABELS[ev.type] ?? ev.type}
-                            </span>
+                              <input
+                                type="time"
+                                value={ev.start_time ?? ""}
+                                onChange={(e) => handleEventStart(day, ev, e.target.value)}
+                                className="w-[58px] rounded border border-zinc-300 bg-white px-1 py-0.5 text-[10px]"
+                              />
+                              <span className="text-zinc-400">–</span>
+                              <input
+                                type="time"
+                                value={ev.end_time ?? ""}
+                                onChange={(e) => handleEventEnd(day, ev, e.target.value)}
+                                className="w-[58px] rounded border border-zinc-300 bg-white px-1 py-0.5 text-[10px]"
+                              />
+                              <span className="font-semibold text-zinc-600">{EVENT_TYPE_LABELS[ev.type] ?? ev.type}</span>
+                              {ev.participant_employee_ids.length > 0 && (
+                                <span className="flex items-center gap-0.5">
+                                  {ev.participant_employee_ids.map((id) => {
+                                    const emp = employeeById.get(id);
+                                    return emp ? <ColorDot key={id} color={emp.color_hex} /> : null;
+                                  })}
+                                </span>
+                              )}
+                            </div>
                           ))}
                           {day.events.length === 0 && <span className="text-xs text-zinc-300">—</span>}
                         </div>
@@ -374,25 +440,17 @@ export function ScheduleTable({
                             </div>
 
                             {day.events.length > 0 && (
-                              <div className="flex flex-col gap-1.5">
+                              <div className="flex flex-col gap-2">
                                 {day.events.map((ev) => {
-                                  const participantNames = ev.participant_employee_ids
-                                    .map((id) => employeeById.get(id)?.name)
-                                    .filter(Boolean);
+                                  const candidateEmployees =
+                                    ev.type === "sprzatanie" ? employees.filter((e) => e.can_clean) : employees;
                                   return (
-                                    <div key={ev.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-2.5 py-1.5">
-                                      <span className="font-semibold text-zinc-700">{EVENT_TYPE_LABELS[ev.type] ?? ev.type}</span>
-                                      {ev.label && <span>{ev.label}</span>}
-                                      <input
-                                        type="time"
-                                        value={ev.start_time ?? ""}
-                                        onChange={(e) => handleEventTime(day, ev.id, e.target.value)}
-                                        className="rounded border border-zinc-300 px-1 py-0.5 text-xs"
-                                      />
-                                      {ev.note && <span className="text-zinc-500">({ev.note})</span>}
-                                      {participantNames.length > 0 && (
-                                        <>
-                                          <span className="text-zinc-500">Pracownicy: {participantNames.join(", ")}</span>
+                                    <div key={ev.id} className="flex flex-col gap-1.5 rounded-lg bg-white px-2.5 py-1.5">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-semibold text-zinc-700">{EVENT_TYPE_LABELS[ev.type] ?? ev.type}</span>
+                                        {ev.label && <span>{ev.label}</span>}
+                                        {ev.note && <span className="text-zinc-500">({ev.note})</span>}
+                                        {ev.type !== "sprzatanie" && ev.participant_employee_ids.length > 0 && (
                                           <button
                                             type="button"
                                             onClick={() => handleAssignParticipants(day, ev.id)}
@@ -400,15 +458,32 @@ export function ScheduleTable({
                                           >
                                             Przypisz do zmian
                                           </button>
-                                        </>
-                                      )}
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteEvent(day, ev.id)}
-                                        className="ml-auto font-semibold text-red-500 hover:underline"
-                                      >
-                                        Usuń
-                                      </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteEvent(day, ev.id)}
+                                          className="ml-auto font-semibold text-red-500 hover:underline"
+                                        >
+                                          Usuń
+                                        </button>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-zinc-500">
+                                          {ev.type === "sprzatanie" ? "Sprząta:" : "Pracownicy:"}
+                                        </span>
+                                        {candidateEmployees.map((e) => (
+                                          <label key={e.id} className="flex items-center gap-1 text-zinc-600">
+                                            <input
+                                              type="checkbox"
+                                              checked={ev.participant_employee_ids.includes(e.id)}
+                                              onChange={() => handleToggleParticipant(day, ev, e.id)}
+                                              className="h-3.5 w-3.5"
+                                            />
+                                            <ColorDot color={e.color_hex} />
+                                            {e.name}
+                                          </label>
+                                        ))}
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -451,14 +526,14 @@ export function ScheduleTable({
           <h2 className="mb-2 font-semibold text-zinc-900">Suma godzin</h2>
           <ul className="flex flex-col gap-2">
             {employees.map((e) => {
-              const hrs = hoursByEmployee.get(e.id) ?? 0;
+              const hrs = Math.round((hoursByEmployee.get(e.id) ?? 0) * 100) / 100;
               const belowMin = hrs < e.min_hours_month;
               const belowTarget = hrs < e.target_hours_month;
               return (
                 <li key={e.id} className="text-sm">
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5 font-medium text-zinc-800">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: e.color_hex }} />
+                      <ColorDot color={e.color_hex} />
                       {e.name}
                     </span>
                     <span
@@ -549,11 +624,19 @@ function AddEventForm({
   busy,
 }: {
   employees: Employee[];
-  onAdd: (data: { type: string; start_time: string | null; label: string | null; note: string | null; participant_employee_ids: string[] }) => void;
+  onAdd: (data: {
+    type: string;
+    start_time: string | null;
+    end_time: string | null;
+    label: string | null;
+    note: string | null;
+    participant_employee_ids: string[];
+  }) => void;
   busy: boolean;
 }) {
   const [type, setType] = useState("liga_open");
   const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [label, setLabel] = useState("");
   const [note, setNote] = useState("");
   const [participants, setParticipants] = useState<Set<string>>(new Set());
@@ -567,10 +650,19 @@ function AddEventForm({
     });
   }
 
+  const candidateEmployees = type === "sprzatanie" ? employees.filter((e) => e.can_clean) : employees;
+
   return (
     <div className="flex flex-col gap-2 rounded-lg bg-white p-2">
       <div className="flex flex-wrap items-end gap-2">
-        <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+        <select
+          value={type}
+          onChange={(e) => {
+            setType(e.target.value);
+            setParticipants(new Set());
+          }}
+          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
+        >
           {Object.entries(EVENT_TYPE_LABELS).map(([value, l]) => (
             <option key={value} value={value}>
               {l}
@@ -581,6 +673,12 @@ function AddEventForm({
           type="time"
           value={startTime}
           onChange={(e) => setStartTime(e.target.value)}
+          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
+        />
+        <input
+          type="time"
+          value={endTime}
+          onChange={(e) => setEndTime(e.target.value)}
           className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
         />
         <input
@@ -597,7 +695,7 @@ function AddEventForm({
         />
       </div>
       <div className="flex flex-wrap gap-2">
-        {employees.map((e) => (
+        {candidateEmployees.map((e) => (
           <label key={e.id} className="flex items-center gap-1 text-zinc-600">
             <input
               type="checkbox"
@@ -605,6 +703,7 @@ function AddEventForm({
               onChange={() => toggleParticipant(e.id)}
               className="h-3.5 w-3.5"
             />
+            <ColorDot color={e.color_hex} />
             {e.name}
           </label>
         ))}
@@ -616,11 +715,13 @@ function AddEventForm({
           onAdd({
             type,
             start_time: startTime || null,
+            end_time: endTime || null,
             label: label.trim() || null,
             note: note.trim() || null,
             participant_employee_ids: Array.from(participants),
           });
           setStartTime("");
+          setEndTime("");
           setLabel("");
           setNote("");
           setParticipants(new Set());

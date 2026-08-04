@@ -19,3 +19,20 @@ export function overlapMinutes(aStart: string, aEnd: string, bStart: string, bEn
   const end = Math.min(timeToMinutes(aEnd), timeToMinutes(bEnd));
   return Math.max(0, end - start);
 }
+
+// Godziny zmiany pomniejszone o czas zajęć instruktora, które nakładają się
+// na tę zmianę tego dnia tygodnia — instruktor w tym czasie uczy, nie
+// obsługuje klubu, więc nie powinno się to liczyć do jego godzin pracy.
+export function effectiveShiftHours(
+  start: string,
+  end: string,
+  weekday: number,
+  classes: { weekday: number; start_time: string; end_time: string }[]
+): number {
+  let minutes = timeToMinutes(end) - timeToMinutes(start);
+  for (const c of classes) {
+    if (c.weekday !== weekday) continue;
+    minutes -= overlapMinutes(start, end, c.start_time, c.end_time);
+  }
+  return Math.max(0, Math.round((minutes / 60) * 100) / 100);
+}

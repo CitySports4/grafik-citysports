@@ -22,14 +22,23 @@ export default async function ScheduleBuilderPage({
 
   const { data: employees } = await supabase
     .from("employee")
-    .select("id, name, color_hex, min_hours_month, target_hours_month")
+    .select("id, name, color_hex, can_clean, min_hours_month, target_hours_month")
     .eq("active", true)
     .order("name");
+
+  const { data: classSchedules } = await supabase
+    .from("employee_class_schedule")
+    .select("employee_id, weekday, start_time, end_time");
+  const classByEmployee: Record<string, { weekday: number; start_time: string; end_time: string }[]> = {};
+  for (const c of classSchedules ?? []) {
+    if (!classByEmployee[c.employee_id]) classByEmployee[c.employee_id] = [];
+    classByEmployee[c.employee_id].push({ weekday: c.weekday, start_time: c.start_time, end_time: c.end_time });
+  }
 
   const { data: days } = await supabase
     .from("schedule_day")
     .select(
-      "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, label, note, participant_employee_ids)"
+      "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, end_time, label, note, participant_employee_ids)"
     )
     .eq("schedule_month_id", scheduleMonth.id)
     .order("date");
@@ -158,6 +167,7 @@ export default async function ScheduleBuilderPage({
             events: d.schedule_event ?? [],
           }))}
           employees={employees ?? []}
+          classByEmployee={classByEmployee}
           unavailableByDayAndSlot={unavailableByDayAndSlot}
           unavailableWholeDay={unavailableWholeDay}
         />

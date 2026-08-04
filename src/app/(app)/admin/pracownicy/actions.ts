@@ -20,6 +20,7 @@ export async function createEmployee(formData: FormData) {
   const role = String(formData.get("role") ?? "employee");
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
   const is_instructor = formData.get("is_instructor") === "on";
+  const can_clean = formData.get("can_clean") === "on";
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
   const target_hours_month = parseNumber(formData.get("target_hours_month"));
 
@@ -36,6 +37,7 @@ export async function createEmployee(formData: FormData) {
     role,
     color_hex,
     is_instructor,
+    can_clean,
     min_hours_month,
     target_hours_month,
   });
@@ -56,6 +58,7 @@ export async function updateEmployee(formData: FormData) {
   const role = String(formData.get("role") ?? "employee");
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
   const is_instructor = formData.get("is_instructor") === "on";
+  const can_clean = formData.get("can_clean") === "on";
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
   const target_hours_month = parseNumber(formData.get("target_hours_month"));
   const active = formData.get("active") === "on";
@@ -73,6 +76,7 @@ export async function updateEmployee(formData: FormData) {
       role,
       color_hex,
       is_instructor,
+      can_clean,
       min_hours_month,
       target_hours_month,
       active,
