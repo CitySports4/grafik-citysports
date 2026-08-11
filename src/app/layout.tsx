@@ -7,12 +7,13 @@ const montserrat = Montserrat({
   subsets: ["latin", "latin-ext"],
 });
 
+// Ikona zakładki: src/app/icon.png (konwencja Next.js App Router — generuje
+// właściwy <link rel="icon"> automatycznie, więc nie trzeba go tu deklarować
+// ręcznie). Usunięty src/app/favicon.ico (domyślna ikonka Vercel ze
+// scaffoldu) wcześniej wygrywał z tym w karcie przeglądarki.
 export const metadata: Metadata = {
-  title: "Grafik pracy — City Sports",
-  description: "System układania grafiku pracy City Sports",
-  icons: {
-    icon: "/logo.png",
-  },
+  title: "City Sports",
+  description: "System zarządzania City Sports — grafik, sprzątanie, godziny, notatnik.",
 };
 
 export default function RootLayout({
