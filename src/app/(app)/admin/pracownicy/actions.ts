@@ -17,12 +17,12 @@ export async function createEmployee(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim();
   const phone = normalizePhone(String(formData.get("phone") ?? ""));
-  const role = String(formData.get("role") ?? "employee");
+  const role = String(formData.get("role") ?? "recepcja");
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
   const is_instructor = formData.get("is_instructor") === "on";
-  const can_clean = formData.get("can_clean") === "on";
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
   const target_hours_month = parseNumber(formData.get("target_hours_month"));
+  const hourly_rate = parseNumber(formData.get("hourly_rate"));
 
   if (!name || !phone) {
     throw new Error("Podaj imię i numer telefonu.");
@@ -30,16 +30,18 @@ export async function createEmployee(formData: FormData) {
 
   const supabase = createServerSupabaseClient();
 
-  // Bez hasła — pracownik ustawia je sam przy pierwszym logowaniu.
+  // Bez hasła — pracownik ustawia je sam przy pierwszym logowaniu. Kto może
+  // sprzątać ustawia się w Konfiguracja sprzątania → Kompetencje (strefy),
+  // nie tutaj.
   const { error } = await supabase.from("employee").insert({
     name,
     phone,
     role,
     color_hex,
     is_instructor,
-    can_clean,
     min_hours_month,
     target_hours_month,
+    hourly_rate,
   });
 
   if (error) {
@@ -55,12 +57,12 @@ export async function updateEmployee(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const phone = normalizePhone(String(formData.get("phone") ?? ""));
-  const role = String(formData.get("role") ?? "employee");
+  const role = String(formData.get("role") ?? "recepcja");
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
   const is_instructor = formData.get("is_instructor") === "on";
-  const can_clean = formData.get("can_clean") === "on";
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
   const target_hours_month = parseNumber(formData.get("target_hours_month"));
+  const hourly_rate = parseNumber(formData.get("hourly_rate"));
   const active = formData.get("active") === "on";
 
   if (!id || !name || !phone) {
@@ -76,9 +78,9 @@ export async function updateEmployee(formData: FormData) {
       role,
       color_hex,
       is_instructor,
-      can_clean,
       min_hours_month,
       target_hours_month,
+      hourly_rate,
       active,
     })
     .eq("id", id);

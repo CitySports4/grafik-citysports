@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ConfirmButton";
 import { createSwapRequest, respondSwapRequest, cancelSwapRequest } from "./actions";
 import { formatHm } from "@/lib/time";
 import { ColorDot } from "@/components/ColorDot";
+import { countAcceptedSwapsThisMonth, SOFT_SWAP_LIMIT_PER_MONTH } from "@/lib/swap-limits";
 
 const DANGER_BTN = "rounded-lg px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50";
 
@@ -77,6 +78,8 @@ export default async function SwapsPage() {
     cancelled: "Anulowana",
   };
 
+  const myAcceptedSwapsThisMonth = countAcceptedSwapsThisMonth(requests ?? [], employee.id);
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -88,6 +91,13 @@ export default async function SwapsPage() {
 
       <Card>
         <h2 className="mb-3 font-semibold text-zinc-900">Zaproponuj zamianę</h2>
+        {myAcceptedSwapsThisMonth >= SOFT_SWAP_LIMIT_PER_MONTH && (
+          <p className="mb-3 text-xs text-amber-600">
+            Uwaga: masz już {myAcceptedSwapsThisMonth} zaakceptowane zamiany w tym miesiącu —
+            zalecany miękki limit to {SOFT_SWAP_LIMIT_PER_MONTH}. Nadal możesz zgłosić kolejną, jeśli
+            to konieczne.
+          </p>
+        )}
         {myShifts.length === 0 ? (
           <p className="text-sm text-zinc-400">Nie masz żadnych nadchodzących zmian w opublikowanym grafiku.</p>
         ) : (
@@ -128,6 +138,10 @@ export default async function SwapsPage() {
             const iAmTarget = r.target_employee_id === employee.id;
             const iAmRequester = r.requester_employee_id === employee.id;
             const bigDelta = r.hour_delta !== null && Math.abs(Number(r.hour_delta)) > 2;
+            const overSwapLimit =
+              r.status === "pending" &&
+              (countAcceptedSwapsThisMonth(requests ?? [], r.requester_employee_id) >= SOFT_SWAP_LIMIT_PER_MONTH ||
+                countAcceptedSwapsThisMonth(requests ?? [], r.target_employee_id ?? "") >= SOFT_SWAP_LIMIT_PER_MONTH);
             return (
               <li key={r.id} className="rounded-lg border border-zinc-200 p-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -155,6 +169,12 @@ export default async function SwapsPage() {
                   <p className="mt-1 text-xs text-amber-600">
                     Uwaga: różnica godzin {Number(r.hour_delta) > 0 ? "+" : ""}
                     {r.hour_delta}h — większa niż zalecane ±2h.
+                  </p>
+                )}
+                {overSwapLimit && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Uwaga: któraś ze stron ma już {SOFT_SWAP_LIMIT_PER_MONTH}+ zaakceptowane zamiany w
+                    tym miesiącu.
                   </p>
                 )}
                 {r.status === "pending" && (

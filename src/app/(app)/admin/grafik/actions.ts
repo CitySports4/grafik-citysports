@@ -5,7 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { generateMonthStructure, runDraftGenerator } from "@/lib/schedule-generator";
-import { buildAvailabilityMap, isHardUnavailable, type HardConstraint } from "@/lib/unavailability";
+import { buildAvailabilityMap, applyPlannedAbsences, isHardUnavailable, type HardConstraint } from "@/lib/unavailability";
 
 // Poniższe akcje wywoływane są bezpośrednio z klienta (nie przez
 // `<form action={...}>`) i celowo NIE wołają revalidatePath: komponent
@@ -195,6 +195,14 @@ export async function assignEventParticipantsToShifts(
     availabilityEntries = data ?? [];
   }
   const availabilityMap = buildAvailabilityMap(availabilityEntries, employeeIdBySubmission);
+
+  const { data: plannedAbsences } = await supabase
+    .from("planned_absence")
+    .select("employee_id, start_date, end_date")
+    .in("employee_id", participantIds)
+    .lte("start_date", day.date)
+    .gte("end_date", day.date);
+  applyPlannedAbsences(availabilityMap, plannedAbsences ?? []);
 
   const remaining = [...participantIds];
   const assignments: { shiftId: string; employeeId: string }[] = [];

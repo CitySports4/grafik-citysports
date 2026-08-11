@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -6,6 +7,8 @@ import { ConfirmButton } from "@/components/ConfirmButton";
 import { ColorDot } from "@/components/ColorDot";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
+import { toDateKey } from "@/lib/schedule-month";
+import { ROLE_LABELS } from "@/lib/session";
 import {
   updateEmployee,
   clearEmployeePassword,
@@ -15,6 +18,7 @@ import {
   addRecurringConstraint,
   deleteRecurringConstraint,
 } from "../actions";
+import { deletePlannedAbsence } from "../../../nieobecnosci/actions";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -32,7 +36,8 @@ export default async function EmployeeDetailPage({
   const { data: employee } = await supabase.from("employee").select("*").eq("id", id).single();
   if (!employee) notFound();
 
-  const [{ data: classSchedule }, { data: constraints }] = await Promise.all([
+  const today = toDateKey(new Date());
+  const [{ data: classSchedule }, { data: constraints }, { data: plannedAbsences }] = await Promise.all([
     supabase
       .from("employee_class_schedule")
       .select("id, weekday, start_time, end_time, note")
@@ -43,6 +48,12 @@ export default async function EmployeeDetailPage({
       .select("id, weekday, start_time, end_time, type, note")
       .eq("employee_id", id)
       .order("weekday"),
+    supabase
+      .from("planned_absence")
+      .select("id, start_date, end_date, note")
+      .eq("employee_id", id)
+      .gte("end_date", today)
+      .order("start_date"),
   ]);
 
   return (
@@ -70,8 +81,11 @@ export default async function EmployeeDetailPage({
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Rola</label>
             <select name="role" defaultValue={employee.role} className={INPUT}>
-              <option value="employee">Pracownik</option>
-              <option value="admin">Administrator</option>
+              {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -101,18 +115,6 @@ export default async function EmployeeDetailPage({
               Konto aktywne
             </label>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="can_clean"
-              name="can_clean"
-              defaultChecked={employee.can_clean}
-              className="h-4 w-4"
-            />
-            <label htmlFor="can_clean" className="text-sm text-zinc-900">
-              Może sprzątać (sobotnie sprzątanie)
-            </label>
-          </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Minimalna liczba godzin / mies.</label>
             <input
@@ -130,6 +132,16 @@ export default async function EmployeeDetailPage({
               step="0.5"
               name="target_hours_month"
               defaultValue={employee.target_hours_month}
+              className={INPUT}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Stawka godzinowa (PLN/h)</label>
+            <input
+              type="number"
+              step="0.01"
+              name="hourly_rate"
+              defaultValue={employee.hourly_rate}
               className={INPUT}
             />
           </div>
@@ -285,6 +297,44 @@ export default async function EmployeeDetailPage({
             Dodaj regułę
           </SubmitButton>
         </form>
+      </Card>
+
+      <Card>
+        <h2 className="mb-1 font-semibold text-zinc-900">Sprzątanie</h2>
+        <p className="text-sm text-zinc-500">
+          Którymi strefami sprzątania może się zajmować — ustawiane w{" "}
+          <Link href="/admin/sprzatanie" className="font-semibold text-brand-orange hover:underline">
+            Konfiguracja sprzątania → Kompetencje
+          </Link>
+          , nie tutaj.
+        </p>
+      </Card>
+
+      <Card>
+        <h2 className="mb-1 font-semibold text-zinc-900">Planowane nieobecności</h2>
+        <p className="mb-3 text-sm text-zinc-500">
+          Zgłaszane samodzielnie przez pracownika (do 6 miesięcy wyprzedzenia) — traktowane jak
+          &quot;cały dzień niedostępny&quot; przy układaniu grafiku.
+        </p>
+        <ul className="flex flex-col gap-1.5">
+          {plannedAbsences?.map((a) => (
+            <li key={a.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+              <span>
+                {new Date(a.start_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
+                {" – "}
+                {new Date(a.end_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short", year: "numeric" })}
+                {a.note && <span className="text-zinc-500"> ({a.note})</span>}
+              </span>
+              <form action={deletePlannedAbsence}>
+                <input type="hidden" name="id" value={a.id} />
+                <ConfirmButton confirmText="Usunąć tę nieobecność?" className={DANGER_BTN}>
+                  Usuń
+                </ConfirmButton>
+              </form>
+            </li>
+          ))}
+          {plannedAbsences?.length === 0 && <li className="text-sm text-zinc-400">Brak zgłoszonych nieobecności.</li>}
+        </ul>
       </Card>
 
       <Card className="border-red-200">

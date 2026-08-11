@@ -1,0 +1,7 @@
+{
+  "crons": [
+    { "path": "/api/cron/hour-anomalies", "schedule": "0 2 * * *" },
+    { "path": "/api/cron/cleaning-backlog", "schedule": "0 3 * * 1" },
+    { "path": "/api/cron/weekly-summary", "schedule": "0 5 * * 1" }
+  ]
+}

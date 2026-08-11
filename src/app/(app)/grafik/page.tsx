@@ -6,14 +6,7 @@ import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
-
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  liga_open: "Liga open",
-  liga_deblowa: "Liga deblowa",
-  sprzatanie: "Sprzątanie",
-  warsztaty: "Warsztaty",
-  custom: "Inne",
-};
+import { EVENT_TYPE_LABELS } from "@/lib/event-types";
 
 export default async function MyGrafikPage({
   searchParams,

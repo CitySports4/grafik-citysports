@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { dailyEffectiveHours, effectiveShiftHours, hoursBetween, overlapMinutes, timeToMinutes } from "@/lib/time";
-import { daysInMonth, toDateKey } from "@/lib/schedule-month";
+import { dailyEffectiveHours, effectiveShiftHours, hoursBetween, minutesToTime, overlapMinutes, timeToMinutes } from "@/lib/time";
+import { daysInMonth, mondayOfWeek, toDateKey } from "@/lib/schedule-month";
+import { applyPlannedAbsences } from "@/lib/unavailability";
 
 // Tworzy dni i zmiany miesiąca na podstawie szablonu (shift_template) —
 // wywoływane raz, gdy admin zaczyna układać grafik na dany miesiąc.
@@ -75,22 +76,38 @@ type Employee = {
   id: string;
   name: string;
   is_instructor: boolean;
-  can_clean: boolean;
   min_hours_month: number;
   target_hours_month: number;
 };
 
 type ClassEntry = { weekday: number; start_time: string; end_time: string };
 
+// Ile dni z rzędu PRZED danym dniem (bez przerwy, wyłącznie w obrębie tego
+// samego miesiąca — nie widzimy poprzedniego) dana osoba już przepracowała.
+// Używane, żeby nikt nie pracował więcej niż 7 dni pod rząd.
+function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>): number {
+  let count = 0;
+  const cursor = new Date(dateKey + "T00:00:00");
+  while (true) {
+    cursor.setDate(cursor.getDate() - 1);
+    const key = toDateKey(cursor);
+    if (!workedDates.has(key)) break;
+    count++;
+  }
+  return count;
+}
+
 // Heurystyczny generator wersji roboczej: wypełnia tylko puste, otwarte
 // zmiany — nie nadpisuje ręcznych przypisań.
 //
-// Zasada nadrzędna: jedna osoba = jedna zmiana danego dnia (stąd w ogóle są
-// 3 zmiany, żeby dzień rozkładał się na 3 różne osoby, a wieczorem 14–21 i
-// 17–22 nakładają się właśnie po to, by w godzinach 17–21 były 2 różne
-// osoby). Jedyny wyjątek: pracownik z ustawioną cykliczną preferencją
-// "cały dzień, niedziela" może pokryć więcej niż jedną zmianę w niedzielę,
-// gdy jest tego dnia liga open (typowo szef klubu).
+// Zasada nadrzędna: jedna osoba = jedna zmiana danego dnia, ALE tylko
+// pon-czw (stąd w ogóle są tam 3 zmiany, żeby dzień rozkładał się na 3 różne
+// osoby, a wieczorem 14–21 i 17–22 nakładają się właśnie po to, by w
+// godzinach 17–21 były 2 różne osoby). W piątek/sobotę/niedzielę ta sama
+// osoba MOŻE pokryć więcej niż jedną zmianę (np. Krzysztof 2x w niedzielę) —
+// jedyne ograniczenie to realna dostępność. Osobny wyjątek dla pon-czw: gdy
+// na cały dzień dostępne są tylko 2 osoby, dzień dzielony jest na pół (patrz
+// blok "split-shift" niżej) i jedna z tych 2 osób legalnie dostaje 2 zmiany.
 //
 // Kolejność wyboru: najpierw dobija każdego do JEGO minimum (im większy
 // niedobór, tym wyższy priorytet), potem wyrównuje względem CELU
@@ -111,8 +128,14 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
 
   const { data: employees } = await supabase
     .from("employee")
-    .select("id, name, is_instructor, can_clean, min_hours_month, target_hours_month")
+    .select("id, name, is_instructor, min_hours_month, target_hours_month")
     .eq("active", true);
+
+  // Kto może sprzątać — zjednocone ze strefami sprzątania: kompetentny do
+  // sobotniego sprzątania, jeśli ma przypisaną choć jedną strefę (stary
+  // can_clean nie jest już źródłem prawdy, patrz migracja 0009).
+  const { data: cleaningZoneRows } = await supabase.from("employee_cleaning_zone").select("employee_id");
+  const canCleanByEmployee = new Set((cleaningZoneRows ?? []).map((r) => r.employee_id));
 
   const { data: constraints } = await supabase
     .from("weekly_recurring_constraint")
@@ -150,16 +173,24 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
     else if (e.slot_index !== null) entry.slots.add(e.slot_index);
   }
 
+  // Zaplanowane nieobecności/urlopy (osobny mechanizm od comiesięcznej
+  // dyspozycyjności) — nanieś jako "cały dzień niedostępny" na tę samą mapę.
+  const monthDates = (days ?? []).map((d) => d.date).sort();
+  if (monthDates.length > 0) {
+    const { data: plannedAbsences } = await supabase
+      .from("planned_absence")
+      .select("employee_id, start_date, end_date")
+      .lte("start_date", monthDates[monthDates.length - 1])
+      .gte("end_date", monthDates[0]);
+    applyPlannedAbsences(unavailability, plannedAbsences ?? []);
+  }
+
   const hardUnavailableByEmployee = new Map<string, { weekday: number; start: string | null; end: string | null }[]>();
   const preferredByEmployee = new Map<string, { weekday: number; start: string | null; end: string | null }[]>();
-  const sundayAllDayException = new Set<string>();
   for (const c of constraints ?? []) {
     const target = c.type === "unavailable" ? hardUnavailableByEmployee : preferredByEmployee;
     if (!target.has(c.employee_id)) target.set(c.employee_id, []);
     target.get(c.employee_id)!.push({ weekday: c.weekday, start: c.start_time, end: c.end_time });
-    if (c.type === "preferred" && c.weekday === 0 && !c.start_time && !c.end_time) {
-      sundayAllDayException.add(c.employee_id);
-    }
   }
 
   const classByEmployee = new Map<string, ClassEntry[]>();
@@ -183,7 +214,6 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
   // nie psuło dalszego wyrównywania.
   const shiftsByEmployeeDate = new Map<string, Map<string, { start_time: string; end_time: string }[]>>();
   const weekdayByDate = new Map<string, number>();
-  const ligaOpenDates = new Set<string>();
   for (const day of days ?? []) {
     weekdayByDate.set(day.date, day.weekday);
     for (const shift of day.schedule_shift ?? []) {
@@ -195,7 +225,6 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       byDate.get(day.date)!.push({ start_time: shift.start_time, end_time: shift.end_time });
     }
     for (const ev of day.schedule_event ?? []) {
-      if (ev.type === "liga_open") ligaOpenDates.add(day.date);
       if (ev.end_time) {
         for (const empId of ev.participant_employee_ids ?? []) {
           const h = hoursBetween(ev.start_time ?? "00:00", ev.end_time);
@@ -213,20 +242,42 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
     }
   }
 
-  const updates: { id: string; employee_id: string }[] = [];
+  const updates: { id: string; employee_id: string; start_time?: string; end_time?: string }[] = [];
   const sortedDays = (days ?? []).slice().sort((a, b) => a.date.localeCompare(b.date));
+
+  // Grupowanie dni miesiąca w tygodnie (poniedziałek-niedziela) — do
+  // pilnowania, żeby każdy miał choć 1 dzień wolny w tygodniu. Dla
+  // niepełnego tygodnia na początku/końcu miesiąca (np. wrzesień 2026
+  // zaczyna się we wtorek) liczymy tylko dni faktycznie obecne w tym
+  // miesiącu — i tak wymuszamy wśród nich min. 1 dzień wolny.
+  const daysInWeekBucket = new Map<string, Set<string>>();
+  for (const day of sortedDays) {
+    const wk = mondayOfWeek(day.date);
+    if (!daysInWeekBucket.has(wk)) daysInWeekBucket.set(wk, new Set());
+    daysInWeekBucket.get(wk)!.add(day.date);
+  }
 
   for (const day of sortedDays) {
     const weekday = day.weekday;
-    const shiftsForDay = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
-    const isSundayLeagueDay = weekday === 0 && ligaOpenDates.has(day.date);
+    // "Jedna osoba = jedna zmiana dziennie" obowiązuje tylko pon-czw (gdzie
+    // 3 zmiany mają rozkładać dzień na 3 różne osoby). W piątek/sobotę/
+    // niedzielę dopuszczamy, żeby ta sama osoba wzięła więcej niż jedną
+    // zmianę (np. Krzysztof 2x w niedzielę) — jedyne ograniczenie to
+    // faktyczna dostępność.
+    const blockDoubleShift = weekday >= 1 && weekday <= 4;
+    const weekKey = mondayOfWeek(day.date);
+    const weekCapacity = Math.max(1, (daysInWeekBucket.get(weekKey)?.size ?? 1) - 1);
 
-    for (const shift of shiftsForDay) {
-      if (shift.employee_id || shift.is_closed) continue;
-
-      const candidates = (employees ?? []).filter((emp) => {
+    const eligibleFor = (shift: { start_time: string; end_time: string; slot_index: number }) =>
+      (employees ?? []).filter((emp) => {
         const alreadyUsedToday = usedTodayByDate.get(day.date)?.has(emp.id) ?? false;
-        if (alreadyUsedToday && !(isSundayLeagueDay && sundayAllDayException.has(emp.id))) return false;
+        if (alreadyUsedToday && blockDoubleShift) return false;
+
+        // Każdy ma mieć choć 1 dzień wolny w tygodniu — jeśli już pracował
+        // tyle dni w tym tygodniu, ile wolno (tydzień - 1), dziś nie może
+        // dostać kolejnej zmiany.
+        const workedThisWeek = [...(daysAssigned.get(emp.id) ?? [])].filter((d) => mondayOfWeek(d) === weekKey).length;
+        if (workedThisWeek >= weekCapacity) return false;
 
         const hardRules = hardUnavailableByEmployee.get(emp.id) ?? [];
         for (const r of hardRules) {
@@ -240,38 +291,151 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
         return true;
       });
 
-      if (candidates.length === 0) continue;
+    const hasClassConflict = (emp: Employee, shift: { start_time: string; end_time: string }) => {
+      const classes = classByEmployee.get(emp.id) ?? [];
+      return classes.some((c) => c.weekday === weekday && overlapMinutes(shift.start_time, shift.end_time, c.start_time, c.end_time) > 60);
+    };
 
-      const penalty = (emp: Employee): number => {
-        let score = 0;
-        const classes = classByEmployee.get(emp.id) ?? [];
-        for (const c of classes) {
-          if (c.weekday !== weekday) continue;
-          if (overlapMinutes(shift.start_time, shift.end_time, c.start_time, c.end_time) > 60) {
-            score += 1000;
-          }
-        }
-        const preferred = preferredByEmployee.get(emp.id) ?? [];
-        for (const p of preferred) {
-          if (p.weekday !== weekday) continue;
-          if (!p.start || !p.end || overlapMinutes(shift.start_time, shift.end_time, p.start, p.end) > 0) {
-            score -= 50;
-          }
-        }
-        const hrs = hoursAssigned.get(emp.id) ?? 0;
-        // Priorytet nr 1: kto najbardziej brakuje do WŁASNEGO minimum.
-        const deficitToMin = Math.max(0, emp.min_hours_month - hrs);
-        score -= deficitToMin * 10;
-        // Priorytet nr 2: wyrównanie względem WŁASNEGO celu, proporcjonalnie
-        // (inaczej cel 160h i cel 80h nie są porównywalne w godzinach).
-        const targetRatio = emp.target_hours_month > 0 ? hrs / emp.target_hours_month : hrs > 0 ? 1 : 0;
-        score += targetRatio * 60;
-        score += (daysAssigned.get(emp.id)?.size ?? 0) * 1;
-        return score;
-      };
+    // Zmiany dnia przetwarzamy zaczynając od NAJBARDZIEJ "trudnej" (tej, na
+    // którą najwięcej dostępnych osób ma konflikt z zajęciami) — inaczej
+    // "łatwe" zmiany zabierają wszystkich elastycznych ludzi jako pierwsze
+    // (bo mają dla nich najniższą karę), a instruktor z konfliktem zostaje
+    // "ostatnim wyborem" wpychanym właśnie na tę trudną zmianę, mimo że jest
+    // najlepiej dopasowany do INNEJ zmiany tego samego dnia.
+    const openShiftsForDay = (day.schedule_shift ?? []).filter((s) => !s.employee_id && !s.is_closed);
 
-      candidates.sort((a, b) => penalty(a) - penalty(b));
-      const chosen = candidates[0];
+    // Pon-czw, dzień z 3 pustymi zmianami, gdzie na CAŁY dzień dostępne są
+    // tylko 2 osoby: normalnie zabrakłoby trzeciej osoby, więc dzielimy
+    // dzień na pół — jedna osoba robi zmianę z przerwą (otwarcie + domknięcie
+    // na koniec), druga jedną ciągłą w środku — tak, żeby w oknie, gdzie
+    // standardowo nakładają się zmiana 2 i 3 (np. 17-21), obie były na
+    // miejscu, a łączne godziny wyszły równe (patrz obliczenie `handoff`
+    // poniżej: rozwiązanie równania łączna(A) = łączna(B)).
+    if (weekday >= 1 && weekday <= 4 && openShiftsForDay.length === 3) {
+      const sortedShifts = openShiftsForDay
+        .slice()
+        .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
+      const [first, second, third] = sortedShifts;
+      const open = timeToMinutes(first.start_time);
+      const close = Math.max(
+        timeToMinutes(first.end_time),
+        timeToMinutes(second.end_time),
+        timeToMinutes(third.end_time)
+      );
+      const overlapStart = Math.max(timeToMinutes(second.start_time), timeToMinutes(third.start_time));
+      const overlapEnd = Math.min(timeToMinutes(second.end_time), timeToMinutes(third.end_time));
+
+      const fullyEligible =
+        overlapEnd > overlapStart
+          ? (employees ?? []).filter((emp) => sortedShifts.every((s) => eligibleFor(s).some((e) => e.id === emp.id)))
+          : [];
+
+      if (fullyEligible.length === 2) {
+        let handoff = Math.round((open + overlapEnd + overlapStart - close) / 2 / 15) * 15;
+        handoff = Math.max(open + 15, Math.min(overlapStart - 15, handoff));
+
+        if (handoff > open && handoff < overlapStart) {
+          const conflictMinutes = (emp: Employee, segStart: number, segEnd: number) => {
+            const classes = classByEmployee.get(emp.id) ?? [];
+            return classes
+              .filter((c) => c.weekday === weekday)
+              .reduce((sum, c) => sum + overlapMinutes(minutesToTime(segStart), minutesToTime(segEnd), c.start_time, c.end_time), 0);
+          };
+
+          const [empX, empY] = fullyEligible;
+          // Sprawdź obie możliwe role (kto robi "z przerwą", kto "ciągłą") i
+          // wybierz tę z mniejszym konfliktem z zajęciami instruktora.
+          const costXsplit =
+            conflictMinutes(empX, open, handoff) + conflictMinutes(empX, overlapStart, close) + conflictMinutes(empY, handoff, overlapEnd);
+          const costYsplit =
+            conflictMinutes(empY, open, handoff) + conflictMinutes(empY, overlapStart, close) + conflictMinutes(empX, handoff, overlapEnd);
+          const [splitEmp, midEmp] = costXsplit <= costYsplit ? [empX, empY] : [empY, empX];
+
+          const segments = [
+            { shift: first, start: open, end: handoff, employee: splitEmp },
+            { shift: second, start: handoff, end: overlapEnd, employee: midEmp },
+            { shift: third, start: overlapStart, end: close, employee: splitEmp },
+          ];
+
+          for (const seg of segments) {
+            const startTime = minutesToTime(seg.start);
+            const endTime = minutesToTime(seg.end);
+            const h = effectiveShiftHours(startTime, endTime, weekday, classByEmployee.get(seg.employee.id) ?? []);
+            hoursAssigned.set(seg.employee.id, (hoursAssigned.get(seg.employee.id) ?? 0) + h);
+            updates.push({ id: seg.shift.id, employee_id: seg.employee.id, start_time: startTime, end_time: endTime });
+          }
+          for (const emp of [splitEmp, midEmp]) {
+            if (!daysAssigned.has(emp.id)) daysAssigned.set(emp.id, new Set());
+            daysAssigned.get(emp.id)!.add(day.date);
+            markUsedToday(day.date, emp.id);
+          }
+          continue;
+        }
+      }
+    }
+
+    const penalty = (emp: Employee, shift: { start_time: string; end_time: string }): number => {
+      let score = 0;
+      if (hasClassConflict(emp, shift)) score += 1000;
+      const preferred = preferredByEmployee.get(emp.id) ?? [];
+      for (const p of preferred) {
+        if (p.weekday !== weekday) continue;
+        if (!p.start || !p.end || overlapMinutes(shift.start_time, shift.end_time, p.start, p.end) > 0) {
+          score -= 50;
+        }
+      }
+      const hrs = hoursAssigned.get(emp.id) ?? 0;
+      // Priorytet nr 1: kto najbardziej brakuje do WŁASNEGO minimum.
+      const deficitToMin = Math.max(0, emp.min_hours_month - hrs);
+      score -= deficitToMin * 10;
+      // Priorytet nr 2: wyrównanie względem WŁASNEGO celu, proporcjonalnie
+      // (inaczej cel 160h i cel 80h nie są porównywalne w godzinach).
+      const targetRatio = emp.target_hours_month > 0 ? hrs / emp.target_hours_month : hrs > 0 ? 1 : 0;
+      score += targetRatio * 60;
+      score += (daysAssigned.get(emp.id)?.size ?? 0) * 1;
+      // Im dłuższa passa dni z rzędu bez przerwy, tym mniej chętnie
+      // dokładamy kolejny dzień — nawet zanim trafi w twardy limit 7 dni
+      // (patrz pętla niżej), niech ktoś świeższy ma pierwszeństwo.
+      score += consecutiveDaysBefore(day.date, daysAssigned.get(emp.id) ?? new Set()) * 5;
+      return score;
+    };
+
+    // Zamiast przetwarzać zmiany w ustalonej kolejności (co pozwalało, żeby
+    // dwie osoby z konfliktem na zmiany 2/3 (np. Krzysztof i Justyna) obie
+    // "przegrały" walkę o poranną zmianę, bo trafiały tam dopiero na końcu,
+    // z resztek), przy każdym kroku wybieramy zmianę o NAJWIĘKSZYM "żalu" —
+    // czyli tę, gdzie różnica między najlepszym a drugim kandydatem jest
+    // największa. Dzięki temu silna, jednoznaczna preferencja (jak "Krzysztof
+    // = poranki") zostaje przypieczętowana najpierw, zanim zniknie w
+    // przetasowaniu przy przydzielaniu trudniejszych zmian.
+    const remainingShifts = openShiftsForDay.slice();
+    while (remainingShifts.length > 0) {
+      let bestIndex = -1;
+      let bestRegret = -Infinity;
+      let bestCandidates: Employee[] = [];
+
+      for (let i = 0; i < remainingShifts.length; i++) {
+        const shift = remainingShifts[i];
+        const eligible = eligibleFor(shift);
+        // Nikt nie powinien pracować więcej niż 7 dni z rzędu bez przerwy —
+        // ale to ma się zdarzać jak najrzadziej, nie blokować grafiku
+        // całkowicie: jeśli po odrzuceniu takich osób nie zostaje NIKT
+        // (naprawdę nie ma wyboru), cofamy się do pełnej listy.
+        const rested = eligible.filter((emp) => consecutiveDaysBefore(day.date, daysAssigned.get(emp.id) ?? new Set()) < 7);
+        const candidates = (rested.length > 0 ? rested : eligible).slice().sort((a, b) => penalty(a, shift) - penalty(b, shift));
+        if (candidates.length === 0) continue;
+        const regret = candidates.length >= 2 ? penalty(candidates[1], shift) - penalty(candidates[0], shift) : Infinity;
+        if (regret > bestRegret) {
+          bestRegret = regret;
+          bestIndex = i;
+          bestCandidates = candidates;
+        }
+      }
+
+      if (bestIndex === -1) break;
+
+      const shift = remainingShifts[bestIndex];
+      const chosen = bestCandidates[0];
 
       const h = effectiveShiftHours(shift.start_time, shift.end_time, weekday, classByEmployee.get(chosen.id) ?? []);
       hoursAssigned.set(chosen.id, (hoursAssigned.get(chosen.id) ?? 0) + h);
@@ -280,16 +444,21 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       markUsedToday(day.date, chosen.id);
 
       updates.push({ id: shift.id, employee_id: chosen.id });
+      remainingShifts.splice(bestIndex, 1);
     }
   }
 
   for (const u of updates) {
-    await supabase.from("schedule_shift").update({ employee_id: u.employee_id }).eq("id", u.id);
+    const patch: { employee_id: string; start_time?: string; end_time?: string } = { employee_id: u.employee_id };
+    if (u.start_time) patch.start_time = u.start_time;
+    if (u.end_time) patch.end_time = u.end_time;
+    await supabase.from("schedule_shift").update(patch).eq("id", u.id);
   }
 
-  // Sobotnie sprzątanie — dobierz 2 osoby spośród tych, które mogą sprzątać
-  // (can_clean), nie są tego dnia całkowicie niedostępne, wg tych samych
-  // priorytetów (niedobór do minimum, potem proporcja do celu).
+  // Sobotnie sprzątanie — dobierz 2 osoby spośród tych, które mają
+  // przypisaną choć jedną strefę sprzątania, nie są tego dnia całkowicie
+  // niedostępne, wg tych samych priorytetów (niedobór do minimum, potem
+  // proporcja do celu).
   const cleaningUpdates: { eventId: string; participantIds: string[] }[] = [];
   for (const day of sortedDays) {
     if (day.weekday !== 6) continue;
@@ -299,7 +468,7 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       if (existingParticipants.length >= 2) continue;
 
       const eligible = (employees ?? []).filter((emp) => {
-        if (!emp.can_clean) return false;
+        if (!canCleanByEmployee.has(emp.id)) return false;
         if (existingParticipants.includes(emp.id)) return false;
         const byDate = unavailability.get(emp.id)?.get(day.date);
         if (byDate?.wholeDay) return false;

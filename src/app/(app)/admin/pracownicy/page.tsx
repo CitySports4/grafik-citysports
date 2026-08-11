@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createEmployee } from "./actions";
+import { ROLE_LABELS, type EmployeeRole } from "@/lib/session";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -10,10 +11,14 @@ const LABEL = "text-sm font-semibold text-zinc-900";
 
 export default async function EmployeesPage() {
   const supabase = createServerSupabaseClient();
-  const { data: employees } = await supabase
-    .from("employee")
-    .select("id, name, phone, role, color_hex, is_instructor, can_clean, min_hours_month, target_hours_month, active, password_hash")
-    .order("name");
+  const [{ data: employees }, { data: cleaningZoneRows }] = await Promise.all([
+    supabase
+      .from("employee")
+      .select("id, name, phone, role, color_hex, is_instructor, min_hours_month, target_hours_month, active, password_hash")
+      .order("name"),
+    supabase.from("employee_cleaning_zone").select("employee_id"),
+  ]);
+  const canCleanIds = new Set((cleaningZoneRows ?? []).map((r) => r.employee_id));
 
   return (
     <div className="flex flex-col gap-6">
@@ -38,9 +43,12 @@ export default async function EmployeesPage() {
           </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Rola</label>
-            <select name="role" className={INPUT} defaultValue="employee">
-              <option value="employee">Pracownik</option>
-              <option value="admin">Administrator</option>
+            <select name="role" className={INPUT} defaultValue="recepcja">
+              {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -53,12 +61,6 @@ export default async function EmployeesPage() {
               Jest instruktorem (ma zajęcia)
             </label>
           </div>
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="can_clean" name="can_clean" defaultChecked className="h-4 w-4" />
-            <label htmlFor="can_clean" className="text-sm text-zinc-900">
-              Może sprzątać (sobotnie sprzątanie)
-            </label>
-          </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Minimalna liczba godzin / mies.</label>
             <input type="number" step="0.5" name="min_hours_month" defaultValue={0} className={INPUT} />
@@ -66,6 +68,10 @@ export default async function EmployeesPage() {
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Docelowa liczba godzin / mies.</label>
             <input type="number" step="0.5" name="target_hours_month" defaultValue={0} className={INPUT} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Stawka godzinowa (PLN/h)</label>
+            <input type="number" step="0.01" name="hourly_rate" defaultValue={0} className={INPUT} />
           </div>
           <div className="sm:col-span-2">
             <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
@@ -83,7 +89,9 @@ export default async function EmployeesPage() {
               <th className="px-4 py-2.5">Telefon</th>
               <th className="px-4 py-2.5">Rola</th>
               <th className="px-4 py-2.5">Instruktor</th>
-              <th className="px-4 py-2.5">Sprząta</th>
+              <th className="px-4 py-2.5" title="Ustawiane w Konfiguracja sprzątania → Kompetencje">
+                Sprząta
+              </th>
               <th className="px-4 py-2.5">Min / Cel h</th>
               <th className="px-4 py-2.5">Status</th>
               <th className="px-4 py-2.5">Hasło</th>
@@ -99,9 +107,9 @@ export default async function EmployeesPage() {
                   </Link>
                 </td>
                 <td className="px-4 py-2.5 text-zinc-600">{e.phone}</td>
-                <td className="px-4 py-2.5 text-zinc-600">{e.role === "admin" ? "Administrator" : "Pracownik"}</td>
+                <td className="px-4 py-2.5 text-zinc-600">{ROLE_LABELS[e.role as EmployeeRole] ?? e.role}</td>
                 <td className="px-4 py-2.5 text-zinc-600">{e.is_instructor ? "Tak" : "—"}</td>
-                <td className="px-4 py-2.5 text-zinc-600">{e.can_clean ? "Tak" : "—"}</td>
+                <td className="px-4 py-2.5 text-zinc-600">{canCleanIds.has(e.id) ? "Tak" : "—"}</td>
                 <td className="px-4 py-2.5 text-zinc-600">
                   {e.min_hours_month} / {e.target_hours_month}
                 </td>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { getOrCreateScheduleMonth, nextMonth, monthLabel } from "@/lib/schedule-month";
-import { buildAvailabilityMap, isHardUnavailable, type HardConstraint } from "@/lib/unavailability";
+import { getOrCreateScheduleMonth, nextMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
+import { buildAvailabilityMap, applyPlannedAbsences, isHardUnavailable, type HardConstraint } from "@/lib/unavailability";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { generateStructure } from "./actions";
@@ -21,11 +21,18 @@ export default async function ScheduleBuilderPage({
   const scheduleMonth = await getOrCreateScheduleMonth(year, month);
   const supabase = createServerSupabaseClient();
 
-  const { data: employees } = await supabase
-    .from("employee")
-    .select("id, name, color_hex, can_clean, min_hours_month, target_hours_month")
-    .eq("active", true)
-    .order("name");
+  const [{ data: rawEmployees }, { data: cleaningZoneRows }] = await Promise.all([
+    supabase
+      .from("employee")
+      .select("id, name, color_hex, min_hours_month, target_hours_month")
+      .eq("active", true)
+      .order("name"),
+    supabase.from("employee_cleaning_zone").select("employee_id"),
+  ]);
+  // Może sprzątać = ma przypisaną choć jedną strefę sprzątania (zjednocone
+  // ze starym przełącznikiem can_clean, patrz migracja 0009).
+  const canCleanIds = new Set((cleaningZoneRows ?? []).map((r) => r.employee_id));
+  const employees = (rawEmployees ?? []).map((e) => ({ ...e, can_clean: canCleanIds.has(e.id) }));
 
   const { data: classSchedules } = await supabase
     .from("employee_class_schedule")
@@ -59,16 +66,23 @@ export default async function ScheduleBuilderPage({
       .select("employee_id, weekday, start_time, end_time, type");
     const constraints = (allConstraints ?? []).filter((c) => c.type === "unavailable");
 
-    // Jedyny wyjątek od reguły "1 osoba = 1 zmiana dziennie": pracownik z
-    // cykliczną preferencją "cały dzień, niedziela" może pokryć więcej niż
-    // jedną zmianę w niedzielę z ligą open (typowo szef klubu).
-    const sundayAllDayPreferred = (allConstraints ?? [])
-      .filter((c) => c.type === "preferred" && c.weekday === 0 && !c.start_time && !c.end_time)
-      .map((c) => c.employee_id);
+    // Reguła "1 osoba = 1 zmiana dziennie" w ScheduleTable obowiązuje tylko
+    // pon-czw — piątek/sobota/niedziela są tam zawsze wyjęte spod blokady.
+    // Ten wyjątek dotyczy więc tylko pon-czw: jeśli dany pracownik ma już
+    // przypisaną więcej niż jedną zmianę tego dnia (wygenerowany podział dnia
+    // przy tylko 2 dostępnych osobach — patrz schedule-generator.ts), pozwól
+    // mu pozostać wybieralnym na liście również dla innych jego zmian tego
+    // dnia, zamiast blokować to jako "już pracuje gdzie indziej".
     for (const day of days ?? []) {
-      if (day.weekday !== 0) continue;
-      const hasLigaOpen = (day.schedule_event ?? []).some((ev) => ev.type === "liga_open");
-      if (hasLigaOpen) sameDayExceptionByDate[day.date] = sundayAllDayPreferred;
+      const shiftCountByEmployee = new Map<string, number>();
+      for (const shift of day.schedule_shift ?? []) {
+        if (!shift.employee_id) continue;
+        shiftCountByEmployee.set(shift.employee_id, (shiftCountByEmployee.get(shift.employee_id) ?? 0) + 1);
+      }
+      const doubledUpIds = [...shiftCountByEmployee.entries()].filter(([, count]) => count > 1).map(([id]) => id);
+      if (doubledUpIds.length > 0) {
+        sameDayExceptionByDate[day.date] = [...(sameDayExceptionByDate[day.date] ?? []), ...doubledUpIds];
+      }
     }
 
     const hardConstraintsByEmployee = new Map<string, HardConstraint[]>();
@@ -93,6 +107,14 @@ export default async function ScheduleBuilderPage({
       availabilityEntries = data ?? [];
     }
     const availabilityMap = buildAvailabilityMap(availabilityEntries, employeeIdBySubmission);
+
+    const monthDates = daysInMonth(year, month).map(toDateKey);
+    const { data: plannedAbsences } = await supabase
+      .from("planned_absence")
+      .select("employee_id, start_date, end_date")
+      .lte("start_date", monthDates[monthDates.length - 1])
+      .gte("end_date", monthDates[0]);
+    applyPlannedAbsences(availabilityMap, plannedAbsences ?? []);
 
     for (const day of days ?? []) {
       const wholeDayIds: string[] = [];
@@ -143,6 +165,15 @@ export default async function ScheduleBuilderPage({
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
+          {hasStructure && (
+            <Link
+              href={`/print/grafik?year=${year}&month=${month}`}
+              target="_blank"
+              className="rounded-lg bg-zinc-100 px-3 py-1.5 font-semibold text-zinc-700 hover:bg-zinc-200"
+            >
+              Drukuj / PDF
+            </Link>
+          )}
           <Link href={`/admin/grafik${prevLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
             ← poprzedni
           </Link>

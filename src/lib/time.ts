@@ -9,6 +9,12 @@ export function timeToMinutes(t: string): number {
   return h * 60 + (m || 0);
 }
 
+export function minutesToTime(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 export function hoursBetween(start: string, end: string): number {
   const diff = timeToMinutes(end) - timeToMinutes(start);
   return Math.round((diff / 60) * 100) / 100;

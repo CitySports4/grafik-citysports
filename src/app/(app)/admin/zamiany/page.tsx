@@ -4,6 +4,7 @@ import { ConfirmButton } from "@/components/ConfirmButton";
 import { respondSwapRequest, cancelSwapRequest } from "../../zamiany/actions";
 import { formatHm } from "@/lib/time";
 import { ColorDot } from "@/components/ColorDot";
+import { countAcceptedSwapsThisMonth, SOFT_SWAP_LIMIT_PER_MONTH } from "@/lib/swap-limits";
 
 const DANGER_BTN = "rounded-lg px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50";
 const STATUS_LABELS: Record<string, string> = {
@@ -56,6 +57,10 @@ export default async function AdminSwapsPage() {
             const mine = shiftDetails.get(r.requester_shift_id);
             const theirs = shiftDetails.get(r.target_shift_id);
             const bigDelta = r.hour_delta !== null && Math.abs(Number(r.hour_delta)) > 2;
+            const overSwapLimit =
+              r.status === "pending" &&
+              (countAcceptedSwapsThisMonth(requests ?? [], r.requester_employee_id) >= SOFT_SWAP_LIMIT_PER_MONTH ||
+                countAcceptedSwapsThisMonth(requests ?? [], r.target_employee_id ?? "") >= SOFT_SWAP_LIMIT_PER_MONTH);
             return (
               <li key={r.id} className="rounded-lg border border-zinc-200 p-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -83,6 +88,12 @@ export default async function AdminSwapsPage() {
                   <p className="mt-1 text-xs text-amber-600">
                     Uwaga: różnica godzin {Number(r.hour_delta) > 0 ? "+" : ""}
                     {r.hour_delta}h — większa niż zalecane ±2h.
+                  </p>
+                )}
+                {overSwapLimit && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Uwaga: któraś ze stron ma już {SOFT_SWAP_LIMIT_PER_MONTH}+ zaakceptowane zamiany w
+                    tym miesiącu.
                   </p>
                 )}
                 {r.status === "pending" && (

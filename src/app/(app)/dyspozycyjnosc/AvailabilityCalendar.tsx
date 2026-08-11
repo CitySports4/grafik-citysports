@@ -51,14 +51,17 @@ export function AvailabilityCalendar({
 
   return (
     <div>
-      <div className="mb-2 grid grid-cols-7 gap-1.5 text-center text-xs font-semibold uppercase text-zinc-500">
+      {/* Nagłówek dni tygodnia — tylko od tabletu wzwyż, bo na telefonie
+          kalendarz jest listą jednokolumnową (nazwa dnia jest wtedy w
+          każdej karcie), nie siatką. */}
+      <div className="mb-2 hidden grid-cols-7 gap-1.5 text-center text-xs font-semibold uppercase text-zinc-500 sm:grid">
         {WEEK_DISPLAY_ORDER.map((weekday) => (
           <div key={weekday}>{weekdayLabel(weekday).slice(0, 3)}</div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1.5">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-7 sm:gap-1.5">
         {Array.from({ length: leadingBlanks }).map((_, i) => (
-          <div key={`blank-${i}`} />
+          <div key={`blank-${i}`} className="hidden sm:block" />
         ))}
         {days.map(({ dateKey, day, weekday }) => {
           const entry = state[dateKey];
@@ -66,34 +69,35 @@ export function AvailabilityCalendar({
           return (
             <div
               key={dateKey}
-              className={`flex min-h-[92px] flex-col gap-1 rounded-xl border p-1.5 text-xs ${
+              className={`flex flex-col gap-1.5 rounded-xl border p-2 text-xs sm:min-h-[92px] sm:gap-1 sm:p-1.5 ${
                 entry?.wholeDay ? "border-red-300 bg-red-50" : "border-zinc-200 bg-white"
               }`}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
                 <span className="font-semibold text-zinc-700">{day}</span>
+                <span className="text-[11px] capitalize text-zinc-400 sm:hidden">{weekdayLabel(weekday)}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => handleWholeDay(dateKey)}
-                className={`rounded-lg px-1.5 py-1 text-[11px] font-semibold transition-colors ${
-                  entry?.wholeDay
-                    ? "bg-red-600 text-white"
-                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                }`}
-              >
-                {entry?.wholeDay ? "Cały dzień ✕" : "Cały dzień"}
-              </button>
-              {!entry?.wholeDay && slots.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  {slots.map((s) => {
+              <div className="flex flex-wrap items-stretch gap-1.5 sm:flex-col sm:gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleWholeDay(dateKey)}
+                  className={`rounded-lg px-2 py-1.5 text-[12px] font-semibold transition-colors sm:px-1.5 sm:py-1 sm:text-[11px] ${
+                    entry?.wholeDay
+                      ? "bg-red-600 text-white"
+                      : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                  }`}
+                >
+                  {entry?.wholeDay ? "Cały dzień ✕" : "Cały dzień"}
+                </button>
+                {!entry?.wholeDay &&
+                  slots.map((s) => {
                     const active = entry?.slots.includes(s.slot_index);
                     return (
                       <button
                         key={s.slot_index}
                         type="button"
                         onClick={() => handleSlot(dateKey, s.slot_index)}
-                        className={`rounded-lg px-1.5 py-0.5 text-left text-[10.5px] font-medium transition-colors ${
+                        className={`rounded-lg px-2 py-1.5 text-left text-[12px] font-medium transition-colors sm:px-1.5 sm:py-0.5 sm:text-[10.5px] ${
                           active
                             ? "bg-amber-500 text-white"
                             : "bg-zinc-50 text-zinc-500 hover:bg-zinc-100"
@@ -103,8 +107,7 @@ export function AvailabilityCalendar({
                       </button>
                     );
                   })}
-                </div>
-              )}
+              </div>
             </div>
           );
         })}

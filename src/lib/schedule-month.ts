@@ -93,3 +93,13 @@ export function toDateKey(date: Date): string {
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
+// Klucz tygodnia (data poniedziałku) dla danego dnia — tydzień liczony od
+// poniedziałku, zgodnie z konwencją całej aplikacji.
+export function mondayOfWeek(dateKey: string): string {
+  const date = new Date(dateKey + "T00:00:00");
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  return toDateKey(date);
+}

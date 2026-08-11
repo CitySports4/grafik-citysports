@@ -14,6 +14,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: "/grafik", label: "Mój grafik" },
     { href: "/dyspozycyjnosc", label: "Dyspozycyjność" },
     { href: "/zamiany", label: "Zamiany" },
+    { href: "/godziny", label: "Godziny pracy" },
+    { href: "/nieobecnosci", label: "Nieobecności" },
+    { href: "/sprzatanie", label: "Sprzątanie" },
+    { href: "/notatnik", label: "Notatnik" },
+    { href: "/asystent", label: "Asystent" },
   ];
   if (employee.role === "admin") {
     navLinks.push({ href: "/admin", label: "Panel admina" });

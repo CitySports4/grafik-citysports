@@ -18,6 +18,7 @@ import {
 import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
 import { ColorDot } from "@/components/ColorDot";
+import { EVENT_TYPE_LABELS } from "@/lib/event-types";
 
 type ShiftRow = {
   id: string;
@@ -46,14 +47,6 @@ type Employee = {
   target_hours_month: number;
 };
 type ClassEntry = { weekday: number; start_time: string; end_time: string };
-
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  liga_open: "Liga open",
-  liga_deblowa: "Liga deblowa",
-  sprzatanie: "Sprzątanie",
-  warsztaty: "Warsztaty",
-  custom: "Inne",
-};
 
 const SELECT_CLS = "w-full rounded-lg border-[1.5px] border-zinc-300 px-1.5 py-1 text-xs";
 
@@ -366,9 +359,12 @@ export function ScheduleTable({
                         }
                         const unavailableIds = unavailableByDayAndSlot[day.date]?.[slotIndex] ?? [];
                         const unavailableNames = unavailableIds.map((id) => employeeById.get(id)?.name).filter(Boolean);
-                        // Jedna osoba = jedna zmiana dziennie (stąd w ogóle są 3 zmiany —
-                        // żeby dzień rozkładał się na różne osoby, a nie żeby ktoś siedział
-                        // od rana do wieczora). Wyjątek: patrz sameDayExceptionByDate.
+                        // Jedna osoba = jedna zmiana dziennie, ale TYLKO pon-czw (stąd w
+                        // ogóle są tam 3 zmiany — żeby dzień rozkładał się na różne osoby,
+                        // a nie żeby ktoś siedział od rana do wieczora). W piątek/sobotę/
+                        // niedzielę dopuszczamy więcej niż 1 zmianę tej samej osoby (np.
+                        // Krzysztof 2x w niedzielę) — jedyne ograniczenie to dostępność.
+                        const blockDoubleShift = day.weekday >= 1 && day.weekday <= 4;
                         const workingElsewhereTodayIds = new Set(
                           day.shifts
                             .filter((s) => s.id !== shift.id && s.employee_id)
@@ -377,7 +373,10 @@ export function ScheduleTable({
                         const options = employees.filter(
                           (e) =>
                             (!unavailableIds.includes(e.id) || e.id === shift.employee_id) &&
-                            (!workingElsewhereTodayIds.has(e.id) || e.id === shift.employee_id || exceptionIds.includes(e.id))
+                            (!blockDoubleShift ||
+                              !workingElsewhereTodayIds.has(e.id) ||
+                              e.id === shift.employee_id ||
+                              exceptionIds.includes(e.id))
                         );
                         const selectValue = shift.is_closed ? "__closed__" : shift.employee_id ?? "";
                         const currentEmployee = shift.employee_id ? employeeById.get(shift.employee_id) : null;
