@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: "/notatnik", label: "Notatnik" },
     { href: "/asystent", label: "Asystent" },
   ];
-  if (employee.role === "admin") {
+  if (employee.roles.includes("admin")) {
     navLinks.push({ href: "/admin", label: "Panel admina" });
   }
 

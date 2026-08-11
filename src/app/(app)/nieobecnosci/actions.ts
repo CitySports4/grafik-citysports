@@ -56,7 +56,7 @@ export async function deletePlannedAbsence(formData: FormData) {
   const supabase = createServerSupabaseClient();
   const { data: absence } = await supabase.from("planned_absence").select("employee_id").eq("id", id).single();
 
-  if (!absence || (absence.employee_id !== employee.id && employee.role !== "admin")) {
+  if (!absence || (absence.employee_id !== employee.id && !employee.roles.includes("admin"))) {
     throw new Error("Nie możesz usunąć tej nieobecności.");
   }
 

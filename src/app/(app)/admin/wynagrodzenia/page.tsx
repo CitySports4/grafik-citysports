@@ -22,9 +22,9 @@ export default async function WynagrodzeniaPage({
   const supabase = createServerSupabaseClient();
   const { data: employees } = await supabase
     .from("employee")
-    .select("id, name, color_hex, role, hourly_rate")
+    .select("id, name, color_hex, hourly_rate, employee_role!inner(role)")
     .eq("active", true)
-    .eq("role", "recepcja")
+    .eq("employee_role.role", "recepcja")
     .order("name");
 
   const dates = daysInMonth(year, month).map(toDateKey);

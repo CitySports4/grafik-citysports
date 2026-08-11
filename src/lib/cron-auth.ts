@@ -17,7 +17,14 @@ export function assertCronSecret(request: Request): void {
 
 // Autor notatek tworzonych automatycznie przez AI — pierwszy aktywny admin.
 export async function getAiNoteAuthorId(supabase: ReturnType<typeof createServerSupabaseClient>): Promise<string> {
-  const { data } = await supabase.from("employee").select("id").eq("role", "admin").eq("active", true).order("name").limit(1).maybeSingle();
+  const { data } = await supabase
+    .from("employee")
+    .select("id, active, employee_role!inner(role)")
+    .eq("employee_role.role", "admin")
+    .eq("active", true)
+    .order("name")
+    .limit(1)
+    .maybeSingle();
   if (!data) throw new Error("Brak aktywnego administratora do przypisania notatki AI.");
   return data.id;
 }

@@ -2,21 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { requireEmployee } from "@/lib/session";
+import { requireAdmin } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
-import { isWithinEditWindow } from "@/lib/time-entry-window";
 
-export async function saveTimeEntry(date: string, actualStart: string, actualEnd: string, note: string) {
-  const employee = await requireEmployee();
-
-  if (!isWithinEditWindow(date)) {
-    throw new Error("Można wpisywać/edytować godziny tylko do 7 dni po danym dniu.");
-  }
+// Admin edytuje godziny dowolnego pracownika, dla dowolnego dnia — bez
+// ograniczenia 7-dniowego okna (to ograniczenie dotyczy tylko samodzielnej
+// edycji przez pracownika, patrz godziny/actions.ts).
+export async function saveTimeEntryAsAdmin(employeeId: string, date: string, actualStart: string, actualEnd: string, note: string) {
+  await requireAdmin();
 
   const supabase = createServerSupabaseClient();
   const { error } = await supabase.from("time_entry").upsert(
     {
-      employee_id: employee.id,
+      employee_id: employeeId,
       date,
       actual_start: actualStart || null,
       actual_end: actualEnd || null,
@@ -30,5 +28,5 @@ export async function saveTimeEntry(date: string, actualStart: string, actualEnd
     throw new Error(dbErrorMessage(error));
   }
 
-  revalidatePath("/godziny");
+  revalidatePath("/admin/godziny");
 }

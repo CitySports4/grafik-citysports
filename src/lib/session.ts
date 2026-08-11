@@ -56,7 +56,7 @@ export const ROLE_LABELS: Record<EmployeeRole, string> = {
 export type SessionEmployee = {
   id: string;
   name: string;
-  role: EmployeeRole;
+  roles: EmployeeRole[];
   colorHex: string;
 };
 
@@ -67,7 +67,7 @@ export async function getSessionEmployee(): Promise<SessionEmployee | null> {
   const supabase = createServerSupabaseClient();
   const { data } = await supabase
     .from("employee")
-    .select("id, name, role, color_hex, active")
+    .select("id, name, color_hex, active, employee_role(role)")
     .eq("id", employeeId)
     .single();
 
@@ -75,7 +75,7 @@ export async function getSessionEmployee(): Promise<SessionEmployee | null> {
   return {
     id: data.id,
     name: data.name,
-    role: data.role as EmployeeRole,
+    roles: (data.employee_role ?? []).map((r: { role: string }) => r.role as EmployeeRole),
     colorHex: data.color_hex,
   };
 }
@@ -90,7 +90,7 @@ export async function requireEmployee(): Promise<SessionEmployee> {
 
 export async function requireAdmin(): Promise<SessionEmployee> {
   const employee = await requireEmployee();
-  if (employee.role !== "admin") {
+  if (!employee.roles.includes("admin")) {
     throw new Error("Brak uprawnień — ta akcja jest dostępna tylko dla administratora.");
   }
   return employee;

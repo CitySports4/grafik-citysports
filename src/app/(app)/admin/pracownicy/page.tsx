@@ -14,7 +14,9 @@ export default async function EmployeesPage() {
   const [{ data: employees }, { data: cleaningZoneRows }] = await Promise.all([
     supabase
       .from("employee")
-      .select("id, name, phone, role, color_hex, is_instructor, min_hours_month, target_hours_month, active, password_hash")
+      .select(
+        "id, name, phone, color_hex, is_instructor, min_hours_month, target_hours_month, active, password_hash, employee_role(role)"
+      )
       .order("name"),
     supabase.from("employee_cleaning_zone").select("employee_id"),
   ]);
@@ -42,14 +44,15 @@ export default async function EmployeesPage() {
             </p>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className={LABEL}>Rola</label>
-            <select name="role" className={INPUT} defaultValue="recepcja">
+            <label className={LABEL}>Role (można wybrać kilka)</label>
+            <div className="flex flex-wrap gap-3 pt-1.5">
               {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
+                <label key={value} className="flex items-center gap-1.5 text-sm text-zinc-900">
+                  <input type="checkbox" name="role" value={value} defaultChecked={value === "recepcja"} className="h-4 w-4" />
                   {label}
-                </option>
+                </label>
               ))}
-            </select>
+            </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Kolor</label>
@@ -107,7 +110,11 @@ export default async function EmployeesPage() {
                   </Link>
                 </td>
                 <td className="px-4 py-2.5 text-zinc-600">{e.phone}</td>
-                <td className="px-4 py-2.5 text-zinc-600">{ROLE_LABELS[e.role as EmployeeRole] ?? e.role}</td>
+                <td className="px-4 py-2.5 text-zinc-600">
+                  {(e.employee_role ?? [])
+                    .map((r) => ROLE_LABELS[r.role as EmployeeRole] ?? r.role)
+                    .join(", ") || "—"}
+                </td>
                 <td className="px-4 py-2.5 text-zinc-600">{e.is_instructor ? "Tak" : "—"}</td>
                 <td className="px-4 py-2.5 text-zinc-600">{canCleanIds.has(e.id) ? "Tak" : "—"}</td>
                 <td className="px-4 py-2.5 text-zinc-600">

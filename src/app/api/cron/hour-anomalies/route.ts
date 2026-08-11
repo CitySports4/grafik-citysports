@@ -25,7 +25,11 @@ export async function GET(request: Request) {
   const dateKey = toDateKey(yesterday);
 
   const [{ data: employees }, { data: entries }, { data: shiftRows }] = await Promise.all([
-    supabase.from("employee").select("id, name, hourly_rate").eq("active", true).eq("role", "recepcja"),
+    supabase
+      .from("employee")
+      .select("id, name, hourly_rate, employee_role!inner(role)")
+      .eq("active", true)
+      .eq("employee_role.role", "recepcja"),
     supabase.from("time_entry").select("employee_id, actual_start, actual_end").eq("date", dateKey),
     supabase
       .from("schedule_shift")

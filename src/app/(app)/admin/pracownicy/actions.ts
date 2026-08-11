@@ -12,12 +12,33 @@ function parseNumber(value: FormDataEntryValue | null, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function parseRoles(formData: FormData): string[] {
+  const roles = formData.getAll("role").map(String);
+  return roles.length > 0 ? roles : ["recepcja"];
+}
+
+// Zastępuje cały zestaw ról pracownika (delete+insert), analogicznie do
+// setEmployeeZones dla kompetencji sprzątania.
+async function setEmployeeRoles(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  employeeId: string,
+  roles: string[]
+) {
+  await supabase.from("employee_role").delete().eq("employee_id", employeeId);
+  const { error } = await supabase
+    .from("employee_role")
+    .insert(roles.map((role) => ({ employee_id: employeeId, role })));
+  if (error) {
+    throw new Error(dbErrorMessage(error));
+  }
+}
+
 export async function createEmployee(formData: FormData) {
   await requireAdmin();
 
   const name = String(formData.get("name") ?? "").trim();
   const phone = normalizePhone(String(formData.get("phone") ?? ""));
-  const role = String(formData.get("role") ?? "recepcja");
+  const roles = parseRoles(formData);
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
   const is_instructor = formData.get("is_instructor") === "on";
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
@@ -33,20 +54,25 @@ export async function createEmployee(formData: FormData) {
   // Bez hasła — pracownik ustawia je sam przy pierwszym logowaniu. Kto może
   // sprzątać ustawia się w Konfiguracja sprzątania → Kompetencje (strefy),
   // nie tutaj.
-  const { error } = await supabase.from("employee").insert({
-    name,
-    phone,
-    role,
-    color_hex,
-    is_instructor,
-    min_hours_month,
-    target_hours_month,
-    hourly_rate,
-  });
+  const { data, error } = await supabase
+    .from("employee")
+    .insert({
+      name,
+      phone,
+      color_hex,
+      is_instructor,
+      min_hours_month,
+      target_hours_month,
+      hourly_rate,
+    })
+    .select("id")
+    .single();
 
-  if (error) {
+  if (error || !data) {
     throw new Error(dbErrorMessage(error));
   }
+
+  await setEmployeeRoles(supabase, data.id, roles);
 
   revalidatePath("/admin/pracownicy");
 }
@@ -57,7 +83,7 @@ export async function updateEmployee(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const phone = normalizePhone(String(formData.get("phone") ?? ""));
-  const role = String(formData.get("role") ?? "recepcja");
+  const roles = parseRoles(formData);
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
   const is_instructor = formData.get("is_instructor") === "on";
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
@@ -75,7 +101,6 @@ export async function updateEmployee(formData: FormData) {
     .update({
       name,
       phone,
-      role,
       color_hex,
       is_instructor,
       min_hours_month,
@@ -88,6 +113,8 @@ export async function updateEmployee(formData: FormData) {
   if (error) {
     throw new Error(dbErrorMessage(error));
   }
+
+  await setEmployeeRoles(supabase, id, roles);
 
   revalidatePath("/admin/pracownicy");
   revalidatePath(`/admin/pracownicy/${id}`);

@@ -66,7 +66,7 @@ export async function respondSwapRequest(formData: FormData) {
   if (!request || request.status !== "pending") {
     throw new Error("Ta prośba nie jest już aktywna.");
   }
-  const canDecide = employee.role === "admin" || employee.id === request.target_employee_id;
+  const canDecide = employee.roles.includes("admin") || employee.id === request.target_employee_id;
   if (!canDecide) {
     throw new Error("Nie możesz zdecydować o tej prośbie.");
   }
@@ -113,7 +113,7 @@ export async function cancelSwapRequest(formData: FormData) {
     .eq("id", id)
     .single();
 
-  if (!request || (request.requester_employee_id !== employee.id && employee.role !== "admin")) {
+  if (!request || (request.requester_employee_id !== employee.id && !employee.roles.includes("admin"))) {
     throw new Error("Nie możesz anulować tej prośby.");
   }
   if (request.status !== "pending") {

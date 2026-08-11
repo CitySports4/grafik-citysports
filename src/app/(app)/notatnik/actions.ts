@@ -8,7 +8,7 @@ import { dbErrorMessage } from "@/lib/db-error";
 async function assertCanEdit(supabase: ReturnType<typeof createServerSupabaseClient>, noteId: string) {
   const employee = await requireEmployee();
   const { data: note } = await supabase.from("note").select("author_employee_id").eq("id", noteId).single();
-  if (!note || (note.author_employee_id !== employee.id && employee.role !== "admin")) {
+  if (!note || (note.author_employee_id !== employee.id && !employee.roles.includes("admin"))) {
     throw new Error("Nie możesz edytować tej notatki.");
   }
   return employee;

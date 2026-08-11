@@ -23,6 +23,10 @@ export default function AdminHomePage() {
         <h2 className="font-semibold text-zinc-900">Wynagrodzenia</h2>
         <p className="mt-1 text-sm text-zinc-500">Recepcja: godziny × stawka, zgodność z grafikiem. Instruktorzy: kalkulator z raportu frekwencji.</p>
       </CardLink>
+      <CardLink href="/admin/godziny">
+        <h2 className="font-semibold text-zinc-900">Godziny pracy</h2>
+        <p className="mt-1 text-sm text-zinc-500">Edycja historii godzin dowolnego pracownika, bez limitu 7 dni.</p>
+      </CardLink>
       <CardLink href="/admin/sprzatanie">
         <h2 className="font-semibold text-zinc-900">Konfiguracja sprzątania</h2>
         <p className="mt-1 text-sm text-zinc-500">Strefy, zadania, checklisty, kompetencje sprzątania per osoba.</p>

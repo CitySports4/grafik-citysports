@@ -3,7 +3,7 @@ import { getSessionEmployee } from "@/lib/session";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const employee = await getSessionEmployee();
-  if (!employee || employee.role !== "admin") {
+  if (!employee || !employee.roles.includes("admin")) {
     redirect("/grafik");
   }
 

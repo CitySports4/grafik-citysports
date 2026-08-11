@@ -34,7 +34,7 @@ export default async function NotatnikPage() {
       <Card>
         <NotesBoard
           currentEmployeeId={employee.id}
-          isAdmin={employee.role === "admin"}
+          isAdmin={employee.roles.includes("admin")}
           employees={employees ?? []}
           notes={(notes ?? []).map((n) => ({
             ...n,

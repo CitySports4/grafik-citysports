@@ -33,8 +33,13 @@ export default async function EmployeeDetailPage({
   const { id } = await params;
   const supabase = createServerSupabaseClient();
 
-  const { data: employee } = await supabase.from("employee").select("*").eq("id", id).single();
+  const { data: employee } = await supabase
+    .from("employee")
+    .select("*, employee_role(role)")
+    .eq("id", id)
+    .single();
   if (!employee) notFound();
+  const currentRoles = new Set((employee.employee_role ?? []).map((r: { role: string }) => r.role));
 
   const today = toDateKey(new Date());
   const [{ data: classSchedule }, { data: constraints }, { data: plannedAbsences }] = await Promise.all([
@@ -78,15 +83,16 @@ export default async function EmployeeDetailPage({
             <label className={LABEL}>Numer telefonu</label>
             <input name="phone" defaultValue={employee.phone} required className={INPUT} />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className={LABEL}>Rola</label>
-            <select name="role" defaultValue={employee.role} className={INPUT}>
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <label className={LABEL}>Role (można wybrać kilka)</label>
+            <div className="flex flex-wrap gap-3 pt-1.5">
               {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
+                <label key={value} className="flex items-center gap-1.5 text-sm text-zinc-900">
+                  <input type="checkbox" name="role" value={value} defaultChecked={currentRoles.has(value)} className="h-4 w-4" />
                   {label}
-                </option>
+                </label>
               ))}
-            </select>
+            </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Kolor</label>

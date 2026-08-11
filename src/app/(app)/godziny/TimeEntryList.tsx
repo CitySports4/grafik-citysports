@@ -7,12 +7,22 @@ type DayEntry = {
   dateKey: string;
   label: string;
   scheduled: string;
+  editable: boolean;
   entry: { actualStart: string; actualEnd: string; note: string };
 };
 
 const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2 py-1.5 text-sm";
 
-export function TimeEntryList({ days }: { days: DayEntry[] }) {
+// saveAction: domyślnie zapisuje dla zalogowanego pracownika (godziny/actions.ts).
+// Panel admina wstrzykuje własną akcję, która zapisuje dla dowolnego pracownika
+// i pomija okno 7 dni.
+export function TimeEntryList({
+  days,
+  saveAction = saveTimeEntry,
+}: {
+  days: DayEntry[];
+  saveAction?: (date: string, actualStart: string, actualEnd: string, note: string) => Promise<void>;
+}) {
   const [state, setState] = useState<Record<string, { actualStart: string; actualEnd: string; note: string }>>(
     Object.fromEntries(days.map((d) => [d.dateKey, d.entry]))
   );
@@ -30,7 +40,7 @@ export function TimeEntryList({ days }: { days: DayEntry[] }) {
     setError((prev) => ({ ...prev, [dateKey]: "" }));
     try {
       const { actualStart, actualEnd, note } = state[dateKey];
-      await saveTimeEntry(dateKey, actualStart, actualEnd, note);
+      await saveAction(dateKey, actualStart, actualEnd, note);
       setSavedAt((prev) => ({ ...prev, [dateKey]: true }));
     } catch (err) {
       setError((prev) => ({ ...prev, [dateKey]: err instanceof Error ? err.message : "Nie udało się zapisać." }));
@@ -43,6 +53,26 @@ export function TimeEntryList({ days }: { days: DayEntry[] }) {
     <div className="flex flex-col divide-y divide-zinc-100">
       {days.map((day) => {
         const row = state[day.dateKey];
+        if (!day.editable) {
+          return (
+            <div key={day.dateKey} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold capitalize text-zinc-900">{day.label}</div>
+                {day.scheduled && <div className="text-xs text-zinc-500">Grafik: {day.scheduled}</div>}
+              </div>
+              <div className="text-sm text-zinc-600">
+                {row.actualStart && row.actualEnd ? (
+                  <>
+                    {row.actualStart}–{row.actualEnd}
+                    {row.note && <span className="text-zinc-400"> · {row.note}</span>}
+                  </>
+                ) : (
+                  <span className="text-zinc-400">brak wpisu — okno edycji minęło</span>
+                )}
+              </div>
+            </div>
+          );
+        }
         return (
           <div key={day.dateKey} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-end sm:gap-3">
             <div className="min-w-[120px]">

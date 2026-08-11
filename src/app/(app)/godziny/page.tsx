@@ -1,43 +1,39 @@
+import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee } from "@/lib/session";
-import { toDateKey } from "@/lib/schedule-month";
+import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
+import { isWithinEditWindow } from "@/lib/time-entry-window";
 import { Card } from "@/components/Card";
 import { TimeEntryList } from "./TimeEntryList";
 
-const WINDOW_DAYS = 7;
-
-export default async function GodzinyPage() {
+export default async function GodzinyPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ year?: string; month?: string }>;
+}) {
   const employee = await requireEmployee();
+  const params = await searchParams;
+  const fallback = currentMonth();
+  const year = Number(params.year) || fallback.year;
+  const month = Number(params.month) || fallback.month;
+
   const supabase = createServerSupabaseClient();
-
-  // Ostatnie 7 dni (dziś + 6 wstecz) — dokładnie okno, w którym wolno
-  // wpisywać/edytować godziny.
-  const days: { dateKey: string; weekday: number }[] = [];
-  const cursor = new Date();
-  cursor.setHours(0, 0, 0, 0);
-  for (let i = 0; i < WINDOW_DAYS; i++) {
-    const d = new Date(cursor);
-    d.setDate(cursor.getDate() - i);
-    days.push({ dateKey: toDateKey(d), weekday: d.getDay() });
-  }
-  days.reverse();
-
-  const dateKeys = days.map((d) => d.dateKey);
+  const dates = daysInMonth(year, month).map(toDateKey);
 
   const [{ data: entries }, { data: shiftRows }] = await Promise.all([
     supabase
       .from("time_entry")
       .select("date, actual_start, actual_end, note")
       .eq("employee_id", employee.id)
-      .in("date", dateKeys),
+      .in("date", dates),
     supabase
       .from("schedule_shift")
       .select("start_time, end_time, schedule_day!inner(date, schedule_month!inner(status))")
       .eq("employee_id", employee.id)
       .eq("schedule_day.schedule_month.status", "published")
-      .in("schedule_day.date", dateKeys),
+      .in("schedule_day.date", dates),
   ]);
 
   const entryByDate = new Map((entries ?? []).map((e) => [e.date, e]));
@@ -49,33 +45,57 @@ export default async function GodzinyPage() {
     scheduledByDate.get(date)!.push({ start_time: s.start_time, end_time: s.end_time });
   }
 
+  // Tylko dni, które mają zaplanowaną zmianę lub już wpisane godziny —
+  // puste dni w kalendarzu (bez pracy) nie zaśmiecają widoku historii.
+  const relevantDates = dates.filter((d) => scheduledByDate.has(d) || entryByDate.has(d));
+
+  const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
+  const nextLink = month === 12 ? `?year=${year + 1}&month=1` : `?year=${year}&month=${month + 1}`;
+
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Godziny pracy</h1>
         <p className="text-sm text-zinc-500">
           Wpisz rzeczywistą godzinę rozpoczęcia i zakończenia pracy. Można edytować w dowolnym
-          momencie, ale tylko do 7 dni po danym dniu.
+          momencie, ale tylko do 7 dni po danym dniu — starsze wpisy widzisz tu w całości, ale już
+          tylko do odczytu (poprawki po tym czasie robi admin).
         </p>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Link href={prevLink} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-zinc-600 hover:bg-zinc-100">
+          ← Poprzedni
+        </Link>
+        <span className="text-sm font-bold capitalize text-zinc-900">
+          {monthLabel(month)} {year}
+        </span>
+        <Link href={nextLink} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-zinc-600 hover:bg-zinc-100">
+          Następny →
+        </Link>
       </div>
 
       <Card>
         <TimeEntryList
-          days={days.map((d) => ({
-            dateKey: d.dateKey,
-            label: `${weekdayLabel(d.weekday)}, ${new Date(d.dateKey + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}`,
-            scheduled: (scheduledByDate.get(d.dateKey) ?? [])
-              .map((s) => `${formatHm(s.start_time)}–${formatHm(s.end_time)}`)
-              .join(", "),
-            entry: entryByDate.get(d.dateKey)
-              ? {
-                  actualStart: entryByDate.get(d.dateKey)!.actual_start ?? "",
-                  actualEnd: entryByDate.get(d.dateKey)!.actual_end ?? "",
-                  note: entryByDate.get(d.dateKey)!.note ?? "",
-                }
-              : { actualStart: "", actualEnd: "", note: "" },
-          }))}
+          days={relevantDates.map((dateKey) => {
+            const weekday = new Date(dateKey + "T00:00:00").getDay();
+            const entry = entryByDate.get(dateKey);
+            return {
+              dateKey,
+              label: `${weekdayLabel(weekday)}, ${new Date(dateKey + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}`,
+              scheduled: (scheduledByDate.get(dateKey) ?? [])
+                .map((s) => `${formatHm(s.start_time)}–${formatHm(s.end_time)}`)
+                .join(", "),
+              editable: isWithinEditWindow(dateKey),
+              entry: entry
+                ? { actualStart: entry.actual_start ?? "", actualEnd: entry.actual_end ?? "", note: entry.note ?? "" }
+                : { actualStart: "", actualEnd: "", note: "" },
+            };
+          })}
         />
+        {relevantDates.length === 0 && (
+          <p className="py-6 text-center text-sm text-zinc-400">Brak zmian ani wpisów w tym miesiącu.</p>
+        )}
       </Card>
     </div>
   );
