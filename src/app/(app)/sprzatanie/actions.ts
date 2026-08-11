@@ -5,6 +5,8 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 
+type ChecklistDoneEntry = { item_id: string; employee_id: string; done_at: string };
+
 export async function toggleChecklistItem(taskId: string, date: string, itemId: string, allItemIds: string[]) {
   const employee = await requireEmployee();
   const supabase = createServerSupabaseClient();
@@ -16,10 +18,13 @@ export async function toggleChecklistItem(taskId: string, date: string, itemId: 
     .eq("date", date)
     .maybeSingle();
 
-  const current: string[] = (existing?.checklist_done as string[] | null) ?? [];
-  const has = current.includes(itemId);
-  const next = has ? current.filter((id) => id !== itemId) : [...current, itemId];
-  const allDone = allItemIds.length > 0 && allItemIds.every((id) => next.includes(id));
+  const current = (existing?.checklist_done as ChecklistDoneEntry[] | null) ?? [];
+  const has = current.some((e) => e.item_id === itemId);
+  const next = has
+    ? current.filter((e) => e.item_id !== itemId)
+    : [...current, { item_id: itemId, employee_id: employee.id, done_at: new Date().toISOString() }];
+  const doneIds = new Set(next.map((e) => e.item_id));
+  const allDone = allItemIds.length > 0 && allItemIds.every((id) => doneIds.has(id));
 
   const { error } = await supabase.from("cleaning_completion").upsert(
     {
@@ -59,4 +64,23 @@ export async function toggleTaskDone(taskId: string, date: string) {
   );
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/sprzatanie");
+}
+
+// Odhaczenie zadania spoza dzisiejszego przydziału (Pula zadań) — liczy się
+// do historii/wykrywania zaległości, nawet jeśli zadanie nie jest dziś "due".
+export async function completeFromPool(taskId: string, date: string) {
+  const employee = await requireEmployee();
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("cleaning_completion").upsert(
+    {
+      task_id: taskId,
+      date,
+      employee_id: employee.id,
+      completed_at: new Date().toISOString(),
+      checklist_done: [],
+    },
+    { onConflict: "task_id,date" }
+  );
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/sprzatanie/pula");
 }

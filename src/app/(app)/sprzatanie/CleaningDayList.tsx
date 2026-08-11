@@ -9,8 +9,11 @@ type Item = {
   taskId: string;
   name: string;
   timeMinutes: number;
-  slot: "otwarcie" | "srodek" | "zamkniecie";
+  slot: "otwarcie" | "srodek" | "zamkniecie" | "po_zamknieciu";
+  note: string | null;
   assignee: { name: string; color_hex: string } | null;
+  autoCovered: boolean;
+  overdue: { daysLate: number; alert: boolean } | null;
   checklist: ChecklistItem[];
   done: boolean;
 };
@@ -19,8 +22,9 @@ const SLOT_LABELS: Record<Item["slot"], string> = {
   otwarcie: "Otwarcie",
   srodek: "Środek dnia",
   zamkniecie: "Zamknięcie",
+  po_zamknieciu: "Po zamknięciu",
 };
-const SLOT_ORDER: Item["slot"][] = ["otwarcie", "srodek", "zamkniecie"];
+const SLOT_ORDER: Item["slot"][] = ["otwarcie", "srodek", "zamkniecie", "po_zamknieciu"];
 
 export function CleaningDayList({ date, items }: { date: string; items: Item[] }) {
   const [state, setState] = useState(items);
@@ -58,10 +62,15 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
             <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-zinc-400">{SLOT_LABELS[slot]}</h3>
             <div className="flex flex-col gap-2">
               {slotItems.map((it) => (
-                <div key={it.taskId} className={`rounded-xl border p-3 ${it.done ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
+                <div
+                  key={it.taskId}
+                  className={`rounded-xl border p-3 ${
+                    it.done ? "border-emerald-200 bg-emerald-50" : it.autoCovered ? "border-zinc-100 bg-zinc-50 opacity-60" : "border-zinc-200 bg-white"
+                  }`}
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      {it.checklist.length === 0 && (
+                      {it.checklist.length === 0 && !it.autoCovered && (
                         <button
                           type="button"
                           onClick={() => handleToggleDone(it.taskId)}
@@ -74,6 +83,20 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                       )}
                       <span className={`text-sm font-semibold ${it.done ? "text-emerald-700 line-through" : "text-zinc-900"}`}>{it.name}</span>
                       <span className="text-xs text-zinc-400">{it.timeMinutes} min</span>
+                      {it.autoCovered && (
+                        <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
+                          pokryte wcześniej
+                        </span>
+                      )}
+                      {it.overdue && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            it.overdue.alert ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          zaległe {it.overdue.daysLate} dni
+                        </span>
+                      )}
                     </div>
                     {it.assignee ? (
                       <span className="flex items-center gap-1 text-xs text-zinc-600">
@@ -84,6 +107,7 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                       <span className="text-xs font-bold text-red-500">⚠ brak przypisania</span>
                     )}
                   </div>
+                  {it.note && <p className="mt-1 text-xs italic text-zinc-500">{it.note}</p>}
                   {it.checklist.length > 0 && (
                     <ul className="mt-2 flex flex-col gap-1 border-t border-zinc-100 pt-2">
                       {it.checklist.map((c) => (

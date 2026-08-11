@@ -3,7 +3,14 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee } from "@/lib/session";
 import { toDateKey } from "@/lib/schedule-month";
 import { weekdayLabel } from "@/lib/weekdays";
-import { resolveDaySlots, resolveTasksForDate, type CleaningTask } from "@/lib/cleaning";
+import {
+  resolveDaySlots,
+  resolveTasksForDate,
+  resolveCarryOverrides,
+  computeOverdueTasks,
+  balanceSlotAssignments,
+  type CleaningTask,
+} from "@/lib/cleaning";
 import { Card } from "@/components/Card";
 import { CleaningDayList } from "./CleaningDayList";
 
@@ -17,6 +24,7 @@ export default async function CleaningDayPage({
   const dateKey = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : toDateKey(new Date());
   const dateObj = new Date(dateKey + "T00:00:00");
   const weekday = dateObj.getDay();
+  const yesterdayKey = toDateKey(new Date(dateObj.getTime() - 86400000));
 
   const prevDate = new Date(dateObj);
   prevDate.setDate(prevDate.getDate() - 1);
@@ -25,25 +33,42 @@ export default async function CleaningDayPage({
 
   const supabase = createServerSupabaseClient();
 
-  const [{ data: day }, { data: settings }, { data: tasks }, { data: checklistItems }, { data: employees }, { data: employeeZones }] =
-    await Promise.all([
-      supabase
-        .from("schedule_day")
-        .select("schedule_shift(start_time, employee_id), schedule_month!inner(status)")
-        .eq("date", dateKey)
-        .eq("schedule_month.status", "published")
-        .maybeSingle(),
-      supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle(),
-      supabase
-        .from("cleaning_task")
-        .select("id, zone_id, name, time_minutes, frequency, weekday, slot, requires_ladder, active")
-        .eq("active", true),
-      supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
-      supabase.from("employee").select("id, name, color_hex"),
-      supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
-    ]);
+  const [
+    { data: day },
+    { data: settings },
+    { data: tasks },
+    { data: allActiveNonDaily },
+    { data: checklistItems },
+    { data: templateItems },
+    { data: employees },
+    { data: employeeZones },
+  ] = await Promise.all([
+    supabase
+      .from("schedule_day")
+      .select("schedule_shift(start_time, employee_id), schedule_month!inner(status)")
+      .eq("date", dateKey)
+      .eq("schedule_month.status", "published")
+      .maybeSingle(),
+    supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle(),
+    supabase
+      .from("cleaning_task")
+      .select(
+        "id, zone_id, name, time_minutes, frequency, weekdays, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+      )
+      .eq("active", true),
+    supabase
+      .from("cleaning_task")
+      .select("id, zone_id, name, time_minutes, frequency, weekdays, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id")
+      .eq("active", true)
+      .neq("frequency", "daily"),
+    supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
+    supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
+    supabase.from("employee").select("id, name, color_hex, no_ladder"),
+    supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
+  ]);
 
   const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
+  const noLadderByEmployee = new Set((employees ?? []).filter((e) => e.no_ladder).map((e) => e.id));
   const competencyByEmployee = new Map<string, Set<string>>();
   for (const ez of employeeZones ?? []) {
     if (!competencyByEmployee.has(ez.employee_id)) competencyByEmployee.set(ez.employee_id, new Set());
@@ -54,11 +79,20 @@ export default async function CleaningDayPage({
     if (!checklistByTask.has(c.task_id)) checklistByTask.set(c.task_id, []);
     checklistByTask.get(c.task_id)!.push({ id: c.id, label: c.label });
   }
+  const templateItemsByTemplate = new Map<string, { id: string; label: string }[]>();
+  for (const it of templateItems ?? []) {
+    if (!templateItemsByTemplate.has(it.template_id)) templateItemsByTemplate.set(it.template_id, []);
+    templateItemsByTemplate.get(it.template_id)!.push({ id: it.id, label: it.label });
+  }
+  function checklistFor(task: CleaningTask): { id: string; label: string }[] {
+    if (task.checklist_template_id) return templateItemsByTemplate.get(task.checklist_template_id) ?? [];
+    return checklistByTask.get(task.id) ?? [];
+  }
 
   const shifts = (day?.schedule_shift ?? []) as { start_time: string; employee_id: string | null }[];
   const daySlots = resolveDaySlots(shifts);
 
-  const resolved = resolveTasksForDate(
+  let resolved = resolveTasksForDate(
     (tasks ?? []) as CleaningTask[],
     dateKey,
     weekday,
@@ -66,6 +100,51 @@ export default async function CleaningDayPage({
     daySlots,
     competencyByEmployee
   );
+
+  // Powiązania carry: potrzebujemy odhaczeń z wczoraj (zadania rano) i dziś
+  // (zadania wieczór/po zamknięciu) dla wszystkich zadań, które są czyimś
+  // partnerem carry — nie tylko tych już w `resolved`.
+  const carryPairIds = [...new Set(resolved.map((r) => r.task.carry_pair_task_id).filter((x): x is string => !!x))];
+  const { data: carryCompletions } =
+    carryPairIds.length > 0
+      ? await supabase
+          .from("cleaning_completion")
+          .select("task_id, date, completed_at")
+          .in("task_id", carryPairIds)
+          .in("date", [dateKey, yesterdayKey])
+      : { data: [] };
+  const completedTaskDateKeys = new Set(
+    (carryCompletions ?? []).filter((c) => c.completed_at).map((c) => `${c.task_id}|${c.date}`)
+  );
+  resolved = resolveCarryOverrides(resolved, dateKey, completedTaskDateKeys);
+  resolved = balanceSlotAssignments(resolved, competencyByEmployee, noLadderByEmployee);
+
+  // Zaległości: ostatnie wykonanie każdego niedziennego aktywnego zadania.
+  const nonDailyIds = (allActiveNonDaily ?? []).map((t) => t.id);
+  const { data: historyCompletions } =
+    nonDailyIds.length > 0
+      ? await supabase
+          .from("cleaning_completion")
+          .select("task_id, date, completed_at")
+          .in("task_id", nonDailyIds)
+          .not("completed_at", "is", null)
+          .order("date", { ascending: false })
+      : { data: [] };
+  const lastDoneByTask = new Map<string, string>();
+  for (const c of historyCompletions ?? []) {
+    if (!lastDoneByTask.has(c.task_id)) lastDoneByTask.set(c.task_id, c.date);
+  }
+  const resolvedIds = new Set(resolved.map((r) => r.task.id));
+  const overdue = computeOverdueTasks((allActiveNonDaily ?? []) as CleaningTask[], lastDoneByTask, dateKey).filter(
+    (o) => !resolvedIds.has(o.task.id)
+  );
+  for (const o of overdue) {
+    const candidate = daySlots[o.task.slot];
+    const competent = candidate ? (competencyByEmployee.get(candidate)?.has(o.task.zone_id) ?? false) : false;
+    if (!competent) continue; // brak kompetentnej osoby dziś — nie pokazuj jako "do zrobienia teraz"
+    resolved.push({ task: o.task, employeeId: candidate, autoCovered: false });
+  }
+  const overdueByTask = new Map(overdue.map((o) => [o.task.id, o]));
 
   const taskIds = resolved.map((r) => r.task.id);
   const { data: completions } =
@@ -79,11 +158,16 @@ export default async function CleaningDayPage({
     name: r.task.name,
     timeMinutes: r.task.time_minutes,
     slot: r.task.slot,
+    note: r.task.note,
     assignee: r.employeeId ? employeeById.get(r.employeeId) ?? null : null,
-    checklist: (checklistByTask.get(r.task.id) ?? []).map((c) => ({
+    autoCovered: r.autoCovered,
+    overdue: overdueByTask.get(r.task.id) ?? null,
+    checklist: checklistFor(r.task).map((c) => ({
       id: c.id,
       label: c.label,
-      done: ((completionByTask.get(r.task.id)?.checklist_done as string[] | null) ?? []).includes(c.id),
+      done: ((completionByTask.get(r.task.id)?.checklist_done as { item_id?: string }[] | string[] | null) ?? [])
+        .map((x) => (typeof x === "string" ? x : x.item_id))
+        .includes(c.id),
     })),
     done: Boolean(completionByTask.get(r.task.id)?.completed_at),
   }));
@@ -103,6 +187,9 @@ export default async function CleaningDayPage({
           </Link>
           <Link href={`/sprzatanie?date=${toDateKey(nextDate)}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
             następny dzień →
+          </Link>
+          <Link href="/sprzatanie/pula" className="rounded-lg bg-zinc-800 px-3 py-1.5 font-semibold text-white hover:bg-zinc-900">
+            Pula zadań
           </Link>
         </div>
       </div>

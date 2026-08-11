@@ -25,7 +25,9 @@ export async function GET(request: Request) {
     supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle(),
     supabase
       .from("cleaning_task")
-      .select("id, zone_id, name, time_minutes, frequency, weekday, slot, requires_ladder, active")
+      .select(
+        "id, zone_id, name, time_minutes, frequency, weekdays, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+      )
       .eq("active", true)
       .neq("frequency", "daily"),
     supabase.from("cleaning_zone").select("id, name"),

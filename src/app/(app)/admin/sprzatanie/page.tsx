@@ -14,6 +14,11 @@ import {
   deleteChecklistItem,
   setCycleStart,
   setEmployeeZones,
+  addChecklistTemplate,
+  deleteChecklistTemplate,
+  addChecklistTemplateItem,
+  deleteChecklistTemplateItem,
+  setTimeBudget,
 } from "./actions";
 
 const INPUT = "w-full rounded-xl border-[1.5px] border-zinc-300 px-3 py-1.5 text-sm";
@@ -22,6 +27,8 @@ const DANGER_BTN = "rounded-lg px-2 py-0.5 text-xs font-semibold text-red-600 ho
 
 const FREQ_LABELS: Record<string, string> = {
   daily: "Codziennie",
+  "3xweek": "3× w tygodniu",
+  "2xweek": "2× w tygodniu",
   weekly: "Co tydzień",
   biweekly: "Co 2 tygodnie",
   monthly: "Co 4 tygodnie",
@@ -31,23 +38,42 @@ const SLOT_LABELS: Record<string, string> = {
   otwarcie: "Otwarcie (1. zmiana)",
   srodek: "Środek (2. zmiana, jeśli jest)",
   zamkniecie: "Zamknięcie (ostatnia zmiana)",
+  po_zamknieciu: "Po zamknięciu",
+};
+const DAY_CONSTRAINT_LABELS: Record<string, string> = {
+  mon_fri: "Tylko pon–pt",
+  not_weekend: "Nie w weekend",
 };
 
 export default async function CleaningConfigPage() {
   const supabase = createServerSupabaseClient();
 
-  const [{ data: settings }, { data: zones }, { data: tasks }, { data: checklistItems }, { data: employees }, { data: employeeZones }] =
-    await Promise.all([
-      supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle(),
-      supabase.from("cleaning_zone").select("id, name, group_code").order("name"),
-      supabase
-        .from("cleaning_task")
-        .select("id, zone_id, name, time_minutes, frequency, weekday, slot, requires_ladder, active")
-        .order("name"),
-      supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
-      supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
-      supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
-    ]);
+  const [
+    { data: settings },
+    { data: zones },
+    { data: tasks },
+    { data: checklistItems },
+    { data: employees },
+    { data: employeeZones },
+    { data: templates },
+    { data: templateItems },
+    { data: timeBudgets },
+  ] = await Promise.all([
+    supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle(),
+    supabase.from("cleaning_zone").select("id, name, group_code").order("name"),
+    supabase
+      .from("cleaning_task")
+      .select(
+        "id, zone_id, name, time_minutes, frequency, weekdays, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+      )
+      .order("sort_order"),
+    supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
+    supabase.from("employee").select("id, name, color_hex, no_ladder").eq("active", true).order("name"),
+    supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
+    supabase.from("cleaning_checklist_template").select("id, name").order("name"),
+    supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
+    supabase.from("cleaning_time_budget").select("employee_id, slot, budget_minutes"),
+  ]);
 
   const tasksByZone = new Map<string, typeof tasks>();
   for (const t of tasks ?? []) {
@@ -64,6 +90,13 @@ export default async function CleaningConfigPage() {
     if (!zoneIdsByEmployee.has(ez.employee_id)) zoneIdsByEmployee.set(ez.employee_id, new Set());
     zoneIdsByEmployee.get(ez.employee_id)!.add(ez.zone_id);
   }
+  const taskById = new Map((tasks ?? []).map((t) => [t.id, t]));
+  const templateItemsByTemplate = new Map<string, typeof templateItems>();
+  for (const it of templateItems ?? []) {
+    if (!templateItemsByTemplate.has(it.template_id)) templateItemsByTemplate.set(it.template_id, []);
+    templateItemsByTemplate.get(it.template_id)!.push(it);
+  }
+  const budgetByEmpSlot = new Map((timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}`, b.budget_minutes]));
 
   return (
     <div className="flex flex-col gap-6">
@@ -71,7 +104,7 @@ export default async function CleaningConfigPage() {
         <h1 className="text-lg font-bold text-zinc-900">Konfiguracja sprzątania</h1>
         <p className="text-sm text-zinc-500">
           Strefy, zadania, checklisty i kto może sprzątać co. Przydział zadań na dany dzień zależy
-          od tego, kto ma tego dnia zmianę (otwarcie/środek/zamknięcie) — patrz{" "}
+          od tego, kto ma tego dnia zmianę (otwarcie/środek/zamknięcie/po zamknięciu) — patrz{" "}
           <span className="font-semibold">/sprzatanie</span>.
         </p>
       </div>
@@ -111,6 +144,59 @@ export default async function CleaningConfigPage() {
         </form>
       </Card>
 
+      <Card>
+        <h2 className="mb-1 font-semibold text-zinc-900">Szablony checklist</h2>
+        <p className="mb-3 text-sm text-zinc-500">
+          Współdzielone między zadaniami (np. sanitariaty w kilku szatniach naraz) — wybierz przy
+          dodawaniu zadania zamiast własnej checklisty.
+        </p>
+        <div className="flex flex-col gap-3">
+          {(templates ?? []).map((tpl) => (
+            <div key={tpl.id} className="rounded-lg border border-zinc-200 p-2.5">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-sm font-semibold text-zinc-900">{tpl.name}</span>
+                <form action={deleteChecklistTemplate}>
+                  <input type="hidden" name="id" value={tpl.id} />
+                  <ConfirmButton confirmText={`Usunąć szablon "${tpl.name}"?`} className={DANGER_BTN}>
+                    Usuń
+                  </ConfirmButton>
+                </form>
+              </div>
+              <ul className="mb-2 flex flex-col gap-1">
+                {(templateItemsByTemplate.get(tpl.id) ?? []).map((item) => (
+                  <li key={item.id} className="flex items-center justify-between text-xs text-zinc-600">
+                    <span>◦ {item.label}</span>
+                    <form action={deleteChecklistTemplateItem}>
+                      <input type="hidden" name="id" value={item.id} />
+                      <button type="submit" className="text-red-500 hover:underline">
+                        ✕
+                      </button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+              <form action={addChecklistTemplateItem} className="flex items-center gap-1.5">
+                <input type="hidden" name="template_id" value={tpl.id} />
+                <input name="label" placeholder="Dodaj punkt" className="w-full rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+                <button type="submit" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold hover:bg-zinc-100">
+                  +
+                </button>
+              </form>
+            </div>
+          ))}
+          {(templates ?? []).length === 0 && <p className="text-sm text-zinc-400">Brak szablonów.</p>}
+        </div>
+        <form action={addChecklistTemplate} className="mt-3 flex items-end gap-2 border-t border-zinc-100 pt-3">
+          <div className="flex flex-col gap-1">
+            <label className={LABEL}>Nowy szablon</label>
+            <input name="name" required className={INPUT} placeholder="np. Sanitariaty — szatnia" />
+          </div>
+          <SubmitButton className="rounded-xl bg-zinc-800 px-3 py-1.5 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
+            Dodaj szablon
+          </SubmitButton>
+        </form>
+      </Card>
+
       <div className="flex flex-col gap-4">
         {(zones ?? []).map((zone) => {
           const zoneTasks = tasksByZone.get(zone.id) ?? [];
@@ -131,16 +217,27 @@ export default async function CleaningConfigPage() {
               <ul className="mb-3 flex flex-col gap-2">
                 {zoneTasks.map((task) => {
                   const items = checklistByTask.get(task.id) ?? [];
+                  const carryPair = task.carry_pair_task_id ? taskById.get(task.carry_pair_task_id) : null;
+                  const skipWith = task.skip_with_task_id ? taskById.get(task.skip_with_task_id) : null;
                   return (
                     <li key={task.id} className={`rounded-lg border p-2.5 ${task.active ? "border-zinc-200 bg-zinc-50" : "border-zinc-100 bg-zinc-100 opacity-60"}`}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-sm">
                           <span className="font-semibold text-zinc-900">{task.name}</span>{" "}
                           <span className="text-xs text-zinc-500">
-                            · {task.time_minutes} min · {FREQ_LABELS[task.frequency]}
-                            {task.weekday !== null ? ` (${weekdayLabel(task.weekday)})` : ""} · {SLOT_LABELS[task.slot]}
+                            · {task.time_minutes} min · {FREQ_LABELS[task.frequency] ?? task.frequency}
+                            {task.weekdays?.length > 0 ? ` (${task.weekdays.map((w: number) => weekdayLabel(w)).join(", ")})` : ""} ·{" "}
+                            {SLOT_LABELS[task.slot]}
                             {task.requires_ladder ? " · drabina" : ""}
+                            {task.day_constraint ? ` · ${DAY_CONSTRAINT_LABELS[task.day_constraint]}` : ""}
                           </span>
+                          {task.note && <div className="text-xs italic text-zinc-500">{task.note}</div>}
+                          {(carryPair || skipWith) && (
+                            <div className="text-xs text-zinc-400">
+                              {carryPair && <>Powiązane (carry): {carryPair.name}. </>}
+                              {skipWith && <>Zastępowane przez: {skipWith.name}.</>}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5">
                           <form action={toggleTaskActive}>
@@ -159,7 +256,12 @@ export default async function CleaningConfigPage() {
                         </div>
                       </div>
 
-                      {items.length > 0 && (
+                      {task.checklist_template_id && (
+                        <p className="mt-1.5 text-xs text-zinc-500">
+                          Checklista z szablonu: {templates?.find((t) => t.id === task.checklist_template_id)?.name}
+                        </p>
+                      )}
+                      {!task.checklist_template_id && items.length > 0 && (
                         <ul className="mt-2 flex flex-col gap-1 border-t border-zinc-200 pt-2">
                           {items.map((item) => (
                             <li key={item.id} className="flex items-center justify-between text-xs text-zinc-600">
@@ -174,13 +276,15 @@ export default async function CleaningConfigPage() {
                           ))}
                         </ul>
                       )}
-                      <form action={addChecklistItem} className="mt-2 flex items-center gap-1.5">
-                        <input type="hidden" name="task_id" value={task.id} />
-                        <input name="label" placeholder="Dodaj punkt checklisty" className="w-full rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
-                        <button type="submit" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold hover:bg-zinc-100">
-                          +
-                        </button>
-                      </form>
+                      {!task.checklist_template_id && (
+                        <form action={addChecklistItem} className="mt-2 flex items-center gap-1.5">
+                          <input type="hidden" name="task_id" value={task.id} />
+                          <input name="label" placeholder="Dodaj punkt checklisty (własnej)" className="w-full rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+                          <button type="submit" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold hover:bg-zinc-100">
+                            +
+                          </button>
+                        </form>
+                      )}
                     </li>
                   );
                 })}
@@ -208,15 +312,15 @@ export default async function CleaningConfigPage() {
                   </select>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className={LABEL}>Dzień (dla nie-codziennych)</label>
-                  <select name="weekday" className={INPUT} defaultValue="">
-                    <option value="">—</option>
+                  <label className={LABEL}>Dni (dla nie-codziennych)</label>
+                  <div className="flex flex-wrap gap-1.5 rounded-xl border-[1.5px] border-zinc-300 px-2 py-1.5">
                     {WEEK_DISPLAY_ORDER.map((wd) => (
-                      <option key={wd} value={wd} className="capitalize">
-                        {weekdayLabel(wd)}
-                      </option>
+                      <label key={wd} className="flex items-center gap-0.5 text-xs text-zinc-600">
+                        <input type="checkbox" name="weekdays" value={wd} className="h-3.5 w-3.5" />
+                        {weekdayLabel(wd).slice(0, 2)}
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className={LABEL}>Zmiana</label>
@@ -227,6 +331,54 @@ export default async function CleaningConfigPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className={LABEL}>Ograniczenie dnia</label>
+                  <select name="day_constraint" className={INPUT} defaultValue="">
+                    <option value="">—</option>
+                    {Object.entries(DAY_CONSTRAINT_LABELS).map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className={LABEL}>Sparowane (carry)</label>
+                  <select name="carry_pair_task_id" className={INPUT} defaultValue="">
+                    <option value="">—</option>
+                    {(tasks ?? []).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className={LABEL}>Zastępowane przez</label>
+                  <select name="skip_with_task_id" className={INPUT} defaultValue="">
+                    <option value="">—</option>
+                    {(tasks ?? []).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className={LABEL}>Checklista z szablonu</label>
+                  <select name="checklist_template_id" className={INPUT} defaultValue="">
+                    <option value="">— własna —</option>
+                    {(templates ?? []).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className={LABEL}>Notatka (opcjonalnie)</label>
+                  <input name="note" className={`${INPUT} min-w-[160px]`} placeholder="np. Przed pierwszymi zajęciami" />
                 </div>
                 <div className="flex items-center gap-1.5 pb-1.5">
                   <input type="checkbox" id={`ladder-${zone.id}`} name="requires_ladder" className="h-4 w-4" />
@@ -251,7 +403,8 @@ export default async function CleaningConfigPage() {
       <Card>
         <h2 className="mb-1 font-semibold text-zinc-900">Kompetencje sprzątania</h2>
         <p className="mb-3 text-sm text-zinc-500">
-          Które strefy dana osoba może sprzątać — granularnie, nie jednym przełącznikiem.
+          Które strefy dana osoba może sprzątać — granularnie, nie jednym przełącznikiem. Niezdolność
+          do pracy na drabinie ustawia się w edycji danego pracownika.
         </p>
         <div className="flex flex-col gap-3">
           {(employees ?? []).map((emp) => (
@@ -260,6 +413,7 @@ export default async function CleaningConfigPage() {
               <span className="flex min-w-[110px] items-center gap-1.5 text-sm font-semibold text-zinc-900">
                 <ColorDot color={emp.color_hex} />
                 {emp.name}
+                {emp.no_ladder && <span className="text-xs font-normal text-zinc-400">(bez drabiny)</span>}
               </span>
               <div className="flex flex-1 flex-wrap gap-2">
                 {(zones ?? []).map((zone) => (
@@ -279,6 +433,42 @@ export default async function CleaningConfigPage() {
                 Zapisz
               </SubmitButton>
             </form>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="mb-1 font-semibold text-zinc-900">Budżety czasowe</h2>
+        <p className="mb-3 text-sm text-zinc-500">
+          Ile minut sprzątania na dany slot dnia jest "normą" dla danej osoby — używane do
+          auto-wyrównywania obciążenia w dni, gdy w tym samym slocie pracuje więcej niż jedna osoba.
+        </p>
+        <div className="flex flex-col gap-3">
+          {(employees ?? []).map((emp) => (
+            <div key={emp.id} className="rounded-lg border border-zinc-200 p-2.5">
+              <span className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-zinc-900">
+                <ColorDot color={emp.color_hex} />
+                {emp.name}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(SLOT_LABELS).map(([slot, label]) => (
+                  <form key={slot} action={setTimeBudget} className="flex items-center gap-1.5">
+                    <input type="hidden" name="employee_id" value={emp.id} />
+                    <input type="hidden" name="slot" value={slot} />
+                    <label className="text-xs text-zinc-500">{label}</label>
+                    <input
+                      type="number"
+                      name="budget_minutes"
+                      defaultValue={budgetByEmpSlot.get(`${emp.id}|${slot}`) ?? 60}
+                      className="w-[64px] rounded-lg border border-zinc-300 px-2 py-1 text-xs"
+                    />
+                    <button type="submit" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold hover:bg-zinc-100">
+                      ✓
+                    </button>
+                  </form>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </Card>

@@ -90,6 +90,7 @@ export async function updateEmployee(formData: FormData) {
   const target_hours_month = parseNumber(formData.get("target_hours_month"));
   const hourly_rate = parseNumber(formData.get("hourly_rate"));
   const active = formData.get("active") === "on";
+  const no_ladder = formData.get("no_ladder") === "on";
 
   if (!id || !name || !phone) {
     throw new Error("Podaj imię i numer telefonu.");
@@ -107,6 +108,7 @@ export async function updateEmployee(formData: FormData) {
       target_hours_month,
       hourly_rate,
       active,
+      no_ladder,
     })
     .eq("id", id);
 

@@ -37,14 +37,18 @@ export async function addTask(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const time_minutes = parseNumber(formData.get("time_minutes"), 10);
   const frequency = String(formData.get("frequency") ?? "daily");
-  const weekdayRaw = String(formData.get("weekday") ?? "");
-  const weekday = weekdayRaw === "" ? null : Number(weekdayRaw);
+  const weekdays = formData.getAll("weekdays").map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
   const slot = String(formData.get("slot") ?? "otwarcie");
   const requires_ladder = formData.get("requires_ladder") === "on";
+  const day_constraint = String(formData.get("day_constraint") ?? "") || null;
+  const note = String(formData.get("note") ?? "").trim() || null;
+  const carry_pair_task_id = String(formData.get("carry_pair_task_id") ?? "") || null;
+  const skip_with_task_id = String(formData.get("skip_with_task_id") ?? "") || null;
+  const checklist_template_id = String(formData.get("checklist_template_id") ?? "") || null;
 
   if (!zone_id || !name) throw new Error("Podaj nazwę zadania.");
-  if (frequency !== "daily" && weekday === null) {
-    throw new Error("Dla częstotliwości innej niż codziennie trzeba wybrać dzień tygodnia.");
+  if (frequency !== "daily" && weekdays.length === 0) {
+    throw new Error("Dla częstotliwości innej niż codziennie trzeba wybrać co najmniej jeden dzień tygodnia.");
   }
 
   const supabase = createServerSupabaseClient();
@@ -53,9 +57,14 @@ export async function addTask(formData: FormData) {
     name,
     time_minutes,
     frequency,
-    weekday,
+    weekdays,
     slot,
     requires_ladder,
+    day_constraint,
+    note,
+    carry_pair_task_id,
+    skip_with_task_id,
+    checklist_template_id,
   });
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/admin/sprzatanie");
@@ -135,4 +144,65 @@ export async function setEmployeeZones(formData: FormData) {
   }
   revalidatePath("/admin/sprzatanie");
   revalidatePath(`/admin/pracownicy/${employee_id}`);
+}
+
+export async function addChecklistTemplate(formData: FormData) {
+  await requireAdmin();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("Podaj nazwę szablonu.");
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("cleaning_checklist_template").insert({ name });
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/admin/sprzatanie");
+}
+
+export async function deleteChecklistTemplate(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("cleaning_checklist_template").delete().eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/admin/sprzatanie");
+}
+
+export async function addChecklistTemplateItem(formData: FormData) {
+  await requireAdmin();
+  const template_id = String(formData.get("template_id") ?? "");
+  const label = String(formData.get("label") ?? "").trim();
+  if (!template_id || !label) throw new Error("Podaj treść punktu.");
+  const supabase = createServerSupabaseClient();
+  const { count } = await supabase
+    .from("cleaning_checklist_template_item")
+    .select("id", { count: "exact", head: true })
+    .eq("template_id", template_id);
+  const { error } = await supabase.from("cleaning_checklist_template_item").insert({
+    template_id,
+    label,
+    sort_order: count ?? 0,
+  });
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/admin/sprzatanie");
+}
+
+export async function deleteChecklistTemplateItem(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("cleaning_checklist_template_item").delete().eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/admin/sprzatanie");
+}
+
+export async function setTimeBudget(formData: FormData) {
+  await requireAdmin();
+  const employee_id = String(formData.get("employee_id") ?? "");
+  const slot = String(formData.get("slot") ?? "");
+  const budget_minutes = parseNumber(formData.get("budget_minutes"), 60);
+  if (!employee_id || !slot) throw new Error("Brak danych.");
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("cleaning_time_budget")
+    .upsert({ employee_id, slot, budget_minutes }, { onConflict: "employee_id,slot" });
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/admin/sprzatanie");
 }

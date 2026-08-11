@@ -307,13 +307,34 @@ export default async function EmployeeDetailPage({
 
       <Card>
         <h2 className="mb-1 font-semibold text-zinc-900">Sprzątanie</h2>
-        <p className="text-sm text-zinc-500">
+        <p className="mb-3 text-sm text-zinc-500">
           Którymi strefami sprzątania może się zajmować — ustawiane w{" "}
           <Link href="/admin/sprzatanie" className="font-semibold text-brand-orange hover:underline">
             Konfiguracja sprzątania → Kompetencje
           </Link>
           , nie tutaj.
         </p>
+        <form action={updateEmployee}>
+          <input type="hidden" name="id" value={employee.id} />
+          <input type="hidden" name="name" value={employee.name} />
+          <input type="hidden" name="phone" value={employee.phone} />
+          <input type="hidden" name="color_hex" value={employee.color_hex} />
+          {employee.is_instructor && <input type="hidden" name="is_instructor" value="on" />}
+          {employee.active && <input type="hidden" name="active" value="on" />}
+          <input type="hidden" name="min_hours_month" value={employee.min_hours_month} />
+          <input type="hidden" name="target_hours_month" value={employee.target_hours_month} />
+          <input type="hidden" name="hourly_rate" value={employee.hourly_rate} />
+          {[...currentRoles].map((r) => (
+            <input key={String(r)} type="hidden" name="role" value={String(r)} />
+          ))}
+          <label className="flex items-center gap-2 text-sm text-zinc-900">
+            <input type="checkbox" name="no_ladder" defaultChecked={employee.no_ladder} className="h-4 w-4" />
+            Nie może pracować na drabinie (zadania z drabiną nigdy nie trafią do tej osoby)
+          </label>
+          <SubmitButton className="mt-2 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50">
+            Zapisz
+          </SubmitButton>
+        </form>
       </Card>
 
       <Card>
