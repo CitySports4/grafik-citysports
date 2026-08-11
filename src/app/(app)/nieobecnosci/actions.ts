@@ -46,7 +46,7 @@ export async function addPlannedAbsence(formData: FormData) {
     throw new Error(dbErrorMessage(error));
   }
 
-  revalidatePath("/nieobecnosci");
+  revalidatePath("/dyspozycyjnosc");
 }
 
 export async function deletePlannedAbsence(formData: FormData) {
@@ -65,6 +65,6 @@ export async function deletePlannedAbsence(formData: FormData) {
     throw new Error(dbErrorMessage(error));
   }
 
-  revalidatePath("/nieobecnosci");
+  revalidatePath("/dyspozycyjnosc");
   revalidatePath("/admin/pracownicy");
 }

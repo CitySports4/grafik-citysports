@@ -81,12 +81,14 @@ export async function GET(request: Request) {
   }
 
   const authorId = await getAiNoteAuthorId(supabase);
+
   const { error } = await supabase.from("note").insert({
     author_employee_id: authorId,
     title: `🤖 Rozbieżności godzin — ${dateKey}`,
     body,
     is_task: true,
     status: "todo",
+    source: "ai",
   });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

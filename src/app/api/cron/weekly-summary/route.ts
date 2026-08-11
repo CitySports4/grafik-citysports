@@ -100,6 +100,7 @@ Sprzątanie: ${cleaningDone}/${cleaningTotal} odhaczonych zadań.`;
     title: `🤖 Podsumowanie tygodnia ${weekStart} – ${weekEnd}`,
     body,
     is_task: false,
+    source: "ai",
   });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

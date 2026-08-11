@@ -10,18 +10,32 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
-  const navLinks = [
-    { href: "/grafik", label: "Mój grafik" },
-    { href: "/dyspozycyjnosc", label: "Dyspozycyjność" },
-    { href: "/zamiany", label: "Zamiany" },
-    { href: "/godziny", label: "Godziny pracy" },
-    { href: "/nieobecnosci", label: "Nieobecności" },
-    { href: "/sprzatanie", label: "Sprzątanie" },
-    { href: "/notatnik", label: "Notatnik" },
-    { href: "/asystent", label: "Asystent" },
+  // Grupy nawigacji: Grafik / Zadania / Notatnik — Asystent zostaje osobno,
+  // wyróżniony (ma "napędzać", nie chować się w grupie zadań).
+  const navGroups: { label: string; links: { href: string; label: string }[] }[] = [
+    {
+      label: "Grafik",
+      links: [
+        { href: "/grafik", label: "Mój grafik" },
+        { href: "/dyspozycyjnosc", label: "Dyspozycyjność" },
+        { href: "/zamiany", label: "Zamiany" },
+      ],
+    },
+    {
+      label: "Zadania",
+      links: [
+        { href: "/godziny", label: "Godziny pracy" },
+        { href: "/sprzatanie", label: "Sprzątanie" },
+      ],
+    },
+    {
+      label: "Notatnik",
+      links: [{ href: "/notatnik", label: "Notatnik" }],
+    },
   ];
+  const trailingLinks = [{ href: "/asystent", label: "🤖 Asystent" }];
   if (employee.roles.includes("admin")) {
-    navLinks.push({ href: "/admin", label: "Panel admina" });
+    trailingLinks.push({ href: "/admin", label: "Panel admina" });
   }
 
   return (
@@ -40,7 +54,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </div>
           </div>
           <nav className="flex flex-wrap items-center gap-1 text-sm">
-            {navLinks.map((link) => (
+            {navGroups.map((group, i) => (
+              <span key={group.label} className="flex flex-wrap items-center gap-1">
+                {i > 0 && <span className="mx-1 hidden h-5 w-px bg-white/15 sm:block" />}
+                {group.links.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="rounded-lg px-3 py-1.5 font-medium text-white/80 hover:bg-white/10 hover:text-white"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </span>
+            ))}
+            <span className="mx-1 hidden h-5 w-px bg-white/15 sm:block" />
+            {trailingLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}

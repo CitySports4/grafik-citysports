@@ -91,6 +91,7 @@ export async function GET(request: Request) {
     body,
     is_task: true,
     status: "todo",
+    source: "ai",
   });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
