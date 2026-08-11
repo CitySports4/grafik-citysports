@@ -5,6 +5,8 @@ import { requireEmployee } from "@/lib/session";
 import { Card } from "@/components/Card";
 import { NotesBoard } from "../../NotesBoard";
 import { ProjectHeader } from "./ProjectHeader";
+import { PowiazaniaToggle } from "./PowiazaniaToggle";
+import { LinkMap } from "../../LinkMap";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const employee = await requireEmployee();
@@ -29,6 +31,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     ]);
 
   if (!project) notFound();
+
+  const linkedProjectIdsForMap = (projectLinks ?? []).map((l) => l.project_id_b);
+  const { data: linkedProjectRows } =
+    linkedProjectIdsForMap.length > 0
+      ? await supabase.from("project").select("id, name, status").in("id", linkedProjectIdsForMap)
+      : { data: [] };
+  const mapProjects = [{ id: project.id, name: project.name, status: project.status }, ...(linkedProjectRows ?? [])];
+  const projectNoteIds = new Set((notes ?? []).map((n) => n.id));
+  const noteLinksInProject = (links ?? []).filter((l) => projectNoteIds.has(l.note_id_a) && projectNoteIds.has(l.note_id_b));
 
   const linksByNote = new Map<string, string[]>();
   for (const l of links ?? []) {
@@ -87,6 +98,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           notes={fullNotes}
           projects={[]}
         />
+      </Card>
+
+      <Card>
+        <PowiazaniaToggle>
+          <LinkMap projects={mapProjects} projectLinks={projectLinks ?? []} notes={fullNotes} noteLinks={noteLinksInProject} />
+        </PowiazaniaToggle>
       </Card>
     </div>
   );
