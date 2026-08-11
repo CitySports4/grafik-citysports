@@ -2,16 +2,16 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { assertCronSecret, getAiNoteAuthorId } from "@/lib/cron-auth";
 import { toDateKey } from "@/lib/schedule-month";
-import { weekdayLabel } from "@/lib/weekdays";
-import { isTaskDueOnDate, type CleaningTask } from "@/lib/cleaning";
+import { computeOverdueTasks, type CleaningTask } from "@/lib/cleaning";
 import { askWithContext } from "@/lib/ai";
 
-// Uruchamiane raz w tygodniu przez Vercel Cron — sprawdza ostatnie 7 dni pod
-// kątem zadań sprzątania (co tydzień i rzadziej) które BYŁY zaplanowane, ale
-// nie zostały odhaczone jako zrobione. Sama lista jest w 100% deterministyczna
-// (kod) — AI tylko formułuje czytelną notatkę.
-const LOOKBACK_DAYS = 7;
-
+// Uruchamiane raz w tygodniu przez Vercel Cron — sprawdza, które zadania
+// sprzątania (co tydzień i rzadziej) są realnie zaległe wg swojej
+// częstotliwości (dni od ostatniego wykonania > oczekiwany interwał), a nie
+// tylko "nie wypadło dziś na swój dzień" — bo dni już nie są ustalone z góry,
+// tylko wybierane dynamicznie zależnie od grafiku (patrz `src/lib/cleaning.ts`).
+// Sama lista jest w 100% deterministyczna (kod) — AI tylko formułuje czytelną
+// notatkę.
 export async function GET(request: Request) {
   try {
     assertCronSecret(request);
@@ -21,12 +21,11 @@ export async function GET(request: Request) {
 
   const supabase = createServerSupabaseClient();
 
-  const [{ data: settings }, { data: tasks }, { data: zones }] = await Promise.all([
-    supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle(),
+  const [{ data: tasks }, { data: zones }] = await Promise.all([
     supabase
       .from("cleaning_task")
       .select(
-        "id, zone_id, name, time_minutes, frequency, weekdays, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+        "id, zone_id, name, time_minutes, frequency, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
       )
       .eq("active", true)
       .neq("frequency", "daily"),
@@ -34,51 +33,40 @@ export async function GET(request: Request) {
   ]);
 
   const zoneNameById = new Map((zones ?? []).map((z) => [z.id, z.name]));
+  const nonDailyTasks = (tasks ?? []) as CleaningTask[];
+  const taskIds = nonDailyTasks.map((t) => t.id);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const dateKeys: { dateKey: string; weekday: number }[] = [];
-  for (let i = LOOKBACK_DAYS; i >= 1; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    dateKeys.push({ dateKey: toDateKey(d), weekday: d.getDay() });
+  const { data: completions } =
+    taskIds.length > 0
+      ? await supabase
+          .from("cleaning_completion")
+          .select("task_id, date, completed_at")
+          .in("task_id", taskIds)
+          .not("completed_at", "is", null)
+          .order("date", { ascending: false })
+      : { data: [] };
+  const lastDoneByTask = new Map<string, string>();
+  for (const c of completions ?? []) {
+    if (!lastDoneByTask.has(c.task_id)) lastDoneByTask.set(c.task_id, c.date);
   }
 
-  const dueEntries: { taskId: string; taskName: string; zoneName: string; dateKey: string; weekday: number }[] = [];
-  for (const { dateKey, weekday } of dateKeys) {
-    for (const t of (tasks ?? []) as CleaningTask[]) {
-      if (isTaskDueOnDate(t, dateKey, weekday, settings?.cycle_start ?? null)) {
-        dueEntries.push({ taskId: t.id, taskName: t.name, zoneName: zoneNameById.get(t.zone_id) ?? "?", dateKey, weekday });
-      }
-    }
-  }
+  const today = toDateKey(new Date());
+  const overdue = computeOverdueTasks(nonDailyTasks, lastDoneByTask, today).filter((o) => o.alert);
 
-  if (dueEntries.length === 0) {
-    return NextResponse.json({ ok: true, overdue: 0 });
-  }
-
-  const { data: completions } = await supabase
-    .from("cleaning_completion")
-    .select("task_id, date, completed_at")
-    .in(
-      "date",
-      dateKeys.map((d) => d.dateKey)
-    );
-  const doneSet = new Set((completions ?? []).filter((c) => c.completed_at).map((c) => `${c.task_id}|${c.date}`));
-
-  const overdue = dueEntries.filter((e) => !doneSet.has(`${e.taskId}|${e.dateKey}`));
   if (overdue.length === 0) {
     return NextResponse.json({ ok: true, overdue: 0 });
   }
 
-  const lines = overdue.map((e) => `${e.taskName} (${e.zoneName}) — miało być zrobione ${e.dateKey} (${weekdayLabel(e.weekday)})`);
+  const lines = overdue.map(
+    (o) => `${o.task.name} (${zoneNameById.get(o.task.zone_id) ?? "?"}) — zalega ${o.daysLate} dni ponad oczekiwany interwał`
+  );
 
   let body: string;
   try {
     body = await askWithContext(
       "Piszesz krótką, rzeczową notatkę dla admina City Sports o zaległych zadaniach sprzątania. Bez lania wody, po polsku, wypunktuj.",
       "Napisz krótką notatkę podsumowującą te zaległości.",
-      `Zaległe zadania sprzątania (nieodhaczone w ciągu ostatnich ${LOOKBACK_DAYS} dni):\n${lines.join("\n")}`
+      `Zaległe zadania sprzątania (nie wykonane w oczekiwanym terminie wg swojej częstotliwości):\n${lines.join("\n")}`
     );
   } catch {
     body = lines.join("\n");

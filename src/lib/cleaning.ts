@@ -9,7 +9,6 @@ export type CleaningTask = {
   name: string;
   time_minutes: number;
   frequency: CleaningFrequency;
-  weekdays: number[];
   slot: CleaningSlot;
   requires_ladder: boolean;
   active: boolean;
@@ -65,21 +64,109 @@ function weeksSinceCycleStart(dateKey: string, cycleStart: string): number {
   return Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
 }
 
-export function isTaskDueOnDate(task: CleaningTask, dateKey: string, weekday: number, cycleStart: string | null): boolean {
-  if (!task.active) return false;
+function isDailyTaskDueOnDate(task: CleaningTask, weekday: number): boolean {
+  if (!task.active || task.frequency !== "daily") return false;
   if ((task.day_constraint === "mon_fri" || task.day_constraint === "not_weekend") && (weekday === 0 || weekday === 6)) {
     return false;
   }
-  if (task.frequency === "daily") return true;
-  if (!task.weekdays.includes(weekday)) return false;
-  if (task.frequency === "2xweek" || task.frequency === "3xweek" || task.frequency === "weekly") return true;
-  if (!cycleStart) return false; // cykl nieustawiony — rzadsze zadania nie są jeszcze liczone
+  return true;
+}
+
+function addDays(dateKey: string, n: number): string {
+  const d = new Date(dateKey + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return toDateKey(d);
+}
+
+function datesFrom(startDateKey: string, count: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) out.push(addDays(startDateKey, i));
+  return out;
+}
+
+// Zwraca listę dat obejmujących cały "okres" częstotliwości zadania, w
+// którym mieści się `dateKey`: tydzień (pon–nd) dla co-tygodniowych/2x/3x-w-
+// tygodniu; blok 2/4/12 tygodni wyrównany do `cycle_start` dla rzadszych.
+// null dla zadań codziennych (nie dotyczy) lub gdy okres wymaga
+// `cycle_start` a nie jest jeszcze ustawiony.
+export function cycleWindowDatesForFrequency(frequency: CleaningFrequency, dateKey: string, cycleStart: string | null): string[] | null {
+  if (frequency === "daily") return null;
+  if (frequency === "weekly" || frequency === "2xweek" || frequency === "3xweek") {
+    return datesFrom(mondayOfWeek(dateKey), 7);
+  }
+  if (!cycleStart) return null; // cykl nieustawiony — rzadsze zadania nie są jeszcze liczone
   const weeks = weeksSinceCycleStart(dateKey, cycleStart);
-  if (weeks < 0) return false;
-  if (task.frequency === "biweekly") return weeks % 2 === 0;
-  if (task.frequency === "monthly") return weeks % 4 === 0;
-  if (task.frequency === "quarterly") return weeks % 12 === 0;
-  return false;
+  if (weeks < 0) return null;
+  const spanWeeks = frequency === "biweekly" ? 2 : frequency === "monthly" ? 4 : 12; // quarterly
+  const windowStart = addDays(mondayOfWeek(cycleStart), Math.floor(weeks / spanWeeks) * spanWeeks * 7);
+  return datesFrom(windowStart, spanWeeks * 7);
+}
+
+export function cycleWindowDates(task: CleaningTask, dateKey: string, cycleStart: string | null): string[] | null {
+  return cycleWindowDatesForFrequency(task.frequency, dateKey, cycleStart);
+}
+
+// Wszystkie 4 możliwe okna (tydzień / 2-tyg. / 4-tyg. / 12-tyg.) dla danej
+// daty — używane przez wywołujących do jednorazowego pobrania zakresu zmian
+// obejmującego wszystkie częstotliwości naraz, zamiast per-zadanie.
+export function allCycleWindows(dateKey: string, cycleStart: string | null): string[][] {
+  const freqs: CleaningFrequency[] = ["weekly", "biweekly", "monthly", "quarterly"];
+  return freqs
+    .map((f) => cycleWindowDatesForFrequency(f, dateKey, cycleStart))
+    .filter((w): w is string[] => w !== null);
+}
+
+export type WindowDay = { dateKey: string; weekday: number; daySlots: Record<CleaningSlot, string | null> };
+
+// Czy dany dzień w oknie kwalifikuje się jako kandydat na wykonanie zadania:
+// bez naruszenia ograniczenia dnia i z kompetentną osobą na właściwym slocie.
+function qualifiesForTask(task: CleaningTask, day: WindowDay, competencyByEmployee: Map<string, Set<string>>): boolean {
+  if ((task.day_constraint === "mon_fri" || task.day_constraint === "not_weekend") && (day.weekday === 0 || day.weekday === 6)) {
+    return false;
+  }
+  const candidate = day.daySlots[task.slot];
+  if (!candidate) return false;
+  return competencyByEmployee.get(candidate)?.has(task.zone_id) ?? false;
+}
+
+const OCCURRENCES_PER_WINDOW: Partial<Record<CleaningFrequency, number>> = { "2xweek": 2, "3xweek": 3 };
+
+// Serce zasady "sprzątanie zależy od grafiku, nie na odwrót": zamiast
+// sztywnego, skonfigurowanego dnia tygodnia, dla każdego okresu (tydzień
+// albo blok tygodni) wybiera dynamicznie, który dzień(-nie) w tym oknie ma
+// zostać wykonane zadanie — na podstawie tego, kto faktycznie tego dnia
+// pracuje i ma kompetencję do strefy. Gdy w oknie jest więcej kwalifikujących
+// się dni niż trzeba, rozkłada wybór równomiernie (maksymalizując najmniejszy
+// odstęp) zamiast zawsze brać pierwszy z brzegu — więc zmiana w grafiku (np.
+// osoba sprzątająca zamieniona na niesprzątającą) sama zmienia, który dzień
+// zostanie wybrany. Gdy w całym oknie NIKT kompetentny nie pracuje ani razu —
+// zadanie w ogóle nie staje się "due", więc trafia do computeOverdueTasks
+// jako realna luka zamiast po cichu zniknąć.
+export function resolveCyclicDueDates(
+  task: CleaningTask,
+  windowDays: WindowDay[],
+  competencyByEmployee: Map<string, Set<string>>
+): Set<string> {
+  const needed = OCCURRENCES_PER_WINDOW[task.frequency] ?? 1;
+  const qualifying = windowDays.filter((d) => qualifiesForTask(task, d, competencyByEmployee)).map((d) => d.dateKey);
+  if (qualifying.length <= needed) return new Set(qualifying);
+
+  const timeOf = (dk: string) => new Date(dk + "T00:00:00").getTime();
+  const chosen: string[] = [qualifying[0]];
+  while (chosen.length < needed) {
+    let best = qualifying[0];
+    let bestDist = -1;
+    for (const d of qualifying) {
+      if (chosen.includes(d)) continue;
+      const dist = Math.min(...chosen.map((c) => Math.abs(timeOf(d) - timeOf(c))));
+      if (dist > bestDist) {
+        bestDist = dist;
+        best = d;
+      }
+    }
+    chosen.push(best);
+  }
+  return new Set(chosen);
 }
 
 export type ResolvedCleaningTask = {
@@ -89,18 +176,30 @@ export type ResolvedCleaningTask = {
 };
 
 // Dla zadań aktywnych danego dnia: przydziel osobę, która i tak pracuje na
-// odpowiedniej "roli dnia" ORAZ ma kompetencję do danej strefy. Jeśli nikt
-// taki nie pracuje tego dnia — zadanie zostaje bez przypisania (podobnie jak
-// nieobsadzona zmiana — widoczne, do ręcznej reakcji, a nie ukryte).
+// odpowiedniej "roli dnia" ORAZ ma kompetencję do danej strefy. Zadania
+// codzienne są due zawsze (z zastrzeżeniem ograniczenia dnia); zadania
+// cykliczne są due w `dateKey` tylko gdy `resolveCyclicDueDates` wybrało
+// akurat ten dzień w bieżącym oknie — `windowDaySlotsByDate` musi zawierać
+// (przynajmniej) cały zakres z `cycleWindowDates` dla każdej częstotliwości.
+// Jeśli nikt kompetentny nie pracuje — zadanie zostaje bez przypisania
+// (podobnie jak nieobsadzona zmiana — widoczne, do ręcznej reakcji).
 export function resolveTasksForDate(
   tasks: CleaningTask[],
   dateKey: string,
   weekday: number,
   cycleStart: string | null,
   daySlots: Record<CleaningSlot, string | null>,
+  windowDaySlotsByDate: Map<string, WindowDay>,
   competencyByEmployee: Map<string, Set<string>>
 ): ResolvedCleaningTask[] {
-  const due = tasks.filter((t) => isTaskDueOnDate(t, dateKey, weekday, cycleStart));
+  const due = tasks.filter((task) => {
+    if (!task.active) return false;
+    if (task.frequency === "daily") return isDailyTaskDueOnDate(task, weekday);
+    const window = cycleWindowDates(task, dateKey, cycleStart);
+    if (!window) return false;
+    const windowDays = window.map((dk) => windowDaySlotsByDate.get(dk)).filter((d): d is WindowDay => !!d);
+    return resolveCyclicDueDates(task, windowDays, competencyByEmployee).has(dateKey);
+  });
   const afterSkip = applySkipWith(due);
   return afterSkip.map((task) => {
     const candidate = daySlots[task.slot];

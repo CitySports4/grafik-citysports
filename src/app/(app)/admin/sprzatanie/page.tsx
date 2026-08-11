@@ -1,5 +1,4 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { weekdayLabel, WEEK_DISPLAY_ORDER } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
@@ -64,7 +63,7 @@ export default async function CleaningConfigPage() {
     supabase
       .from("cleaning_task")
       .select(
-        "id, zone_id, name, time_minutes, frequency, weekdays, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+        "id, zone_id, name, time_minutes, frequency, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
       )
       .order("sort_order"),
     supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
@@ -105,7 +104,9 @@ export default async function CleaningConfigPage() {
         <p className="text-sm text-zinc-500">
           Strefy, zadania, checklisty i kto może sprzątać co. Przydział zadań na dany dzień zależy
           od tego, kto ma tego dnia zmianę (otwarcie/środek/zamknięcie/po zamknięciu) — patrz{" "}
-          <span className="font-semibold">/sprzatanie</span>.
+          <span className="font-semibold">/sprzatanie</span>. Zadania nie-codzienne (co tydzień i
+          rzadziej) nie mają ustalonego dnia tygodnia — system sam wybiera dzień w danym okresie, w
+          którym kompetentna osoba faktycznie pracuje; zmiana w grafiku sama zmienia ten wybór.
         </p>
       </div>
 
@@ -225,8 +226,7 @@ export default async function CleaningConfigPage() {
                         <div className="text-sm">
                           <span className="font-semibold text-zinc-900">{task.name}</span>{" "}
                           <span className="text-xs text-zinc-500">
-                            · {task.time_minutes} min · {FREQ_LABELS[task.frequency] ?? task.frequency}
-                            {task.weekdays?.length > 0 ? ` (${task.weekdays.map((w: number) => weekdayLabel(w)).join(", ")})` : ""} ·{" "}
+                            · {task.time_minutes} min · {FREQ_LABELS[task.frequency] ?? task.frequency} ·{" "}
                             {SLOT_LABELS[task.slot]}
                             {task.requires_ladder ? " · drabina" : ""}
                             {task.day_constraint ? ` · ${DAY_CONSTRAINT_LABELS[task.day_constraint]}` : ""}
@@ -310,17 +310,6 @@ export default async function CleaningConfigPage() {
                       </option>
                     ))}
                   </select>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className={LABEL}>Dni (dla nie-codziennych)</label>
-                  <div className="flex flex-wrap gap-1.5 rounded-xl border-[1.5px] border-zinc-300 px-2 py-1.5">
-                    {WEEK_DISPLAY_ORDER.map((wd) => (
-                      <label key={wd} className="flex items-center gap-0.5 text-xs text-zinc-600">
-                        <input type="checkbox" name="weekdays" value={wd} className="h-3.5 w-3.5" />
-                        {weekdayLabel(wd).slice(0, 2)}
-                      </label>
-                    ))}
-                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className={LABEL}>Zmiana</label>

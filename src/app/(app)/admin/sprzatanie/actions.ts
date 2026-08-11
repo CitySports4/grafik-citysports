@@ -37,7 +37,6 @@ export async function addTask(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const time_minutes = parseNumber(formData.get("time_minutes"), 10);
   const frequency = String(formData.get("frequency") ?? "daily");
-  const weekdays = formData.getAll("weekdays").map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
   const slot = String(formData.get("slot") ?? "otwarcie");
   const requires_ladder = formData.get("requires_ladder") === "on";
   const day_constraint = String(formData.get("day_constraint") ?? "") || null;
@@ -47,9 +46,6 @@ export async function addTask(formData: FormData) {
   const checklist_template_id = String(formData.get("checklist_template_id") ?? "") || null;
 
   if (!zone_id || !name) throw new Error("Podaj nazwę zadania.");
-  if (frequency !== "daily" && weekdays.length === 0) {
-    throw new Error("Dla częstotliwości innej niż codziennie trzeba wybrać co najmniej jeden dzień tygodnia.");
-  }
 
   const supabase = createServerSupabaseClient();
   const { error } = await supabase.from("cleaning_task").insert({
@@ -57,7 +53,6 @@ export async function addTask(formData: FormData) {
     name,
     time_minutes,
     frequency,
-    weekdays,
     slot,
     requires_ladder,
     day_constraint,

@@ -9,7 +9,9 @@ import {
   resolveCarryOverrides,
   computeOverdueTasks,
   balanceSlotAssignments,
+  allCycleWindows,
   type CleaningTask,
+  type WindowDay,
 } from "@/lib/cleaning";
 import { Card } from "@/components/Card";
 import { CleaningDayList } from "./CleaningDayList";
@@ -33,9 +35,19 @@ export default async function CleaningDayPage({
 
   const supabase = createServerSupabaseClient();
 
+  // Cykl trzeba znać zanim wyznaczymy zakres dat do pobrania grafiku (okna
+  // różnej długości dla różnych częstotliwości), więc ta jedna zapytanie
+  // idzie osobno, przed resztą.
+  const { data: settings } = await supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle();
+  const cycleStart = settings?.cycle_start ?? null;
+  const windows = allCycleWindows(dateKey, cycleStart);
+  const allWindowDates = new Set<string>([dateKey, ...windows.flat()]);
+  const sortedWindowDates = [...allWindowDates].sort();
+  const rangeStart = sortedWindowDates[0];
+  const rangeEnd = sortedWindowDates[sortedWindowDates.length - 1];
+
   const [
-    { data: day },
-    { data: settings },
+    { data: windowDays },
     { data: tasks },
     { data: allActiveNonDaily },
     { data: checklistItems },
@@ -43,22 +55,24 @@ export default async function CleaningDayPage({
     { data: employees },
     { data: employeeZones },
   ] = await Promise.all([
+    // Grafik dla całego zakresu dat obejmującego wszystkie okna cykli
+    // (tydzień / 2-tyg. / 4-tyg. / 12-tyg.) — potrzebny, by dynamicznie
+    // wybrać, który dzień w oknie ma przypadać dane zadanie cykliczne.
     supabase
       .from("schedule_day")
-      .select("schedule_shift(start_time, employee_id), schedule_month!inner(status)")
-      .eq("date", dateKey)
-      .eq("schedule_month.status", "published")
-      .maybeSingle(),
-    supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle(),
+      .select("date, schedule_shift(start_time, employee_id), schedule_month!inner(status)")
+      .gte("date", rangeStart)
+      .lte("date", rangeEnd)
+      .eq("schedule_month.status", "published"),
     supabase
       .from("cleaning_task")
       .select(
-        "id, zone_id, name, time_minutes, frequency, weekdays, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+        "id, zone_id, name, time_minutes, frequency, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
       )
       .eq("active", true),
     supabase
       .from("cleaning_task")
-      .select("id, zone_id, name, time_minutes, frequency, weekdays, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id")
+      .select("id, zone_id, name, time_minutes, frequency, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id")
       .eq("active", true)
       .neq("frequency", "daily"),
     supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
@@ -66,6 +80,21 @@ export default async function CleaningDayPage({
     supabase.from("employee").select("id, name, color_hex, no_ladder"),
     supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
   ]);
+
+  const windowDaySlotsByDate = new Map<string, WindowDay>();
+  for (const dk of allWindowDates) {
+    windowDaySlotsByDate.set(dk, {
+      dateKey: dk,
+      weekday: new Date(dk + "T00:00:00").getDay(),
+      daySlots: { otwarcie: null, srodek: null, zamkniecie: null, po_zamknieciu: null },
+    });
+  }
+  for (const wd of windowDays ?? []) {
+    const shifts = (wd.schedule_shift ?? []) as { start_time: string; employee_id: string | null }[];
+    const entry = windowDaySlotsByDate.get(wd.date);
+    if (entry) entry.daySlots = resolveDaySlots(shifts);
+  }
+  const todayPublished = (windowDays ?? []).some((wd) => wd.date === dateKey);
 
   const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
   const noLadderByEmployee = new Set((employees ?? []).filter((e) => e.no_ladder).map((e) => e.id));
@@ -89,15 +118,15 @@ export default async function CleaningDayPage({
     return checklistByTask.get(task.id) ?? [];
   }
 
-  const shifts = (day?.schedule_shift ?? []) as { start_time: string; employee_id: string | null }[];
-  const daySlots = resolveDaySlots(shifts);
+  const daySlots = windowDaySlotsByDate.get(dateKey)!.daySlots;
 
   let resolved = resolveTasksForDate(
     (tasks ?? []) as CleaningTask[],
     dateKey,
     weekday,
-    settings?.cycle_start ?? null,
+    cycleStart,
     daySlots,
+    windowDaySlotsByDate,
     competencyByEmployee
   );
 
@@ -179,7 +208,7 @@ export default async function CleaningDayPage({
           <h1 className="text-lg font-bold capitalize text-zinc-900">
             Sprzątanie — {weekdayLabel(weekday)}, {dateObj.toLocaleDateString("pl-PL", { day: "numeric", month: "long" })}
           </h1>
-          {!day && <p className="text-sm text-amber-600">Grafik na ten dzień nie jest jeszcze opublikowany — przydział może być niepełny.</p>}
+          {!todayPublished && <p className="text-sm text-amber-600">Grafik na ten dzień nie jest jeszcze opublikowany — przydział może być niepełny.</p>}
         </div>
         <div className="flex items-center gap-2 text-sm">
           <Link href={`/sprzatanie?date=${toDateKey(prevDate)}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">

@@ -21,7 +21,10 @@ export async function askWithContext(system: string, question: string, context: 
   const client = getAnthropicClient();
 
   const response = await client.messages.create({
-    model: "claude-opus-5",
+    // Sonnet 5: te wywołania tylko przerabiają gotowe, deterministycznie
+    // wyliczone dane na kilka zdań tekstu (notatki, podsumowania) — nie
+    // wymagają mocy Opusa.
+    model: "claude-sonnet-5",
     max_tokens: 1024,
     thinking: { type: "adaptive" },
     system,
