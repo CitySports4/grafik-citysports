@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getSessionEmployee } from "@/lib/session";
+import { NavDropdown } from "@/components/NavDropdown";
 import { logout } from "./actions";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -10,15 +11,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
-  // Grupy nawigacji: Grafik / Zadania / Notatnik — Asystent zostaje osobno,
-  // wyróżniony (ma "napędzać", nie chować się w grupie zadań).
+  // Grupy nawigacji jako prawdziwe rozwijane menu (nie tylko wizualny
+  // podział) — Zamiany teraz żyją wewnątrz "Mój grafik", Asystent zdjęty.
   const navGroups: { label: string; links: { href: string; label: string }[] }[] = [
     {
       label: "Grafik",
       links: [
         { href: "/grafik", label: "Mój grafik" },
         { href: "/dyspozycyjnosc", label: "Dyspozycyjność" },
-        { href: "/zamiany", label: "Zamiany" },
       ],
     },
     {
@@ -28,12 +28,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: "/sprzatanie", label: "Sprzątanie" },
       ],
     },
-    {
-      label: "Notatnik",
-      links: [{ href: "/notatnik", label: "Notatnik" }],
-    },
   ];
-  const trailingLinks = [{ href: "/asystent", label: "🤖 Asystent" }];
+  const trailingLinks = [{ href: "/notatnik", label: "Notatnik" }];
   if (employee.roles.includes("admin")) {
     trailingLinks.push({ href: "/admin", label: "Panel admina" });
   }
@@ -54,21 +50,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </div>
           </div>
           <nav className="flex flex-wrap items-center gap-1 text-sm">
-            {navGroups.map((group, i) => (
-              <span key={group.label} className="flex flex-wrap items-center gap-1">
-                {i > 0 && <span className="mx-1 hidden h-5 w-px bg-white/15 sm:block" />}
-                {group.links.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className="rounded-lg px-3 py-1.5 font-medium text-white/80 hover:bg-white/10 hover:text-white"
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </span>
+            {navGroups.map((group) => (
+              <NavDropdown key={group.label} label={group.label} links={group.links} />
             ))}
-            <span className="mx-1 hidden h-5 w-px bg-white/15 sm:block" />
             {trailingLinks.map((link) => (
               <Link
                 key={link.href}

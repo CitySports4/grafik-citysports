@@ -9,6 +9,12 @@ import { PrintScaler } from "./PrintScaler";
 
 const SLOT_COUNT = 3;
 
+// "08:00 - 14:00" — format 1:1 ze starego arkusza (spacja-myślnik-spacja,
+// nie krótka kreska), żeby wydruk wyglądał jak dotychczasowy dokument.
+function timeRange(start: string, end: string): string {
+  return `${formatHm(start)} - ${formatHm(end)}`;
+}
+
 export default async function PrintGrafikPage({
   searchParams,
 }: {
@@ -39,7 +45,7 @@ export default async function PrintGrafikPage({
       )
       .eq("schedule_month_id", scheduleMonth.id)
       .order("date"),
-    supabase.from("employee").select("id, name, color_hex"),
+    supabase.from("employee").select("id, name"),
     // Poniedziałek jako reprezentatywny dzień powszedni do nagłówków kolumn —
     // rzeczywiste godziny per dzień (jeśli nadpisane) i tak są pokazane w komórce.
     supabase
@@ -53,7 +59,7 @@ export default async function PrintGrafikPage({
   const templateBySlot = new Map((templateSlots ?? []).map((t) => [t.slot_index, t]));
   const slotHeaders = Array.from({ length: SLOT_COUNT }, (_, i) => {
     const t = templateBySlot.get(i);
-    return t ? `${formatHm(t.default_start_time)}–${formatHm(t.default_end_time)}` : `Zmiana ${i + 1}`;
+    return t ? timeRange(t.default_start_time, t.default_end_time) : `Zmiana ${i + 1}`;
   });
 
   return (
@@ -77,13 +83,14 @@ export default async function PrintGrafikPage({
       <table id="print-table" className="w-full border-collapse text-[10px] leading-tight">
         <thead>
           <tr>
-            <th className="w-[70px] border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">Data</th>
+            <th className="w-[55px] border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">DATA</th>
+            <th className="w-[75px] border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">DZIEŃ</th>
             {slotHeaders.map((label, i) => (
               <th key={i} className="border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">
                 {label}
               </th>
             ))}
-            <th className="border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">Wydarzenia</th>
+            <th className="border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">WYDARZENIA</th>
           </tr>
         </thead>
         <tbody>
@@ -99,33 +106,26 @@ export default async function PrintGrafikPage({
             const isWeekend = day.weekday === 0 || day.weekday === 6;
             return (
               <tr key={day.id} className={`break-inside-avoid ${isWeekend ? "bg-zinc-50" : ""}`}>
-                <td className="border border-zinc-300 px-1 py-0.5 align-top font-semibold">
-                  <span className="capitalize">{weekdayLabel(day.weekday).slice(0, 3)}</span> {dateLabel}
-                </td>
+                <td className="border border-zinc-300 px-1 py-0.5 align-top font-semibold">{dateLabel}</td>
+                <td className="border border-zinc-300 px-1 py-0.5 align-top capitalize">{weekdayLabel(day.weekday)}</td>
                 {Array.from({ length: SLOT_COUNT }, (_, i) => {
                   const shift = shiftsBySlot.get(i);
                   const emp = shift?.employee_id ? employeeById.get(shift.employee_id) : null;
-                  const actualLabel = shift ? `${formatHm(shift.start_time)}–${formatHm(shift.end_time)}` : null;
+                  const actualLabel = shift ? timeRange(shift.start_time, shift.end_time) : null;
                   const headerMatches = actualLabel === slotHeaders[i];
                   return (
-                    <td key={i} className="border border-zinc-300 px-1 py-0.5 align-top">
+                    <td key={i} className="border border-zinc-300 px-1 py-0.5 align-top font-semibold uppercase">
                       {!shift ? (
-                        <span className="text-zinc-300">—</span>
+                        <span className="font-normal text-zinc-300">—</span>
                       ) : shift.is_closed ? (
-                        <span className="text-zinc-400">NIECZYNNE</span>
+                        <span className="font-normal normal-case text-zinc-400">NIECZYNNE</span>
                       ) : emp ? (
-                        <div className="flex items-center gap-1">
-                          <span
-                            className="inline-block h-[7px] w-[7px] shrink-0 rounded-full"
-                            style={{ backgroundColor: emp.color_hex }}
-                          />
-                          <span>
-                            {emp.name}
-                            {!headerMatches && <div className="text-[8px] text-zinc-500">{actualLabel}</div>}
-                          </span>
-                        </div>
+                        <>
+                          {emp.name}
+                          {!headerMatches && <div className="text-[8px] font-normal normal-case text-zinc-500">{actualLabel}</div>}
+                        </>
                       ) : (
-                        <span className="text-zinc-400">— nieprzypisane —</span>
+                        <span className="font-normal normal-case text-zinc-400">— nieprzypisane —</span>
                       )}
                     </td>
                   );
@@ -135,7 +135,7 @@ export default async function PrintGrafikPage({
                     const emp = shift.employee_id ? employeeById.get(shift.employee_id) : null;
                     return (
                       <div key={shift.id}>
-                        {formatHm(shift.start_time)}–{formatHm(shift.end_time)}: {shift.is_closed ? "NIECZYNNE" : emp ? emp.name : "— nieprzypisane —"}
+                        {timeRange(shift.start_time, shift.end_time)}: {shift.is_closed ? "NIECZYNNE" : emp ? emp.name : "— nieprzypisane —"}
                       </div>
                     );
                   })}
@@ -146,7 +146,7 @@ export default async function PrintGrafikPage({
                       .join(", ");
                     return (
                       <div key={ev.id}>
-                        {ev.start_time ? `${formatHm(ev.start_time)}${ev.end_time ? `–${formatHm(ev.end_time)}` : ""} ` : ""}
+                        {ev.start_time ? `${formatHm(ev.start_time)}${ev.end_time ? `-${formatHm(ev.end_time)}` : ""} ` : ""}
                         {EVENT_TYPE_LABELS[ev.type] ?? ev.type}
                         {ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}
                         {participants ? ` (${participants})` : ""}
