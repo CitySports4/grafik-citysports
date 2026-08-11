@@ -10,11 +10,15 @@ import {
   convertToNote,
   updateTaskStatus,
   updateTaskAssignee,
+  updatePriority,
   linkNotes,
   unlinkNotes,
+  addComment,
+  deleteComment,
 } from "./actions";
 
 type Employee = { id: string; name: string; color_hex: string };
+type Comment = { id: string; author_employee_id: string; body: string; created_at: string };
 type Note = {
   id: string;
   author_employee_id: string;
@@ -26,49 +30,101 @@ type Note = {
   created_at: string;
   updated_at: string;
   linkedIds: string[];
+  project_id: string | null;
+  category: "general" | "idea" | "plan";
+  priority: number | null;
+  due_date: string | null;
+  is_long_term: boolean;
+  source: "human" | "ai";
+  comments: Comment[];
 };
+type ProjectRef = { id: string; name: string };
 
 const STATUS_LABELS: Record<string, string> = {
   todo: "Do zrobienia",
   in_progress: "W trakcie",
   done: "Zrobione",
 };
+const PRIORITY_LABELS: Record<string, string> = { "1": "Niski", "2": "Średni", "3": "Wysoki" };
+const CATEGORY_LABELS: Record<string, string> = { general: "Notatka", idea: "Pomysł", plan: "Plan" };
 
 const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2.5 py-1.5 text-sm";
 
+export type NotesBoardMode = "notatki" | "pomysly" | "plany" | "priorytety" | "projekt";
+
 export function NotesBoard({
+  mode,
   currentEmployeeId,
   isAdmin,
   employees,
   notes,
+  projects,
+  scopedProjectId,
 }: {
+  mode: NotesBoardMode;
   currentEmployeeId: string;
   isAdmin: boolean;
   employees: Employee[];
   notes: Note[];
+  projects: ProjectRef[];
+  scopedProjectId?: string;
 }) {
   const [filter, setFilter] = useState<"all" | "notes" | "tasks">("all");
+  const [longTermOnly, setLongTermOnly] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
+  const [newProjectId, setNewProjectId] = useState("");
+  const [newPriority, setNewPriority] = useState("");
+  const [newDueDate, setNewDueDate] = useState("");
+  const [newLongTerm, setNewLongTerm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [linkingId, setLinkingId] = useState<string | null>(null);
+  const [openComments, setOpenComments] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [, startTransition] = useTransition();
 
   const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
   const noteById = useMemo(() => new Map(notes.map((n) => [n.id, n])), [notes]);
+  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
-  const filtered = notes.filter((n) => (filter === "all" ? true : filter === "tasks" ? n.is_task : !n.is_task));
+  const createCategory: Note["category"] = mode === "pomysly" ? "idea" : mode === "plany" ? "plan" : "general";
+
+  let base: Note[];
+  if (mode === "projekt") base = notes.filter((n) => n.project_id === scopedProjectId);
+  else if (mode === "pomysly") base = notes.filter((n) => n.category === "idea");
+  else if (mode === "plany") base = notes.filter((n) => n.category === "plan" && n.is_long_term === longTermOnly);
+  else if (mode === "priorytety") base = notes.filter((n) => n.is_task && n.status !== "done");
+  else base = notes.filter((n) => n.category === "general");
+
+  const filtered =
+    mode === "notatki" || mode === "projekt"
+      ? base.filter((n) => (filter === "all" ? true : filter === "tasks" ? n.is_task : !n.is_task))
+      : mode === "priorytety"
+        ? [...base].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+        : base;
 
   async function handleCreate() {
     if (!newTitle.trim()) return;
     setBusy(true);
     try {
-      await createNote(newTitle, newBody);
+      await createNote({
+        title: newTitle,
+        body: newBody,
+        category: createCategory,
+        projectId: scopedProjectId || newProjectId || null,
+        priority: newPriority ? Number(newPriority) : null,
+        dueDate: mode === "plany" ? newDueDate || null : null,
+        isLongTerm: mode === "plany" ? newLongTerm : false,
+      });
       setNewTitle("");
       setNewBody("");
+      setNewProjectId("");
+      setNewPriority("");
+      setNewDueDate("");
+      setNewLongTerm(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Nie udało się zapisać.");
     } finally {
@@ -82,16 +138,30 @@ export function NotesBoard({
     setEditBody(note.body);
   }
 
-  async function handleSaveEdit(noteId: string) {
+  async function handleSaveEdit(note: Note) {
     setBusy(true);
     try {
-      await updateNote(noteId, editTitle, editBody);
+      await updateNote(note.id, {
+        title: editTitle,
+        body: editBody,
+        priority: note.priority,
+        dueDate: note.due_date,
+        isLongTerm: note.is_long_term,
+        projectId: note.project_id,
+      });
       setEditingId(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Nie udało się zapisać.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleAddComment(noteId: string) {
+    if (!commentDraft.trim()) return;
+    const body = commentDraft;
+    setCommentDraft("");
+    startTransition(() => addComment(noteId, body));
   }
 
   return (
@@ -101,7 +171,9 @@ export function NotesBoard({
           <input
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Tytuł notatki lub pomysłu…"
+            placeholder={
+              mode === "pomysly" ? "Nowy pomysł…" : mode === "plany" ? "Nowy plan…" : "Tytuł notatki…"
+            }
             className={INPUT}
           />
           <textarea
@@ -111,40 +183,104 @@ export function NotesBoard({
             rows={2}
             className={INPUT}
           />
-          <button
-            type="button"
-            disabled={busy || !newTitle.trim()}
-            onClick={handleCreate}
-            className="self-start rounded-xl bg-brand-orange px-4 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
-          >
-            Dodaj notatkę
-          </button>
+          <div className="flex flex-wrap items-end gap-2">
+            {!scopedProjectId && mode !== "priorytety" && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-zinc-500">Projekt (opcjonalnie)</label>
+                <select value={newProjectId} onChange={(e) => setNewProjectId(e.target.value)} className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+                  <option value="">—</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-semibold text-zinc-500">Priorytet</label>
+              <select value={newPriority} onChange={(e) => setNewPriority(e.target.value)} className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+                <option value="">—</option>
+                {Object.entries(PRIORITY_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {mode === "plany" && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold text-zinc-500">Data</label>
+                  <input type="date" value={newDueDate} onChange={(e) => setNewDueDate(e.target.value)} className="rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+                </div>
+                <label className="flex items-center gap-1.5 pb-1 text-xs text-zinc-600">
+                  <input type="checkbox" checked={newLongTerm} onChange={(e) => setNewLongTerm(e.target.checked)} className="h-3.5 w-3.5" />
+                  Długoterminowy
+                </label>
+              </>
+            )}
+            <button
+              type="button"
+              disabled={busy || !newTitle.trim()}
+              onClick={handleCreate}
+              className="rounded-xl bg-brand-orange px-4 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+            >
+              {mode === "pomysly" ? "Dodaj pomysł" : mode === "plany" ? "Dodaj plan" : "Dodaj notatkę"}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-zinc-200">
-        {(["all", "notes", "tasks"] as const).map((f) => (
+      {(mode === "notatki" || mode === "projekt") && (
+        <div className="flex gap-1 border-b border-zinc-200">
+          {(["all", "notes", "tasks"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFilter(f)}
+              className={`px-3 py-2 text-sm font-semibold ${filter === f ? "border-b-2 border-brand-orange text-zinc-900" : "text-zinc-500 hover:text-zinc-700"}`}
+            >
+              {f === "all" ? "Wszystko" : f === "notes" ? "Uwagi" : "Zadania"}
+            </button>
+          ))}
+        </div>
+      )}
+      {mode === "plany" && (
+        <div className="flex gap-1 border-b border-zinc-200">
           <button
-            key={f}
             type="button"
-            onClick={() => setFilter(f)}
-            className={`px-3 py-2 text-sm font-semibold ${filter === f ? "border-b-2 border-brand-orange text-zinc-900" : "text-zinc-500 hover:text-zinc-700"}`}
+            onClick={() => setLongTermOnly(false)}
+            className={`px-3 py-2 text-sm font-semibold ${!longTermOnly ? "border-b-2 border-brand-orange text-zinc-900" : "text-zinc-500 hover:text-zinc-700"}`}
           >
-            {f === "all" ? "Wszystko" : f === "notes" ? "Notatki" : "Zadania"}
+            Plany
           </button>
-        ))}
-      </div>
+          <button
+            type="button"
+            onClick={() => setLongTermOnly(true)}
+            className={`px-3 py-2 text-sm font-semibold ${longTermOnly ? "border-b-2 border-brand-orange text-zinc-900" : "text-zinc-500 hover:text-zinc-700"}`}
+          >
+            Długoterminowe
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3">
         {filtered.map((note) => {
           const author = employeeById.get(note.author_employee_id);
           const assignee = note.assignee_employee_id ? employeeById.get(note.assignee_employee_id) : null;
+          const project = note.project_id ? projectById.get(note.project_id) : null;
           const canEdit = note.author_employee_id === currentEmployeeId || isAdmin;
           const isEditing = editingId === note.id;
           const linkableNotes = notes.filter((n) => n.id !== note.id && !note.linkedIds.includes(n.id));
 
           return (
-            <div key={note.id} className={`rounded-xl border p-3 ${note.is_task && note.status === "done" ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
+            <div
+              key={note.id}
+              className={`rounded-xl border p-3 ${
+                note.is_task && note.status === "done" ? "border-emerald-200 bg-emerald-50" : note.source === "ai" ? "border-brand-blue/30 bg-blue-50/40" : "border-zinc-200 bg-white"
+              }`}
+            >
               {isEditing ? (
                 <div className="flex flex-col gap-2">
                   <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className={INPUT} />
@@ -153,7 +289,7 @@ export function NotesBoard({
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => handleSaveEdit(note.id)}
+                      onClick={() => handleSaveEdit(note)}
                       className="rounded-lg bg-brand-orange px-3 py-1 text-xs font-bold text-white hover:bg-brand-orange-dark"
                     >
                       Zapisz
@@ -167,7 +303,8 @@ export function NotesBoard({
                 <>
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {note.source === "ai" && <span className="rounded-full bg-brand-blue/10 px-2 py-0.5 text-[10px] font-bold text-brand-blue">🤖 AI</span>}
                         {note.is_task && (
                           <span
                             className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
@@ -177,44 +314,69 @@ export function NotesBoard({
                             {STATUS_LABELS[note.status ?? "todo"]}
                           </span>
                         )}
+                        {note.category !== "general" && (
+                          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">{CATEGORY_LABELS[note.category]}</span>
+                        )}
+                        {note.priority && <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">{PRIORITY_LABELS[String(note.priority)]}</span>}
+                        {note.due_date && (
+                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
+                            {new Date(note.due_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
+                          </span>
+                        )}
                         <span className="font-semibold text-zinc-900">{note.title}</span>
                       </div>
-                      <div className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-zinc-400">
                         {author && <ColorDot color={author.color_hex} />}
                         {author?.name ?? "?"} · {new Date(note.created_at).toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
+                        {project && !scopedProjectId && <> · projekt: {project.name}</>}
                       </div>
                     </div>
                   </div>
                   {note.body && <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-700">{note.body}</p>}
 
-                  {note.is_task && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <select
-                        defaultValue={note.status ?? "todo"}
-                        onChange={(e) => startTransition(() => updateTaskStatus(note.id, e.target.value as "todo" | "in_progress" | "done"))}
-                        className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
-                      >
-                        {Object.entries(STATUS_LABELS).map(([v, l]) => (
-                          <option key={v} value={v}>
-                            {l}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        defaultValue={note.assignee_employee_id ?? ""}
-                        onChange={(e) => startTransition(() => updateTaskAssignee(note.id, e.target.value || null))}
-                        className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
-                      >
-                        <option value="">— nieprzypisane —</option>
-                        {employees.map((e) => (
-                          <option key={e.id} value={e.id}>
-                            {e.name}
-                          </option>
-                        ))}
-                      </select>
-                      {assignee && <ColorDot color={assignee.color_hex} />}
-                    </div>
-                  )}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {note.is_task && (
+                      <>
+                        <select
+                          defaultValue={note.status ?? "todo"}
+                          onChange={(e) => startTransition(() => updateTaskStatus(note.id, e.target.value as "todo" | "in_progress" | "done"))}
+                          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
+                        >
+                          {Object.entries(STATUS_LABELS).map(([v, l]) => (
+                            <option key={v} value={v}>
+                              {l}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          defaultValue={note.assignee_employee_id ?? ""}
+                          onChange={(e) => startTransition(() => updateTaskAssignee(note.id, e.target.value || null))}
+                          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
+                        >
+                          <option value="">— nieprzypisane —</option>
+                          {employees.map((e) => (
+                            <option key={e.id} value={e.id}>
+                              {e.name}
+                            </option>
+                          ))}
+                        </select>
+                        {assignee && <ColorDot color={assignee.color_hex} />}
+                      </>
+                    )}
+                    <select
+                      defaultValue={note.priority ?? ""}
+                      onChange={(e) => startTransition(() => updatePriority(note.id, e.target.value ? Number(e.target.value) : null))}
+                      className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
+                      title="Priorytet"
+                    >
+                      <option value="">Priorytet: —</option>
+                      {Object.entries(PRIORITY_LABELS).map(([v, l]) => (
+                        <option key={v} value={v}>
+                          Priorytet: {l}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   {note.linkedIds.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -249,6 +411,13 @@ export function NotesBoard({
                     <button type="button" onClick={() => setLinkingId(linkingId === note.id ? null : note.id)} className="font-semibold text-zinc-500 hover:text-zinc-800">
                       Powiąż
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpenComments(openComments === note.id ? null : note.id)}
+                      className="font-semibold text-zinc-500 hover:text-zinc-800"
+                    >
+                      💬 Komentarze {note.comments.length > 0 && `(${note.comments.length})`}
+                    </button>
                     {canEdit && (
                       <button
                         type="button"
@@ -278,6 +447,43 @@ export function NotesBoard({
                           + {n.title}
                         </button>
                       ))}
+                    </div>
+                  )}
+
+                  {openComments === note.id && (
+                    <div className="mt-2 flex flex-col gap-2 rounded-lg bg-zinc-50 p-2.5">
+                      {note.comments.map((c) => {
+                        const commentAuthor = employeeById.get(c.author_employee_id);
+                        const canDeleteComment = c.author_employee_id === currentEmployeeId || isAdmin;
+                        return (
+                          <div key={c.id} className="flex items-start justify-between gap-2 text-xs">
+                            <div>
+                              <span className="font-semibold text-zinc-700">{commentAuthor?.name ?? "?"}:</span>{" "}
+                              <span className="text-zinc-600">{c.body}</span>
+                            </div>
+                            {canDeleteComment && (
+                              <button type="button" onClick={() => startTransition(() => deleteComment(c.id))} className="shrink-0 text-zinc-400 hover:text-red-500">
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {note.comments.length === 0 && <p className="text-xs text-zinc-400">Brak komentarzy.</p>}
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          value={openComments === note.id ? commentDraft : ""}
+                          onChange={(e) => setCommentDraft(e.target.value)}
+                          placeholder="Napisz komentarz…"
+                          className="w-full rounded-lg border border-zinc-300 px-2 py-1 text-xs"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleAddComment(note.id);
+                          }}
+                        />
+                        <button type="button" onClick={() => handleAddComment(note.id)} className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold hover:bg-zinc-100">
+                          Wyślij
+                        </button>
+                      </div>
                     </div>
                   )}
                 </>

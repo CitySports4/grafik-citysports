@@ -1,25 +1,69 @@
+import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee } from "@/lib/session";
 import { Card } from "@/components/Card";
-import { NotesBoard } from "./NotesBoard";
+import { NotesBoard, type NotesBoardMode } from "./NotesBoard";
+import { ProjectList } from "./ProjectList";
+import { LinkMap } from "./LinkMap";
 
-export default async function NotatnikPage() {
+const TABS: { key: string; label: string }[] = [
+  { key: "notatki", label: "Notatki" },
+  { key: "projekty", label: "Projekty" },
+  { key: "pomysly", label: "Pomysły" },
+  { key: "plany", label: "Plany" },
+  { key: "priorytety", label: "Priorytety" },
+  { key: "powiazania", label: "Powiązania" },
+];
+
+export default async function NotatnikPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const employee = await requireEmployee();
+  const params = await searchParams;
+  const tab = TABS.some((t) => t.key === params.tab) ? params.tab! : "notatki";
+
   const supabase = createServerSupabaseClient();
 
-  const [{ data: notes }, { data: employees }, { data: links }] = await Promise.all([
-    supabase
-      .from("note")
-      .select("id, author_employee_id, title, body, is_task, status, assignee_employee_id, created_at, updated_at")
-      .order("created_at", { ascending: false }),
-    supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
-    supabase.from("note_link").select("note_id_a, note_id_b"),
-  ]);
+  const [{ data: notes }, { data: employees }, { data: links }, { data: comments }, { data: projects }, { data: projectLinks }] =
+    await Promise.all([
+      supabase
+        .from("note")
+        .select(
+          "id, author_employee_id, title, body, is_task, status, assignee_employee_id, created_at, updated_at, project_id, category, priority, due_date, is_long_term, source"
+        )
+        .order("created_at", { ascending: false }),
+      supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
+      supabase.from("note_link").select("note_id_a, note_id_b"),
+      supabase.from("note_comment").select("id, note_id, author_employee_id, body, created_at").order("created_at"),
+      supabase.from("project").select("id, name, description, status, created_at").order("created_at", { ascending: false }),
+      supabase.from("project_link").select("project_id_a, project_id_b"),
+    ]);
 
   const linksByNote = new Map<string, string[]>();
   for (const l of links ?? []) {
     if (!linksByNote.has(l.note_id_a)) linksByNote.set(l.note_id_a, []);
     linksByNote.get(l.note_id_a)!.push(l.note_id_b);
+  }
+  const commentsByNote = new Map<string, typeof comments>();
+  for (const c of comments ?? []) {
+    if (!commentsByNote.has(c.note_id)) commentsByNote.set(c.note_id, []);
+    commentsByNote.get(c.note_id)!.push(c);
+  }
+
+  const fullNotes = (notes ?? []).map((n) => ({
+    ...n,
+    linkedIds: linksByNote.get(n.id) ?? [],
+    comments: commentsByNote.get(n.id) ?? [],
+  }));
+  const projectRefs = (projects ?? []).map((p) => ({ id: p.id, name: p.name }));
+
+  const openTaskCountByProject = new Map<string, number>();
+  for (const n of fullNotes) {
+    if (n.is_task && n.status !== "done" && n.project_id) {
+      openTaskCountByProject.set(n.project_id, (openTaskCountByProject.get(n.project_id) ?? 0) + 1);
+    }
   }
 
   return (
@@ -27,21 +71,42 @@ export default async function NotatnikPage() {
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Notatnik</h1>
         <p className="text-sm text-zinc-500">
-          Wspólne notatki i pomysły zespołu — każda notatka może zostać przekształcona w zadanie.
+          Projekty, pomysły, plany i zadania zespołu — z komentarzami i mapą powiązań.
         </p>
       </div>
 
-      <Card>
-        <NotesBoard
-          currentEmployeeId={employee.id}
-          isAdmin={employee.roles.includes("admin")}
-          employees={employees ?? []}
-          notes={(notes ?? []).map((n) => ({
-            ...n,
-            linkedIds: linksByNote.get(n.id) ?? [],
-          }))}
-        />
-      </Card>
+      <div className="flex flex-wrap gap-1 border-b border-zinc-200">
+        {TABS.map((t) => (
+          <Link
+            key={t.key}
+            href={`/notatnik?tab=${t.key}`}
+            className={`px-3 py-2 text-sm font-semibold ${
+              tab === t.key ? "border-b-2 border-brand-orange text-zinc-900" : "text-zinc-500 hover:text-zinc-700"
+            }`}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </div>
+
+      {tab === "projekty" ? (
+        <ProjectList projects={projects ?? []} openTaskCountByProject={openTaskCountByProject} />
+      ) : tab === "powiazania" ? (
+        <Card>
+          <LinkMap projects={projects ?? []} projectLinks={projectLinks ?? []} notes={fullNotes} noteLinks={links ?? []} />
+        </Card>
+      ) : (
+        <Card>
+          <NotesBoard
+            mode={tab as NotesBoardMode}
+            currentEmployeeId={employee.id}
+            isAdmin={employee.roles.includes("admin")}
+            employees={employees ?? []}
+            notes={fullNotes}
+            projects={projectRefs}
+          />
+        </Card>
+      )}
     </div>
   );
 }
