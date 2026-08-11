@@ -14,6 +14,7 @@ import {
   runDraft,
   publishMonth,
   unpublishMonth,
+  reviewScheduleWithAI,
 } from "./actions";
 import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
@@ -73,6 +74,9 @@ export function ScheduleTable({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [aiReview, setAiReview] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
   const maxShifts = Math.max(1, ...days.map((d) => d.shifts.length));
@@ -269,6 +273,19 @@ export function ScheduleTable({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Coś poszło nie tak.");
       setBusy(false);
+    }
+  }
+
+  async function handleAiReview() {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const text = await reviewScheduleWithAI(scheduleMonthId);
+      setAiReview(text);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Nie udało się pobrać sugestii AI.");
+    } finally {
+      setAiLoading(false);
     }
   }
 
@@ -580,6 +597,32 @@ export function ScheduleTable({
             })}
           </ul>
         </div>
+
+        {scheduleMonthStatus === "draft" && (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h2 className="font-semibold text-zinc-900">Sugestie AI</h2>
+              <button
+                type="button"
+                disabled={aiLoading}
+                onClick={handleAiReview}
+                className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+              >
+                {aiLoading ? "Sprawdzam…" : aiReview ? "Sprawdź ponownie" : "Sprawdź przed publikacją"}
+              </button>
+            </div>
+            {aiError && <p className="text-xs font-semibold text-red-600">{aiError}</p>}
+            {aiReview && (
+              <div className="whitespace-pre-wrap rounded-xl bg-amber-50 p-3 text-xs text-amber-900">{aiReview}</div>
+            )}
+            {!aiReview && !aiError && (
+              <p className="text-xs text-zinc-400">
+                Opcjonalne — AI przejrzy draft i wskaże nietypowe wzorce (np. kilka zamknięć z rzędu u
+                tej samej osoby). Nic samo nie zmienia, to tylko podpowiedź.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
           {scheduleMonthStatus === "draft" ? (
