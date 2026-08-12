@@ -99,11 +99,11 @@ function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>): numbe
 
 // Gdy ta sama osoba dostaje 2. zmianę tego samego dnia (pt/sob/nd — patrz
 // blockDoubleShift), między zmianami musi być realna przerwa — inaczej dwie
-// stykające się zmiany (np. 08:00–14:30 i 14:30–21:00) łączą się w jeden
-// 13-godzinny maraton bez przerwy. Legalny przypadek "rano + wieczór" (np.
-// Krzysztof 2x w niedzielę) ma tę przerwę z natury; blokujemy tylko sytuacje
-// bez niej lub z nakładaniem się.
-const MIN_BREAK_MINUTES = 60;
+// stykające się (lub blisko siebie) zmiany łączą się w wielogodzinny
+// maraton bez odpoczynku. Legalny przypadek "rano + wieczór" (np.
+// Krzysztof 2x w niedzielę) ma tę przerwę z natury; blokujemy sytuacje bez
+// niej lub z przerwą krótszą niż realny odpoczynek.
+const MIN_BREAK_MINUTES = 360; // 6h
 function tooCloseForDoubleShift(
   a: { start_time: string; end_time: string },
   b: { start_time: string; end_time: string }
