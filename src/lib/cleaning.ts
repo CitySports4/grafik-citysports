@@ -261,36 +261,31 @@ export function computeOverdueTasks(
   return result;
 }
 
-export type CleaningDayType = "weekday" | "weekend";
-
-export function cleaningDayType(weekday: number): CleaningDayType {
-  return weekday === 0 || weekday === 6 ? "weekend" : "weekday";
-}
-
 const DEFAULT_BUDGET_MINUTES = 60;
 
 // Dla dni, gdy w tym samym slocie pracuje więcej niż jedna osoba (rzadkie —
 // głównie soboty z dodatkową obsadą), przenosi zadania tak, by każdy był
-// możliwie blisko SWOJEGO budżetu na ten typ dnia (dzień powszedni/weekend)
-// — nie tylko żeby mieć tyle samo minut co reszta, ale żeby nie przekraczać
-// (albo nie schodzić poniżej) tego, co dla niego ustawiono. Nie przenosi
-// zadań na drabinie do osób z no_ladder, ani zadań spoza kompetencji strefy
-// danej osoby.
+// możliwie blisko SWOJEGO budżetu na tę porę dnia — nie tylko żeby mieć
+// tyle samo minut co reszta, ale żeby nie przekraczać (albo nie schodzić
+// poniżej) tego, co dla niego ustawiono. Budżety są per pora dnia
+// (otwarcie/środek/zamknięcie/po zamknięciu), zgodnie z oryginalną
+// specyfikacją. Nie przenosi zadań na drabinie do osób z no_ladder, ani
+// zadań spoza kompetencji strefy danej osoby.
 export function balanceSlotAssignments(
   resolved: ResolvedCleaningTask[],
   competencyByEmployee: Map<string, Set<string>>,
   noLadderByEmployee: Set<string>,
-  budgetByEmployee: Map<string, number>
+  budgetBySlotAndEmployee: Map<string, number>
 ): ResolvedCleaningTask[] {
   const bySlot = new Map<CleaningSlot, ResolvedCleaningTask[]>();
   for (const r of resolved) {
     if (!bySlot.has(r.task.slot)) bySlot.set(r.task.slot, []);
     bySlot.get(r.task.slot)!.push(r);
   }
-  const budgetFor = (employeeId: string) => budgetByEmployee.get(employeeId) ?? DEFAULT_BUDGET_MINUTES;
 
   const out: ResolvedCleaningTask[] = [];
-  for (const items of bySlot.values()) {
+  for (const [slot, items] of bySlot.entries()) {
+    const budgetFor = (employeeId: string) => budgetBySlotAndEmployee.get(`${employeeId}|${slot}`) ?? DEFAULT_BUDGET_MINUTES;
     const persons = [...new Set(items.map((i) => i.employeeId).filter((x): x is string => !!x))];
     if (persons.length < 2) {
       out.push(...items);

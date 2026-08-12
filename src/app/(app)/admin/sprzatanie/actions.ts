@@ -191,13 +191,13 @@ export async function deleteChecklistTemplateItem(formData: FormData) {
 export async function setTimeBudget(formData: FormData) {
   await requireAdmin();
   const employee_id = String(formData.get("employee_id") ?? "");
-  const day_type = String(formData.get("day_type") ?? "");
+  const slot = String(formData.get("slot") ?? "");
   const budget_minutes = parseNumber(formData.get("budget_minutes"), 60);
-  if (!employee_id || (day_type !== "weekday" && day_type !== "weekend")) throw new Error("Brak danych.");
+  if (!employee_id || !slot) throw new Error("Brak danych.");
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("cleaning_time_budget")
-    .upsert({ employee_id, day_type, budget_minutes }, { onConflict: "employee_id,day_type" });
+    .upsert({ employee_id, slot, budget_minutes }, { onConflict: "employee_id,slot" });
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/admin/sprzatanie");
 }
