@@ -97,6 +97,26 @@ function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>): numbe
   return count;
 }
 
+// Gdy ta sama osoba dostaje 2. zmianę tego samego dnia (pt/sob/nd — patrz
+// blockDoubleShift), między zmianami musi być realna przerwa — inaczej dwie
+// stykające się zmiany (np. 08:00–14:30 i 14:30–21:00) łączą się w jeden
+// 13-godzinny maraton bez przerwy. Legalny przypadek "rano + wieczór" (np.
+// Krzysztof 2x w niedzielę) ma tę przerwę z natury; blokujemy tylko sytuacje
+// bez niej lub z nakładaniem się.
+const MIN_BREAK_MINUTES = 60;
+function tooCloseForDoubleShift(
+  a: { start_time: string; end_time: string },
+  b: { start_time: string; end_time: string }
+): boolean {
+  const aS = timeToMinutes(a.start_time);
+  const aE = timeToMinutes(a.end_time);
+  const bS = timeToMinutes(b.start_time);
+  const bE = timeToMinutes(b.end_time);
+  if (aS < bE && bS < aE) return true; // nakładają się
+  const gap = aS >= bE ? aS - bE : bS - aE;
+  return gap < MIN_BREAK_MINUTES;
+}
+
 // Heurystyczny generator wersji roboczej: wypełnia tylko puste, otwarte
 // zmiany — nie nadpisuje ręcznych przypisań.
 //
@@ -272,6 +292,13 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       (employees ?? []).filter((emp) => {
         const alreadyUsedToday = usedTodayByDate.get(day.date)?.has(emp.id) ?? false;
         if (alreadyUsedToday && blockDoubleShift) return false;
+        if (alreadyUsedToday && !blockDoubleShift) {
+          // Pt/sob/nd: druga zmiana tego dnia dozwolona, ale tylko z realną
+          // przerwą — inaczej dwie stykające się zmiany złożą się w jeden
+          // wielogodzinny maraton bez przerwy.
+          const todaysShifts = shiftsByEmployeeDate.get(emp.id)?.get(day.date) ?? [];
+          if (todaysShifts.some((s) => tooCloseForDoubleShift(s, shift))) return false;
+        }
 
         // Każdy ma mieć choć 1 dzień wolny w tygodniu — jeśli już pracował
         // tyle dni w tym tygodniu, ile wolno (tydzień - 1), dziś nie może
@@ -442,6 +469,10 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       if (!daysAssigned.has(chosen.id)) daysAssigned.set(chosen.id, new Set());
       daysAssigned.get(chosen.id)!.add(day.date);
       markUsedToday(day.date, chosen.id);
+      if (!shiftsByEmployeeDate.has(chosen.id)) shiftsByEmployeeDate.set(chosen.id, new Map());
+      const chosenByDate = shiftsByEmployeeDate.get(chosen.id)!;
+      if (!chosenByDate.has(day.date)) chosenByDate.set(day.date, []);
+      chosenByDate.get(day.date)!.push({ start_time: shift.start_time, end_time: shift.end_time });
 
       updates.push({ id: shift.id, employee_id: chosen.id });
       remainingShifts.splice(bestIndex, 1);
