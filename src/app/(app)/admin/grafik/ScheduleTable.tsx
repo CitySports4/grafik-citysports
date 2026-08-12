@@ -310,14 +310,14 @@ export function ScheduleTable({
         )}
 
         {scheduleMonthStatus === "draft" && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <div>
-              <h2 className="font-semibold text-zinc-900">Generator propozycji</h2>
-              <p className="text-sm text-zinc-500">
-                Wypełnia tylko puste zmiany i sobotnie sprzątanie — nie nadpisuje ręcznych
-                przypisań. Uwzględnia dyspozycyjność, zajęcia instruktorów i wyrównuje godziny.
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
+            <span
+              className="flex cursor-help items-center gap-1.5 text-sm font-semibold text-zinc-900"
+              title="Wypełnia tylko puste zmiany i sobotnie sprzątanie — nie nadpisuje ręcznych przypisań. Uwzględnia dyspozycyjność, zajęcia instruktorów i wyrównuje godziny."
+            >
+              Generator propozycji
+              <span className="text-xs font-normal text-zinc-400">ⓘ</span>
+            </span>
             <button
               type="button"
               disabled={busy}
@@ -357,13 +357,18 @@ export function ScheduleTable({
                   <Fragment key={day.id}>
                     <tr className="border-t border-zinc-100 align-top hover:bg-zinc-50/60">
                       <td className="whitespace-nowrap px-2 py-2">
-                        <div className="font-semibold capitalize text-zinc-900">{dateLabel}</div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-semibold capitalize text-zinc-900">{dateLabel}</span>
+                          {wholeDayUnavailable.length > 0 && (
+                            <span
+                              className="cursor-help text-xs text-red-500"
+                              title={`Cały dzień niedostępni: ${wholeDayUnavailable.join(", ")}`}
+                            >
+                              ⚠
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs capitalize text-zinc-500">{weekdayLabel(day.weekday)}</div>
-                        {wholeDayUnavailable.length > 0 && (
-                          <div className="mt-1 max-w-[110px] text-[11px] font-bold leading-tight text-red-600">
-                            ⚠ {wholeDayUnavailable.join(", ")} niedostępni
-                          </div>
-                        )}
                       </td>
                       {Array.from({ length: maxShifts }).map((_, slotIndex) => {
                         const shift = day.shifts.find((s) => s.slot_index === slotIndex);
@@ -399,8 +404,13 @@ export function ScheduleTable({
                         const currentEmployee = shift.employee_id ? employeeById.get(shift.employee_id) : null;
                         return (
                           <td key={shift.id} className="px-2 py-2">
-                            <div className="text-[11px] font-semibold text-zinc-500">
+                            <div className="flex items-center gap-1 text-[11px] font-semibold text-zinc-500">
                               {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
+                              {unavailableNames.length > 0 && (
+                                <span className="cursor-help text-red-500" title={`Niedostępni: ${unavailableNames.join(", ")}`}>
+                                  ⚠
+                                </span>
+                              )}
                             </div>
                             <div className="mt-0.5 flex items-center gap-1.5">
                               {currentEmployee && <ColorDot color={currentEmployee.color_hex} />}
@@ -408,7 +418,6 @@ export function ScheduleTable({
                                 value={selectValue}
                                 onChange={(e) => handleAssign(day, shift.id, e.target.value)}
                                 className={SELECT_CLS}
-                                style={currentEmployee ? { borderColor: currentEmployee.color_hex } : undefined}
                               >
                                 <option value="">— nieprzypisane —</option>
                                 {options.map((e) => (
@@ -419,9 +428,6 @@ export function ScheduleTable({
                                 <option value="__closed__">NIECZYNNE</option>
                               </select>
                             </div>
-                            {unavailableNames.length > 0 && (
-                              <div className="mt-1 text-[11px] font-bold text-red-600">⚠ {unavailableNames.join(", ")}</div>
-                            )}
                           </td>
                         );
                       })}

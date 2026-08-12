@@ -30,6 +30,15 @@ create index if not exists idx_cleaning_task_carry_pair on cleaning_task(carry_p
 create index if not exists idx_cleaning_task_skip_with on cleaning_task(skip_with_task_id);
 create index if not exists idx_cleaning_checklist_template_item on cleaning_checklist_template_item(template_id);
 
+-- ── Sprzątanie: brakująca kolumna z 0012 ────────────────────────────────
+-- Ten sam wzorzec co note.source powyżej — slug był dopisany do pliku 0012
+-- już PO tym, jak reszta tamtej migracji (day_constraint, note,
+-- carry_pair_task_id, skip_with_task_id, sort_order — te już istnieją)
+-- została uruchomiona, więc jego dodanie nigdy nie poszło. Bez tego insert
+-- zadań niżej od razu wywala błąd "column slug does not exist".
+
+alter table cleaning_task add column if not exists slug text unique;
+
 -- ── Sprzątanie: brakujące dane z 0012 (strefy, checklisty, 61 zadań) ────
 -- Uwaga: bez kolumny weekdays w insercie zadań — 0015 ją usunęła (dzień
 -- wykonania jest teraz wyznaczany dynamicznie z grafiku, nie konfigurowany).
