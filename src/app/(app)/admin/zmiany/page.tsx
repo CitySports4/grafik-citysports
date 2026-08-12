@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { BackLink } from "@/components/BackLink";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 import { addShiftSlot, deleteShiftSlot, toggleShiftSlotActive, seedDefaultShiftTemplate } from "./actions";
@@ -22,6 +23,8 @@ export default async function ShiftTemplatePage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href="/admin" label="Panel admina" />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-zinc-900">Konfiguracja zmian</h1>

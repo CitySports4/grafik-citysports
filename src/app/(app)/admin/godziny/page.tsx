@@ -4,6 +4,7 @@ import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule
 import { weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 import { Card } from "@/components/Card";
+import { BackLink } from "@/components/BackLink";
 import { TimeEntryList } from "../../godziny/TimeEntryList";
 import { saveTimeEntryAsAdmin } from "./actions";
 
@@ -68,6 +69,8 @@ export default async function AdminGodzinyPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href="/admin" label="Panel admina" />
+
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Godziny pracy — admin</h1>
         <p className="text-sm text-zinc-500">

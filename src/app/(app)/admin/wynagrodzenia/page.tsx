@@ -5,6 +5,7 @@ import { hoursBetween, timeToMinutes, formatHm } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
+import { BackLink } from "@/components/BackLink";
 import { InstructorCalculator } from "./InstructorCalculator";
 
 const DISCREPANCY_TOLERANCE_MIN = 30;
@@ -101,6 +102,8 @@ export default async function WynagrodzeniaPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href="/admin" label="Panel admina" />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-zinc-900">Wynagrodzenia</h1>

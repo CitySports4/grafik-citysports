@@ -37,7 +37,9 @@ export async function toggleChecklistItem(taskId: string, date: string, itemId: 
     { onConflict: "task_id,date" }
   );
   if (error) throw new Error(dbErrorMessage(error));
+  // /zadania renderuje tę samą listę dnia sprzątania co /sprzatanie.
   revalidatePath("/sprzatanie");
+  revalidatePath("/zadania");
 }
 
 export async function toggleTaskDone(taskId: string, date: string) {
@@ -63,7 +65,9 @@ export async function toggleTaskDone(taskId: string, date: string) {
     { onConflict: "task_id,date" }
   );
   if (error) throw new Error(dbErrorMessage(error));
+  // /zadania renderuje tę samą listę dnia sprzątania co /sprzatanie.
   revalidatePath("/sprzatanie");
+  revalidatePath("/zadania");
 }
 
 // Odhaczenie zadania spoza dzisiejszego przydziału (Pula zadań) — liczy się

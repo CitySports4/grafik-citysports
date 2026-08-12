@@ -13,23 +13,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Grupy nawigacji jako prawdziwe rozwijane menu (nie tylko wizualny
   // podział) — Zamiany teraz żyją wewnątrz "Mój grafik", Asystent zdjęty.
+  // Godziny pracy to część grafiku (nie osobne zadanie), więc żyje w tej
+  // grupie; Zadania to teraz jedna strona (sprzątanie + inne), nie grupa.
   const navGroups: { label: string; links: { href: string; label: string }[] }[] = [
     {
       label: "Grafik",
       links: [
         { href: "/grafik", label: "Mój grafik" },
         { href: "/dyspozycyjnosc", label: "Dyspozycyjność" },
-      ],
-    },
-    {
-      label: "Zadania",
-      links: [
         { href: "/godziny", label: "Godziny pracy" },
-        { href: "/sprzatanie", label: "Sprzątanie" },
       ],
     },
   ];
-  const trailingLinks = [{ href: "/notatnik", label: "Notatnik" }];
+  const trailingLinks = [
+    { href: "/zadania", label: "Zadania" },
+    { href: "/notatnik", label: "Notatnik" },
+  ];
   if (employee.roles.includes("admin")) {
     trailingLinks.push({ href: "/admin", label: "Panel admina" });
   }

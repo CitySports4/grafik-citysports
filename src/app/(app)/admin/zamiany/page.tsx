@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { BackLink } from "@/components/BackLink";
 import { respondSwapRequest, cancelSwapRequest } from "../../zamiany/actions";
 import { formatHm } from "@/lib/time";
 import { ColorDot } from "@/components/ColorDot";
@@ -46,6 +47,8 @@ export default async function AdminSwapsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href="/admin" label="Panel admina" />
+
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Zamiany zmian</h1>
         <p className="text-sm text-zinc-500">Wszystkie prośby o zamianę — możesz zdecydować za obie strony.</p>

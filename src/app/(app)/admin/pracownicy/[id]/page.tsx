@@ -5,6 +5,7 @@ import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { ColorDot } from "@/components/ColorDot";
+import { BackLink } from "@/components/BackLink";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 import { toDateKey } from "@/lib/schedule-month";
@@ -63,6 +64,8 @@ export default async function EmployeeDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href="/admin/pracownicy" label="Pracownicy" />
+
       <div>
         <h1 className="flex items-center gap-2 text-lg font-bold text-zinc-900">
           <ColorDot color={employee.color_hex} className="h-3 w-3" />

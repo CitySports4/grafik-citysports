@@ -4,6 +4,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { Avatar } from "@/components/Avatar";
 import { ClickableRow } from "@/components/ClickableRow";
 import { ChevronRight } from "@/components/ChevronRight";
+import { BackLink } from "@/components/BackLink";
 import { BTN_PRIMARY } from "@/components/button-styles";
 import { createEmployee } from "./actions";
 import { ROLE_LABELS, type EmployeeRole } from "@/lib/session";
@@ -27,6 +28,8 @@ export default async function EmployeesPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href="/admin" label="Panel admina" />
+
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Pracownicy</h1>
         <p className="text-sm text-zinc-500">Zarządzaj kontami, kolorami i limitami godzin.</p>

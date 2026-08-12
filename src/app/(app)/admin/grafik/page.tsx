@@ -4,6 +4,7 @@ import { getOrCreateScheduleMonth, nextMonth, monthLabel, daysInMonth, toDateKey
 import { buildAvailabilityMap, applyPlannedAbsences, isHardUnavailable, type HardConstraint } from "@/lib/unavailability";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
+import { BackLink } from "@/components/BackLink";
 import { generateStructure } from "./actions";
 import { ScheduleTable } from "./ScheduleTable";
 import { ResetStructureButton } from "./ResetStructureButton";
@@ -152,6 +153,8 @@ export default async function ScheduleBuilderPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href="/admin" label="Panel admina" />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold capitalize text-zinc-900">

@@ -3,6 +3,7 @@ import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { ColorDot } from "@/components/ColorDot";
+import { BackLink } from "@/components/BackLink";
 import {
   addZone,
   deleteZone,
@@ -99,6 +100,8 @@ export default async function CleaningConfigPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href="/admin" label="Panel admina" />
+
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Konfiguracja sprzątania</h1>
         <p className="text-sm text-zinc-500">
