@@ -7,6 +7,7 @@ import {
   computeOverdueTasks,
   balanceSlotAssignments,
   allCycleWindows,
+  cleaningDayType,
   type CleaningTask,
   type WindowDay,
   type OverdueTask,
@@ -53,6 +54,7 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
     { data: templateItems },
     { data: employees },
     { data: employeeZones },
+    { data: timeBudgets },
   ] = await Promise.all([
     supabase
       .from("schedule_day")
@@ -75,7 +77,10 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
     supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
     supabase.from("employee").select("id, name, color_hex, no_ladder"),
     supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
+    supabase.from("cleaning_time_budget").select("employee_id, day_type, budget_minutes").eq("day_type", cleaningDayType(weekday)),
   ]);
+
+  const budgetByEmployee = new Map((timeBudgets ?? []).map((b) => [b.employee_id, b.budget_minutes]));
 
   const windowDaySlotsByDate = new Map<string, WindowDay>();
   for (const dk of allWindowDates) {
@@ -139,7 +144,7 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
     (carryCompletions ?? []).filter((c) => c.completed_at).map((c) => `${c.task_id}|${c.date}`)
   );
   resolved = resolveCarryOverrides(resolved, dateKey, completedTaskDateKeys);
-  resolved = balanceSlotAssignments(resolved, competencyByEmployee, noLadderByEmployee);
+  resolved = balanceSlotAssignments(resolved, competencyByEmployee, noLadderByEmployee, budgetByEmployee);
 
   const nonDailyIds = (allActiveNonDaily ?? []).map((t) => t.id);
   const { data: historyCompletions } =

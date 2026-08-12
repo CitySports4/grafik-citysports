@@ -44,6 +44,10 @@ const DAY_CONSTRAINT_LABELS: Record<string, string> = {
   mon_fri: "Tylko pon–pt",
   not_weekend: "Nie w weekend",
 };
+const DAY_TYPE_LABELS_ENTRIES: [string, string][] = [
+  ["weekday", "Dzień powszedni"],
+  ["weekend", "Weekend"],
+];
 
 export default async function CleaningConfigPage() {
   const supabase = createServerSupabaseClient();
@@ -72,7 +76,7 @@ export default async function CleaningConfigPage() {
     supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
     supabase.from("cleaning_checklist_template").select("id, name").order("name"),
     supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
-    supabase.from("cleaning_time_budget").select("employee_id, slot, budget_minutes"),
+    supabase.from("cleaning_time_budget").select("employee_id, day_type, budget_minutes"),
   ]);
 
   const tasksByZone = new Map<string, typeof tasks>();
@@ -96,7 +100,7 @@ export default async function CleaningConfigPage() {
     if (!templateItemsByTemplate.has(it.template_id)) templateItemsByTemplate.set(it.template_id, []);
     templateItemsByTemplate.get(it.template_id)!.push(it);
   }
-  const budgetByEmpSlot = new Map((timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}`, b.budget_minutes]));
+  const budgetByEmpDayType = new Map((timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.day_type}`, b.budget_minutes]));
 
   return (
     <div className="flex flex-col gap-6">
@@ -432,26 +436,27 @@ export default async function CleaningConfigPage() {
       <Card>
         <h2 className="mb-1 font-semibold text-zinc-900">Budżety czasowe</h2>
         <p className="mb-3 text-sm text-zinc-500">
-          Ile minut sprzątania na dany slot dnia jest "normą" dla danej osoby — używane do
-          auto-wyrównywania obciążenia w dni, gdy w tym samym slocie pracuje więcej niż jedna osoba.
+          Ile minut sprzątania jest "normą" dla danej osoby, osobno dla dnia powszedniego i
+          weekendu (zwykle inna obsada) — używane do auto-wyrównywania obciążenia w dni, gdy w
+          tym samym slocie pracuje więcej niż jedna osoba.
         </p>
         <div className="flex flex-col gap-3">
           {(employees ?? []).map((emp) => (
-            <div key={emp.id} className="rounded-lg border border-zinc-200 p-2.5">
-              <span className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-zinc-900">
+            <div key={emp.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 p-2.5">
+              <span className="flex min-w-[120px] items-center gap-1.5 text-sm font-semibold text-zinc-900">
                 <ColorDot color={emp.color_hex} />
                 {emp.name}
               </span>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(SLOT_LABELS).map(([slot, label]) => (
-                  <form key={slot} action={setTimeBudget} className="flex items-center gap-1.5">
+              <div className="flex flex-wrap gap-3">
+                {DAY_TYPE_LABELS_ENTRIES.map(([dayType, label]) => (
+                  <form key={dayType} action={setTimeBudget} className="flex items-center gap-1.5">
                     <input type="hidden" name="employee_id" value={emp.id} />
-                    <input type="hidden" name="slot" value={slot} />
+                    <input type="hidden" name="day_type" value={dayType} />
                     <label className="text-xs text-zinc-500">{label}</label>
                     <input
                       type="number"
                       name="budget_minutes"
-                      defaultValue={budgetByEmpSlot.get(`${emp.id}|${slot}`) ?? 60}
+                      defaultValue={budgetByEmpDayType.get(`${emp.id}|${dayType}`) ?? 60}
                       className="w-[64px] rounded-lg border border-zinc-300 px-2 py-1 text-xs"
                     />
                     <button type="submit" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold hover:bg-zinc-100">
