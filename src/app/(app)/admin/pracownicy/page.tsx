@@ -1,7 +1,10 @@
-import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
+import { Avatar } from "@/components/Avatar";
+import { ClickableRow } from "@/components/ClickableRow";
+import { ChevronRight } from "@/components/ChevronRight";
+import { BTN_PRIMARY } from "@/components/button-styles";
 import { createEmployee } from "./actions";
 import { ROLE_LABELS, type EmployeeRole } from "@/lib/session";
 
@@ -77,9 +80,7 @@ export default async function EmployeesPage() {
             <input type="number" step="0.01" name="hourly_rate" defaultValue={0} className={INPUT} />
           </div>
           <div className="sm:col-span-2">
-            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
-              Dodaj pracownika
-            </SubmitButton>
+            <SubmitButton className={BTN_PRIMARY}>Dodaj pracownika</SubmitButton>
           </div>
         </form>
       </Card>
@@ -98,16 +99,17 @@ export default async function EmployeesPage() {
               <th className="px-4 py-2.5">Min / Cel h</th>
               <th className="px-4 py-2.5">Status</th>
               <th className="px-4 py-2.5">Hasło</th>
+              <th className="px-2 py-2.5" aria-hidden="true"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {employees?.map((e) => (
-              <tr key={e.id} className="hover:bg-zinc-50">
+              <ClickableRow key={e.id} href={`/admin/pracownicy/${e.id}`}>
                 <td className="px-4 py-2.5">
-                  <Link href={`/admin/pracownicy/${e.id}`} className="flex items-center gap-2 font-medium text-zinc-900 hover:underline">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: e.color_hex }} />
+                  <span className="flex items-center gap-2.5 font-medium text-zinc-900">
+                    <Avatar name={e.name} color={e.color_hex} size={30} />
                     {e.name}
-                  </Link>
+                  </span>
                 </td>
                 <td className="px-4 py-2.5 text-zinc-600">{e.phone}</td>
                 <td className="px-4 py-2.5 text-zinc-600">
@@ -136,11 +138,14 @@ export default async function EmployeesPage() {
                     </span>
                   )}
                 </td>
-              </tr>
+                <td className="px-2 py-2.5 text-right">
+                  <ChevronRight />
+                </td>
+              </ClickableRow>
             ))}
             {employees?.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-zinc-400">
+                <td colSpan={9} className="px-4 py-6 text-center text-zinc-400">
                   Brak pracowników.
                 </td>
               </tr>
