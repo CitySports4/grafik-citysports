@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   assignShift,
@@ -550,18 +551,28 @@ export function ScheduleTable({
                                         <span className="text-zinc-500">
                                           {ev.type === "sprzatanie" ? "Sprząta:" : "Pracownicy:"}
                                         </span>
-                                        {candidateEmployees.map((e) => (
-                                          <label key={e.id} className="flex items-center gap-1 text-zinc-600">
-                                            <input
-                                              type="checkbox"
-                                              checked={ev.participant_employee_ids.includes(e.id)}
-                                              onChange={() => handleToggleParticipant(day, ev, e.id)}
-                                              className="h-3.5 w-3.5"
-                                            />
-                                            <ColorDot color={e.color_hex} />
-                                            {e.name}
-                                          </label>
-                                        ))}
+                                        {candidateEmployees.length === 0 ? (
+                                          <span className="text-amber-700">
+                                            Nikt nie ma przypisanej strefy sprzątania —{" "}
+                                            <Link href="/admin/sprzatanie" className="font-semibold underline">
+                                              uzupełnij w Konfiguracji
+                                            </Link>
+                                            .
+                                          </span>
+                                        ) : (
+                                          candidateEmployees.map((e) => (
+                                            <label key={e.id} className="flex items-center gap-1 text-zinc-600">
+                                              <input
+                                                type="checkbox"
+                                                checked={ev.participant_employee_ids.includes(e.id)}
+                                                onChange={() => handleToggleParticipant(day, ev, e.id)}
+                                                className="h-3.5 w-3.5"
+                                              />
+                                              <ColorDot color={e.color_hex} />
+                                              {e.name}
+                                            </label>
+                                          ))
+                                        )}
                                       </div>
                                     </div>
                                   );
@@ -800,18 +811,28 @@ function AddEventForm({
         />
       </div>
       <div className="flex flex-wrap gap-2">
-        {candidateEmployees.map((e) => (
-          <label key={e.id} className="flex items-center gap-1 text-zinc-600">
-            <input
-              type="checkbox"
-              checked={participants.has(e.id)}
-              onChange={() => toggleParticipant(e.id)}
-              className="h-3.5 w-3.5"
-            />
-            <ColorDot color={e.color_hex} />
-            {e.name}
-          </label>
-        ))}
+        {type === "sprzatanie" && candidateEmployees.length === 0 ? (
+          <span className="text-xs text-amber-700">
+            Nikt nie ma przypisanej strefy sprzątania —{" "}
+            <Link href="/admin/sprzatanie" className="font-semibold underline">
+              uzupełnij w Konfiguracji
+            </Link>
+            .
+          </span>
+        ) : (
+          candidateEmployees.map((e) => (
+            <label key={e.id} className="flex items-center gap-1 text-zinc-600">
+              <input
+                type="checkbox"
+                checked={participants.has(e.id)}
+                onChange={() => toggleParticipant(e.id)}
+                className="h-3.5 w-3.5"
+              />
+              <ColorDot color={e.color_hex} />
+              {e.name}
+            </label>
+          ))
+        )}
       </div>
       <button
         type="button"

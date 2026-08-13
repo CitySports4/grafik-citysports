@@ -43,7 +43,16 @@ export default async function EmployeeDetailPage({
   const currentRoles = new Set((employee.employee_role ?? []).map((r: { role: string }) => r.role));
 
   const today = toDateKey(new Date());
-  const [{ data: classSchedule }, { data: constraints }, { data: plannedAbsences }] = await Promise.all([
+  const [
+    { data: classSchedule },
+    { data: constraints },
+    { data: plannedAbsences },
+    { count: futureShiftCount },
+    { count: zoneCount },
+    { count: noteCount },
+    { count: timeEntryCount },
+    { count: absenceTotalCount },
+  ] = await Promise.all([
     supabase
       .from("employee_class_schedule")
       .select("id, weekday, start_time, end_time, note")
@@ -60,6 +69,18 @@ export default async function EmployeeDetailPage({
       .eq("employee_id", id)
       .gte("end_date", today)
       .order("start_date"),
+    // Poniższe TYLKO do policzenia realnego wpływu usunięcia (patrz sekcja
+    // "Usuń pracownika" niżej) — admin ma widzieć konkretne liczby, nie
+    // ogólnikowe ostrzeżenie, zanim skasuje konto na stałe.
+    supabase
+      .from("schedule_shift")
+      .select("id, schedule_day!inner(date)", { count: "exact", head: true })
+      .eq("employee_id", id)
+      .gte("schedule_day.date", today),
+    supabase.from("employee_cleaning_zone").select("employee_id", { count: "exact", head: true }).eq("employee_id", id),
+    supabase.from("note").select("id", { count: "exact", head: true }).eq("author_employee_id", id),
+    supabase.from("time_entry").select("id", { count: "exact", head: true }).eq("employee_id", id),
+    supabase.from("planned_absence").select("id", { count: "exact", head: true }).eq("employee_id", id),
   ]);
 
   return (
@@ -369,20 +390,45 @@ export default async function EmployeeDetailPage({
 
       <Card className="border-red-200">
         <h2 className="mb-1 font-semibold text-zinc-900">Usuń pracownika</h2>
-        <p className="mb-3 text-sm text-zinc-500">
-          Usuwa konto na stałe, razem z jego dyspozycyjnością, regułami i prośbami o zamianę.
-          Zmiany przypisane w opublikowanych grafikach staną się nieprzypisane. Tej operacji nie
-          można cofnąć.
-        </p>
-        <form action={deleteEmployee}>
-          <input type="hidden" name="id" value={employee.id} />
-          <ConfirmButton
-            confirmText={`Na pewno trwale usunąć pracownika "${employee.name}"? Tej operacji nie można cofnąć.`}
-            className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700"
-          >
-            Usuń pracownika na stałe
-          </ConfirmButton>
-        </form>
+        <p className="mb-3 text-sm text-zinc-500">Usuwa konto na stałe. Tej operacji nie można cofnąć.</p>
+        {(() => {
+          // Konkretny, policzony wpływ usunięcia — zamiast ogólnikowego
+          // ostrzeżenia, które i tak każdy klika bez czytania. Widoczne
+          // TERAZ (na tej stronie) i w oknie potwierdzenia, żeby admin
+          // wiedział dokładnie, co zniknie, zanim kliknie.
+          const impacts: string[] = [];
+          if (futureShiftCount) impacts.push(`${futureShiftCount} przyszłych zmian w grafiku wróci do "nieprzypisana"`);
+          if (zoneCount) impacts.push(`${zoneCount} przypisanych stref sprzątania zostanie skasowanych`);
+          if (timeEntryCount) impacts.push(`${timeEntryCount} zapisanych wpisów godzin pracy zostanie skasowanych`);
+          if (absenceTotalCount) impacts.push(`${absenceTotalCount} zaplanowanych nieobecności zostanie skasowanych`);
+          if (noteCount) impacts.push(`${noteCount} notatek autorstwa tej osoby zostanie skasowanych`);
+          return (
+            <>
+              {impacts.length > 0 ? (
+                <ul className="mb-3 list-disc space-y-0.5 pl-5 text-sm text-red-700">
+                  {impacts.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mb-3 text-sm text-zinc-500">Brak powiązanych zmian, godzin, nieobecności ani notatek do skasowania.</p>
+              )}
+              <form action={deleteEmployee}>
+                <input type="hidden" name="id" value={employee.id} />
+                <ConfirmButton
+                  confirmText={
+                    impacts.length > 0
+                      ? `Na pewno trwale usunąć pracownika "${employee.name}"?\n\nTo skasuje też:\n${impacts.map((l) => `• ${l}`).join("\n")}\n\nTej operacji nie można cofnąć.`
+                      : `Na pewno trwale usunąć pracownika "${employee.name}"? Tej operacji nie można cofnąć.`
+                  }
+                  className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700"
+                >
+                  Usuń pracownika na stałe
+                </ConfirmButton>
+              </form>
+            </>
+          );
+        })()}
       </Card>
     </div>
   );
