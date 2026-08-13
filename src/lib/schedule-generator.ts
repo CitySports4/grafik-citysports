@@ -442,6 +442,15 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       // (inaczej cel 160h i cel 80h nie są porównywalne w godzinach).
       const targetRatio = emp.target_hours_month > 0 ? hrs / emp.target_hours_month : hrs > 0 ? 1 : 0;
       score += targetRatio * 60;
+      // Dodatkowa, ostro rosnąca kara PO przekroczeniu celu o >15%: bez niej
+      // bonus "lepkości" (patrz wyżej) potrafił zostawić kogoś przy już
+      // ustalonych zmianach mimo że jest wyraźnie za bardzo obciążony
+      // (np. 2x cel), podczas gdy ktoś inny ma zapas poniżej celu — algorytm
+      // ma wtedy realny powód, żeby oddać część takich zmian tej drugiej
+      // osobie, zamiast trzymać się jednej "utartej" osoby. Poniżej 1.15x
+      // celu nic się nie zmienia — nie ma sensu przetasowywać przez drobne
+      // wahania.
+      if (targetRatio > 1.15) score += (targetRatio - 1.15) * 300;
       score += (daysAssigned.get(emp.id)?.size ?? 0) * 1;
       // Im dłuższa passa dni z rzędu bez przerwy, tym mniej chętnie
       // dokładamy kolejny dzień — nawet zanim trafi w twardy limit 7 dni
