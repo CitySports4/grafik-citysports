@@ -25,7 +25,11 @@ export async function askWithContext(system: string, question: string, context: 
     // wyliczone dane na kilka zdań tekstu (notatki, podsumowania) — nie
     // wymagają mocy Opusa.
     model: "claude-sonnet-5",
-    max_tokens: 1024,
+    // max_tokens to WSPÓLNY budżet na myślenie (adaptive) + właściwą
+    // odpowiedź — przy 1024 model potrafił zużyć cały limit na myślenie i
+    // urwać się bez ani jednego bloku tekstu (stąd "Brak odpowiedzi." mimo
+    // że wywołanie się udało). 4096 zostawia realny zapas na obie części.
+    max_tokens: 4096,
     thinking: { type: "adaptive" },
     system,
     messages: [{ role: "user", content: `${context}\n\nPytanie: ${question}` }],
