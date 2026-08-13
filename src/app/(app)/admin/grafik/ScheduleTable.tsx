@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   assignShift,
   addEvent,
@@ -77,6 +77,18 @@ export function ScheduleTable({
   const [aiReview, setAiReview] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [generateMessage, setGenerateMessage] = useState<string | null>(null);
+
+  // Wynik generatora przeżywa `window.location.reload()` (patrz
+  // handleRunDraft) tylko dzięki sessionStorage — sam stan komponentu
+  // znika przy przeładowaniu strony.
+  useEffect(() => {
+    const stored = window.sessionStorage.getItem("grafik_generate_message");
+    if (stored) {
+      setGenerateMessage(stored);
+      window.sessionStorage.removeItem("grafik_generate_message");
+    }
+  }, []);
 
   const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
   const maxShifts = Math.max(1, ...days.map((d) => d.shifts.length));
@@ -256,7 +268,15 @@ export function ScheduleTable({
     setBusy(true);
     setError(null);
     try {
-      await runDraft(scheduleMonthId);
+      const result = await runDraft(scheduleMonthId);
+      const message =
+        result.assignedCount === 0
+          ? "Generator niczego nie zmienił — grafik był już najlepiej ułożony."
+          : `Zaktualizowano ${result.assignedCount} ${result.assignedCount === 1 ? "zmianę" : "zmian"}` +
+            (result.skippedCount > 0
+              ? `. Bez obsady zostało ${result.skippedCount} ${result.skippedCount === 1 ? "zmiana" : "zmian"} — brak dostępnej osoby.`
+              : ".");
+      window.sessionStorage.setItem("grafik_generate_message", message);
       window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Coś poszło nie tak.");
@@ -308,12 +328,20 @@ export function ScheduleTable({
         {error && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</div>
         )}
+        {generateMessage && (
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700">
+            <span>{generateMessage}</span>
+            <button type="button" onClick={() => setGenerateMessage(null)} className="text-blue-400 hover:text-blue-600">
+              ✕
+            </button>
+          </div>
+        )}
 
         {scheduleMonthStatus === "draft" && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
             <span
               className="flex cursor-help items-center gap-1.5 text-sm font-semibold text-zinc-900"
-              title="Wypełnia tylko puste zmiany i sobotnie sprzątanie — nie nadpisuje ręcznych przypisań. Uwzględnia dyspozycyjność, zajęcia instruktorów i wyrównuje godziny."
+              title="Pełna reoptymalizacja: uwzględnia dyspozycyjność i zajęcia instruktorów, wyrównuje godziny i MOŻE przełożyć już przypisane zmiany, jeśli znajdzie lepszy układ — ale zapisuje tylko to, co się realnie zmieniło."
             >
               Generator propozycji
               <span className="text-xs font-normal text-zinc-400">ⓘ</span>

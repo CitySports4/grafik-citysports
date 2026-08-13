@@ -48,9 +48,9 @@ export async function resetMonthStructure(scheduleMonthId: string, year: number,
   await generateMonthStructure(scheduleMonthId, year, month);
 }
 
-export async function runDraft(scheduleMonthId: string) {
+export async function runDraft(scheduleMonthId: string): Promise<{ assignedCount: number; skippedCount: number }> {
   await requireAdmin();
-  await runDraftGenerator(scheduleMonthId);
+  return runDraftGenerator(scheduleMonthId);
 }
 
 export async function assignShift(shiftId: string, employeeIdRaw: string) {
