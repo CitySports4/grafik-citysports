@@ -1,5 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { dailyEffectiveHours, effectiveShiftHours, hoursBetween, minutesToTime, overlapMinutes, timeToMinutes } from "@/lib/time";
+import { effectiveShiftHours, hoursBetween, minutesToTime, overlapMinutes, timeToMinutes } from "@/lib/time";
 import { daysInMonth, mondayOfWeek, toDateKey } from "@/lib/schedule-month";
 import { applyPlannedAbsences } from "@/lib/unavailability";
 
@@ -104,6 +104,13 @@ function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>): numbe
 // Krzysztof 2x w niedzielę) ma tę przerwę z natury; blokujemy sytuacje bez
 // niej lub z przerwą krótszą niż realny odpoczynek.
 const MIN_BREAK_MINUTES = 360; // 6h
+
+// Patrz komentarz przy `penalty()` — im bardziej ujemne, tym mocniej
+// generator woli zostawić kogoś na jego obecnej zmianie zamiast przełożyć
+// dla drobnej poprawy wyrównania. -40 mniej więcej odpowiada "1 punktowi
+// preferencji" (-50) — czyli realna preferencja/niedostępność wciąż
+// wygrywa, ale sama chęć wyrównania godzin musi być wyraźna, nie kosmetyczna.
+const STICKY_BONUS = -40;
 function tooCloseForDoubleShift(
   a: { start_time: string; end_time: string },
   b: { start_time: string; end_time: string }
@@ -117,8 +124,17 @@ function tooCloseForDoubleShift(
   return gap < MIN_BREAK_MINUTES;
 }
 
-// Heurystyczny generator wersji roboczej: wypełnia tylko puste, otwarte
-// zmiany — nie nadpisuje ręcznych przypisań.
+// Heurystyczny generator wersji roboczej: PEŁNA reoptymalizacja miesiąca —
+// każde uruchomienie może przełożyć dowolną zmianę (również już przypisaną
+// ręcznie albo przez poprzednie uruchomienie), jeśli znajdzie dla niej
+// lepszy układ. Żeby to nie oznaczało "przepisz wszystko od zera" przy
+// każdym kliknięciu: (1) obecny przydział ma bonus "lepkości" w funkcji kary
+// (patrz `STICKY_BONUS` niżej), więc zostaje, dopóki ktoś inny nie jest
+// WYRAŹNIE lepszy (większy niedobór godzin, brak konfliktu) albo dopóki sam
+// nie łamie twardej reguły (np. przerwy między zmianami); (2) na końcu do
+// bazy zapisywane są TYLKO zmiany, które faktycznie się różnią od stanu
+// sprzed uruchomienia — reszta zostaje nietknięta, więc admin widzi realny,
+// mały diff, a nie przetasowanie całego miesiąca.
 //
 // Zasada nadrzędna: jedna osoba = jedna zmiana danego dnia, ALE tylko
 // pon-czw (stąd w ogóle są tam 3 zmiany, żeby dzień rozkładał się na 3 różne
@@ -228,21 +244,25 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
     usedTodayByDate.get(date)!.add(employeeId);
   }
 
-  // Zsumuj istniejące (ręczne) przypisania — z połączeniem nakładających
-  // się przedziałów, żeby ewentualne wcześniejsze błędne dublowanie tej
-  // samej osoby na nakładających się zmianach nie zawyżało jej godzin ani
-  // nie psuło dalszego wyrównywania.
+  // UWAGA: przy pełnej reoptymalizacji NIE zasilamy hoursAssigned/
+  // daysAssigned/usedTodayByDate z obecnych przypisań (jak dawniej) — te
+  // liczniki budują się WYŁĄCZNIE z decyzji podjętych w tej turze, w miarę
+  // przetwarzania dni chronologicznie niżej. Dzięki temu są spójne z
+  // faktycznie liczonym (nowym) grafikiem, a nie z tym, co było przed
+  // uruchomieniem. `originalAssignmentByShiftId` zapamiętuje stan SPRZED
+  // uruchomienia wyłącznie po to, żeby na końcu odfiltrować zapis do bazy
+  // do realnych zmian (patrz `changedUpdates` niżej).
   const shiftsByEmployeeDate = new Map<string, Map<string, { start_time: string; end_time: string }[]>>();
   const weekdayByDate = new Map<string, number>();
+  const originalAssignmentByShiftId = new Map<string, { employee_id: string | null; start_time: string; end_time: string }>();
   for (const day of days ?? []) {
     weekdayByDate.set(day.date, day.weekday);
     for (const shift of day.schedule_shift ?? []) {
-      if (!shift.employee_id) continue;
-      markUsedToday(day.date, shift.employee_id);
-      if (!shiftsByEmployeeDate.has(shift.employee_id)) shiftsByEmployeeDate.set(shift.employee_id, new Map());
-      const byDate = shiftsByEmployeeDate.get(shift.employee_id)!;
-      if (!byDate.has(day.date)) byDate.set(day.date, []);
-      byDate.get(day.date)!.push({ start_time: shift.start_time, end_time: shift.end_time });
+      originalAssignmentByShiftId.set(shift.id, {
+        employee_id: shift.employee_id,
+        start_time: shift.start_time,
+        end_time: shift.end_time,
+      });
     }
     for (const ev of day.schedule_event ?? []) {
       if (ev.end_time) {
@@ -251,14 +271,6 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
           hoursAssigned.set(empId, (hoursAssigned.get(empId) ?? 0) + h);
         }
       }
-    }
-  }
-  for (const [empId, byDate] of shiftsByEmployeeDate) {
-    for (const [date, shiftsList] of byDate) {
-      const weekday = weekdayByDate.get(date) ?? 0;
-      const h = dailyEffectiveHours(shiftsList, weekday, classByEmployee.get(empId) ?? []);
-      hoursAssigned.set(empId, (hoursAssigned.get(empId) ?? 0) + h);
-      daysAssigned.get(empId)?.add(date);
     }
   }
 
@@ -329,7 +341,12 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
     // (bo mają dla nich najniższą karę), a instruktor z konfliktem zostaje
     // "ostatnim wyborem" wpychanym właśnie na tę trudną zmianę, mimo że jest
     // najlepiej dopasowany do INNEJ zmiany tego samego dnia.
-    const openShiftsForDay = (day.schedule_shift ?? []).filter((s) => !s.employee_id && !s.is_closed);
+    // Pełna reoptymalizacja: bierzemy WSZYSTKIE otwarte (nie zamknięte)
+    // zmiany dnia, niezależnie od tego, czy mają już kogoś przypisanego —
+    // stąd brak `!s.employee_id` w filtrze. Kto faktycznie zostaje na
+    // miejscu, a kto się zmienia, decyduje bonus "lepkości" w `penalty()`
+    // niżej i finalne odfiltrowanie zapisu do realnego diffu.
+    const openShiftsForDay = (day.schedule_shift ?? []).filter((s) => !s.is_closed);
 
     // Pon-czw, dzień z 3 pustymi zmianami, gdzie na CAŁY dzień dostępne są
     // tylko 2 osoby: normalnie zabrakłoby trzeciej osoby, więc dzielimy
@@ -401,9 +418,15 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       }
     }
 
-    const penalty = (emp: Employee, shift: { start_time: string; end_time: string }): number => {
+    const penalty = (emp: Employee, shift: { id: string; start_time: string; end_time: string }): number => {
       let score = 0;
       if (hasClassConflict(emp, shift)) score += 1000;
+      // "Lepkość": kto już miał tę zmianę PRZED tym uruchomieniem zostaje na
+      // niej, dopóki różnica z kimś innym (niedobór godzin, konflikt zajęć)
+      // nie jest wyraźnie większa niż ten bonus — bez tego pełna
+      // reoptymalizacja przetasowywałaby też zmiany, które były już dobrze
+      // ułożone, tylko dla marginalnych zysków w wyrównaniu.
+      if (originalAssignmentByShiftId.get(shift.id)?.employee_id === emp.id) score += STICKY_BONUS;
       const preferred = preferredByEmployee.get(emp.id) ?? [];
       for (const p of preferred) {
         if (p.weekday !== weekday) continue;
@@ -479,7 +502,22 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
     }
   }
 
-  for (const u of updates) {
+  // Zapisujemy do bazy TYLKO to, co się faktycznie zmieniło względem stanu
+  // sprzed uruchomienia — `updates` zawiera teraz wpis dla KAŻDEJ otwartej
+  // zmiany miesiąca (bo pełna reoptymalizacja rozważa je wszystkie), ale
+  // większość z nich to po prostu potwierdzenie "zostaje jak było" dzięki
+  // bonusowi lepkości. Bez tego filtra każde kliknięcie robiłoby zapis do
+  // każdej zmiany w miesiącu, nawet gdy nic się nie zmieniło.
+  const changedUpdates = updates.filter((u) => {
+    const original = originalAssignmentByShiftId.get(u.id);
+    if (!original) return true;
+    if (original.employee_id !== u.employee_id) return true;
+    if (u.start_time && u.start_time !== original.start_time) return true;
+    if (u.end_time && u.end_time !== original.end_time) return true;
+    return false;
+  });
+
+  for (const u of changedUpdates) {
     const patch: { employee_id: string; start_time?: string; end_time?: string } = { employee_id: u.employee_id };
     if (u.start_time) patch.start_time = u.start_time;
     if (u.end_time) patch.end_time = u.end_time;
@@ -540,10 +578,18 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
     await supabase.from("schedule_event").update({ participant_employee_ids: u.participantIds }).eq("id", u.eventId);
   }
 
-  const totalOpenShifts = (days ?? []).reduce(
-    (sum, d) => sum + (d.schedule_shift ?? []).filter((s) => !s.employee_id && !s.is_closed).length,
-    0
+  // `assignedCount`/`skippedCount` opisują to, co admin faktycznie zobaczy w
+  // grafiku po zapisie: ile zmian (w tym sprzątania) się zmieniło i ile
+  // PIERWOTNIE pustych zmian mimo wszystko zostało bez obsady (bo nikt nie
+  // był dostępny/kompetentny) — a NIE ile zmian generator "rozważył", bo przy
+  // pełnej reoptymalizacji to byłoby praktycznie wszystkie zmiany miesiąca.
+  const originallyEmptyIds = new Set(
+    (days ?? []).flatMap((d) => (d.schedule_shift ?? []).filter((s) => !s.employee_id && !s.is_closed).map((s) => s.id))
   );
+  const filledFromEmpty = changedUpdates.filter((u) => originallyEmptyIds.has(u.id)).length;
 
-  return { assignedCount: updates.length + cleaningUpdates.length, skippedCount: totalOpenShifts - updates.length };
+  return {
+    assignedCount: changedUpdates.length + cleaningUpdates.length,
+    skippedCount: originallyEmptyIds.size - filledFromEmpty,
+  };
 }
