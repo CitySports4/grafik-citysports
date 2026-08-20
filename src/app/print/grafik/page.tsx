@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/session";
 import { findScheduleMonth, currentMonth, monthLabel } from "@/lib/schedule-month";
 import { formatHm } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
+import { EVENT_TYPE_LABELS } from "@/lib/event-types";
 import { PrintButton } from "./PrintButton";
 import { PrintScaler } from "./PrintScaler";
 
@@ -26,24 +27,6 @@ function readableTextColor(hex: string): string {
   const yiq = (r * 299 + g * 587 + b * 114) / 1000;
   return yiq >= 150 ? "#1a1a1a" : "#ffffff";
 }
-
-// "17:00" -> "17:00" ale "08:00" -> "8:00" — bez wiodącego zera, żeby zabrać
-// choć jeden znak z każdej kapsułki wydarzenia (patrz label niżej).
-function shortHm(t: string): string {
-  return formatHm(t).replace(/^0/, "");
-}
-
-// Krótkie etykiety wydarzeń do druku — pełne nazwy ("Liga deblowa",
-// "Sprzątanie") razem z godziną i tak nie mieszczą się w wąskiej kolumnie
-// WYDARZENIA bez zawijania na kilka linii, więc zamiast obcinać w połowie
-// słowa, skracamy świadomie.
-const EVENT_SHORT_LABELS: Record<string, string> = {
-  liga_open: "Open",
-  liga_deblowa: "Debel",
-  sprzatanie: "Sprz.",
-  warsztaty: "Warszt.",
-  custom: "Inne",
-};
 
 const CLOSED_COLOR = "#3f3f46"; // zinc-700 — ta sama "waga" wizualna co pigułki pracowników, ale neutralna
 const UNASSIGNED_COLOR = "#a1a1aa";
@@ -172,12 +155,13 @@ export default async function PrintGrafikPage({
           <col style={{ width: 60 }} />
           <col style={{ width: 85 }} />
           {slotHeaders.map((_, i) => (
-            <col key={i} style={{ width: 140 }} />
+            <col key={i} style={{ width: 170 }} />
           ))}
           {/* Wydarzenia — świadomie ograniczona szerokość (patrz #print-table
               table-layout:fixed powyżej): długi tekst przycina się (Pill ma
-              truncate) zamiast rozpychać całą tabelę poza jedną stronę A4. */}
-          <col style={{ width: 320 }} />
+              truncate) zamiast rozpychać całą tabelę poza jedną stronę A4.
+              Węższa niż zmiany — tekstu tu zwykle mniej niż w 3 kolumnach zmian. */}
+          <col style={{ width: 230 }} />
         </colgroup>
         <thead>
           <tr>
@@ -205,7 +189,7 @@ export default async function PrintGrafikPage({
             });
             const isWeekend = day.weekday === 0 || day.weekday === 6;
             return (
-              <tr key={day.id} className={`break-inside-avoid ${isWeekend ? "bg-zinc-100" : ""}`}>
+              <tr key={day.id} className={`break-inside-avoid ${isWeekend ? "bg-zinc-300" : ""}`}>
                 <td className="border border-zinc-300 px-1.5 py-1 align-middle font-bold text-zinc-700">{dateLabel}</td>
                 <td className="border border-zinc-300 px-1.5 py-1 align-middle capitalize text-zinc-600">{weekdayLabel(day.weekday)}</td>
                 {Array.from({ length: SLOT_COUNT }, (_, i) => {
@@ -216,7 +200,7 @@ export default async function PrintGrafikPage({
                   return (
                     <td key={i} className="border border-zinc-300 p-0.5 align-middle">
                       {!shift ? (
-                        <span className="block px-1.5 text-center text-zinc-300">—</span>
+                        <span className="block px-1.5 text-center text-zinc-500">—</span>
                       ) : shift.is_closed ? (
                         <Pill colors={[CLOSED_COLOR]}>Nieczynne</Pill>
                       ) : emp ? (
@@ -229,7 +213,7 @@ export default async function PrintGrafikPage({
                           )}
                         </Pill>
                       ) : (
-                        <span className="block px-1.5 text-center normal-case text-zinc-400">— nieprzypisane —</span>
+                        <span className="block px-1.5 text-center normal-case text-zinc-500">— nieprzypisane —</span>
                       )}
                     </td>
                   );
@@ -253,9 +237,9 @@ export default async function PrintGrafikPage({
                         .map((id: string) => employeeById.get(id)?.color_hex)
                         .filter((c: string | undefined): c is string => Boolean(c));
                       const colors = participantColors.length > 0 ? participantColors : [EVENT_FALLBACK_COLORS[ev.type] ?? EVENT_FALLBACK_COLORS.custom];
-                      const time = ev.start_time ? shortHm(ev.start_time) : "";
-                      const shortName = ev.type === "custom" && ev.label ? ev.label : EVENT_SHORT_LABELS[ev.type] ?? ev.type;
-                      const label = `${time} ${shortName}`;
+                      const time = ev.start_time ? formatHm(ev.start_time) : "";
+                      const typeName = EVENT_TYPE_LABELS[ev.type] ?? ev.type;
+                      const label = `${time} ${ev.type === "custom" && ev.label ? ev.label : typeName}`;
                       return (
                         <Pill key={ev.id} colors={colors}>
                           {label}
