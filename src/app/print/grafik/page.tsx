@@ -3,7 +3,6 @@ import { requireAdmin } from "@/lib/session";
 import { findScheduleMonth, currentMonth, monthLabel } from "@/lib/schedule-month";
 import { formatHm } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
-import { EVENT_TYPE_LABELS } from "@/lib/event-types";
 import { PrintButton } from "./PrintButton";
 import { PrintScaler } from "./PrintScaler";
 
@@ -27,6 +26,24 @@ function readableTextColor(hex: string): string {
   const yiq = (r * 299 + g * 587 + b * 114) / 1000;
   return yiq >= 150 ? "#1a1a1a" : "#ffffff";
 }
+
+// "17:00" -> "17:00" ale "08:00" -> "8:00" — bez wiodącego zera, żeby zabrać
+// choć jeden znak z każdej kapsułki wydarzenia (patrz label niżej).
+function shortHm(t: string): string {
+  return formatHm(t).replace(/^0/, "");
+}
+
+// Krótkie etykiety wydarzeń do druku — pełne nazwy ("Liga deblowa",
+// "Sprzątanie") razem z godziną i tak nie mieszczą się w wąskiej kolumnie
+// WYDARZENIA bez zawijania na kilka linii, więc zamiast obcinać w połowie
+// słowa, skracamy świadomie.
+const EVENT_SHORT_LABELS: Record<string, string> = {
+  liga_open: "Open",
+  liga_deblowa: "Debel",
+  sprzatanie: "Sprz.",
+  warsztaty: "Warszt.",
+  custom: "Inne",
+};
 
 const CLOSED_COLOR = "#3f3f46"; // zinc-700 — ta sama "waga" wizualna co pigułki pracowników, ale neutralna
 const UNASSIGNED_COLOR = "#a1a1aa";
@@ -236,11 +253,9 @@ export default async function PrintGrafikPage({
                         .map((id: string) => employeeById.get(id)?.color_hex)
                         .filter((c: string | undefined): c is string => Boolean(c));
                       const colors = participantColors.length > 0 ? participantColors : [EVENT_FALLBACK_COLORS[ev.type] ?? EVENT_FALLBACK_COLORS.custom];
-                      const time = ev.start_time ? formatHm(ev.start_time) : "";
-                      const label =
-                        ev.type === "sprzatanie"
-                          ? `${time} Sprzątanie`
-                          : `${time} ${EVENT_TYPE_LABELS[ev.type] ?? ev.type}${ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}`;
+                      const time = ev.start_time ? shortHm(ev.start_time) : "";
+                      const shortName = ev.type === "custom" && ev.label ? ev.label : EVENT_SHORT_LABELS[ev.type] ?? ev.type;
+                      const label = `${time} ${shortName}`;
                       return (
                         <Pill key={ev.id} colors={colors}>
                           {label}
