@@ -15,6 +15,42 @@ function timeRange(start: string, end: string): string {
   return `${formatHm(start)} - ${formatHm(end)}`;
 }
 
+// Kolor tekstu pigułki dobrany do JASNOŚCI tła (YIQ) — kolor pracownika
+// wybiera admin dowolnie z color pickera, więc nie możemy założyć, że biały
+// tekst zawsze będzie czytelny (np. jasnożółty).
+function readableTextColor(hex: string): string {
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) return "#ffffff";
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 150 ? "#1a1a1a" : "#ffffff";
+}
+
+const CLOSED_COLOR = "#3f3f46"; // zinc-700 — ta sama "waga" wizualna co pigułki pracowników, ale neutralna
+const EVENT_COLORS: Record<string, string> = {
+  liga_open: "#dc2626",
+  liga_deblowa: "#b91c1c",
+  sprzatanie: "#7c3aed",
+  warsztaty: "#0891b2",
+  custom: "#db2777",
+};
+
+// Pigułka — pełne kolorowe tło, wyśrodkowany pogrubiony tekst; ten sam
+// kształt dla przypisanej osoby, "NIECZYNNE" i wydarzeń, żeby cała tabela
+// czytała się jako jeden spójny system, nie mieszanka stylów.
+function Pill({ color, children }: { color: string; children: React.ReactNode }) {
+  return (
+    <span
+      className="block w-full truncate rounded-full px-1.5 py-0.5 text-center font-bold uppercase leading-tight"
+      style={{ backgroundColor: color, color: readableTextColor(color) }}
+    >
+      {children}
+    </span>
+  );
+}
+
 export default async function PrintGrafikPage({
   searchParams,
 }: {
@@ -45,7 +81,7 @@ export default async function PrintGrafikPage({
       )
       .eq("schedule_month_id", scheduleMonth.id)
       .order("date"),
-    supabase.from("employee").select("id, name"),
+    supabase.from("employee").select("id, name, color_hex"),
     // Poniedziałek jako reprezentatywny dzień powszedni do nagłówków kolumn —
     // rzeczywiste godziny per dzień (jeśli nadpisane) i tak są pokazane w komórce.
     supabase
@@ -83,14 +119,20 @@ export default async function PrintGrafikPage({
       <table id="print-table" className="w-full border-collapse text-[10px] leading-tight">
         <thead>
           <tr>
-            <th className="w-[55px] border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">DATA</th>
-            <th className="w-[75px] border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">DZIEŃ</th>
+            <th className="w-[55px] border border-zinc-400 bg-brand-navy px-1.5 py-1.5 text-left font-bold uppercase tracking-wide text-white">
+              Data
+            </th>
+            <th className="w-[75px] border border-zinc-400 bg-brand-navy px-1.5 py-1.5 text-left font-bold uppercase tracking-wide text-white">
+              Dzień
+            </th>
             {slotHeaders.map((label, i) => (
-              <th key={i} className="border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">
+              <th key={i} className="border border-zinc-400 bg-brand-navy px-1.5 py-1.5 text-left font-bold uppercase tracking-wide text-white">
                 {label}
               </th>
             ))}
-            <th className="border border-zinc-400 bg-zinc-100 px-1 py-0.5 text-left">WYDARZENIA</th>
+            <th className="border border-zinc-400 bg-brand-navy px-1.5 py-1.5 text-left font-bold uppercase tracking-wide text-white">
+              Wydarzenia
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -105,54 +147,57 @@ export default async function PrintGrafikPage({
             });
             const isWeekend = day.weekday === 0 || day.weekday === 6;
             return (
-              <tr key={day.id} className={`break-inside-avoid ${isWeekend ? "bg-zinc-50" : ""}`}>
-                <td className="border border-zinc-300 px-1 py-0.5 align-top font-semibold">{dateLabel}</td>
-                <td className="border border-zinc-300 px-1 py-0.5 align-top capitalize">{weekdayLabel(day.weekday)}</td>
+              <tr key={day.id} className={`break-inside-avoid ${isWeekend ? "bg-zinc-100" : ""}`}>
+                <td className="border border-zinc-300 px-1.5 py-1 align-middle font-bold text-zinc-700">{dateLabel}</td>
+                <td className="border border-zinc-300 px-1.5 py-1 align-middle capitalize text-zinc-600">{weekdayLabel(day.weekday)}</td>
                 {Array.from({ length: SLOT_COUNT }, (_, i) => {
                   const shift = shiftsBySlot.get(i);
                   const emp = shift?.employee_id ? employeeById.get(shift.employee_id) : null;
                   const actualLabel = shift ? timeRange(shift.start_time, shift.end_time) : null;
                   const headerMatches = actualLabel === slotHeaders[i];
                   return (
-                    <td key={i} className="border border-zinc-300 px-1 py-0.5 align-top font-semibold uppercase">
+                    <td key={i} className="border border-zinc-300 p-0.5 align-middle">
                       {!shift ? (
-                        <span className="font-normal text-zinc-300">—</span>
+                        <span className="block px-1.5 text-center text-zinc-300">—</span>
                       ) : shift.is_closed ? (
-                        <span className="font-normal normal-case text-zinc-400">NIECZYNNE</span>
+                        <Pill color={CLOSED_COLOR}>Nieczynne</Pill>
                       ) : emp ? (
                         <>
-                          {emp.name}
-                          {!headerMatches && <div className="text-[8px] font-normal normal-case text-zinc-500">{actualLabel}</div>}
+                          <Pill color={emp.color_hex}>{emp.name}</Pill>
+                          {!headerMatches && <div className="mt-0.5 text-center text-[8px] font-normal normal-case text-zinc-500">{actualLabel}</div>}
                         </>
                       ) : (
-                        <span className="font-normal normal-case text-zinc-400">— nieprzypisane —</span>
+                        <span className="block px-1.5 text-center normal-case text-zinc-400">— nieprzypisane —</span>
                       )}
                     </td>
                   );
                 })}
-                <td className="border border-zinc-300 px-1 py-0.5 align-top">
-                  {overflowShifts.map((shift) => {
-                    const emp = shift.employee_id ? employeeById.get(shift.employee_id) : null;
-                    return (
-                      <div key={shift.id}>
-                        {timeRange(shift.start_time, shift.end_time)}: {shift.is_closed ? "NIECZYNNE" : emp ? emp.name : "— nieprzypisane —"}
-                      </div>
-                    );
-                  })}
-                  {events.map((ev) => {
-                    const participants = (ev.participant_employee_ids ?? [])
-                      .map((id: string) => employeeById.get(id)?.name)
-                      .filter(Boolean)
-                      .join(", ");
-                    return (
-                      <div key={ev.id}>
-                        {ev.start_time ? `${formatHm(ev.start_time)}${ev.end_time ? `-${formatHm(ev.end_time)}` : ""} ` : ""}
-                        {EVENT_TYPE_LABELS[ev.type] ?? ev.type}
-                        {ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}
-                        {participants ? ` (${participants})` : ""}
-                      </div>
-                    );
-                  })}
+                <td className="border border-zinc-300 p-0.5 align-middle">
+                  <div className="flex flex-col gap-0.5">
+                    {overflowShifts.map((shift) => {
+                      const emp = shift.employee_id ? employeeById.get(shift.employee_id) : null;
+                      const label = `${timeRange(shift.start_time, shift.end_time)} ${shift.is_closed ? "Nieczynne" : emp ? emp.name : "— nieprzypisane —"}`;
+                      return (
+                        <Pill key={shift.id} color={shift.is_closed ? CLOSED_COLOR : emp ? emp.color_hex : "#a1a1aa"}>
+                          {label}
+                        </Pill>
+                      );
+                    })}
+                    {events.map((ev) => {
+                      const participants = (ev.participant_employee_ids ?? [])
+                        .map((id: string) => employeeById.get(id)?.name)
+                        .filter(Boolean)
+                        .join(", ");
+                      const label = `${ev.start_time ? `${formatHm(ev.start_time)}${ev.end_time ? `-${formatHm(ev.end_time)}` : ""} ` : ""}${
+                        EVENT_TYPE_LABELS[ev.type] ?? ev.type
+                      }${ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}${participants ? ` (${participants})` : ""}`;
+                      return (
+                        <Pill key={ev.id} color={EVENT_COLORS[ev.type] ?? EVENT_COLORS.custom}>
+                          {label}
+                        </Pill>
+                      );
+                    })}
+                  </div>
                 </td>
               </tr>
             );
