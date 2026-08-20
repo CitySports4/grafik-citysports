@@ -143,7 +143,12 @@ export default async function PrintGrafikPage({
         <PrintButton />
       </div>
 
-      <PrintScaler tableId="print-table" pageHeightMm={277} />
+      {/* A4 W POZIOMIE: strona ma 210mm wysokości (nie 297mm — to szerokość
+          w poziomie), minus 2×10mm marginesu = 190mm użytecznej wysokości.
+          277mm to była wysokość strony PIONOWEJ minus marginesy — pomyłka,
+          przez którą skalowanie zakładało dużo więcej miejsca niż naprawdę
+          jest, więc pełny miesiąc (31 dni) nie mieścił się na jednej stronie. */}
+      <PrintScaler tableId="print-table" pageHeightMm={190} />
 
       <table id="print-table" className="w-full border-collapse text-[10px] leading-tight">
         <colgroup>
@@ -198,10 +203,14 @@ export default async function PrintGrafikPage({
                       ) : shift.is_closed ? (
                         <Pill colors={[CLOSED_COLOR]}>Nieczynne</Pill>
                       ) : emp ? (
-                        <>
-                          <Pill colors={[emp.color_hex]}>{emp.name}</Pill>
-                          {!headerMatches && <div className="mt-0.5 text-center text-[8px] font-normal normal-case text-zinc-500">{actualLabel}</div>}
-                        </>
+                        <Pill colors={[emp.color_hex]}>
+                          {emp.name}
+                          {!headerMatches && (
+                            <span className="ml-1 font-normal normal-case">
+                              ({formatHm(shift.start_time)}–{formatHm(shift.end_time)})
+                            </span>
+                          )}
+                        </Pill>
                       ) : (
                         <span className="block px-1.5 text-center normal-case text-zinc-400">— nieprzypisane —</span>
                       )}
