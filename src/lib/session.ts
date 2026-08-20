@@ -45,12 +45,11 @@ export async function clearSession() {
   store.delete(COOKIE_NAME);
 }
 
-export type EmployeeRole = "recepcja" | "sprzatanie" | "marketing" | "admin";
+export type EmployeeRole = "recepcja" | "sprzatanie" | "admin";
 
 export const ROLE_LABELS: Record<EmployeeRole, string> = {
   recepcja: "Recepcja",
   sprzatanie: "Sprzątanie",
-  marketing: "Marketing",
   admin: "Administrator",
 };
 export type SessionEmployee = {

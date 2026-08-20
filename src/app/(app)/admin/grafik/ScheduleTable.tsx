@@ -13,6 +13,7 @@ import {
   updateEventParticipants,
   deleteEvent,
   runDraft,
+  runAiDraft,
   publishMonth,
   unpublishMonth,
   reviewScheduleWithAI,
@@ -285,6 +286,26 @@ export function ScheduleTable({
     }
   }
 
+  async function handleRunAiDraft() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await runAiDraft(scheduleMonthId);
+      const message =
+        result.assignedCount === 0
+          ? `AI niczego nie zmieniło (${result.aiRounds} ${result.aiRounds === 1 ? "próba" : "próby"}).`
+          : `AI zaktualizowało ${result.assignedCount} ${result.assignedCount === 1 ? "zmianę" : "zmian"} (${result.aiRounds} ${result.aiRounds === 1 ? "próba" : "próby"} do poprawnego wyniku)` +
+            (result.skippedCount > 0
+              ? `. Bez obsady zostało ${result.skippedCount} ${result.skippedCount === 1 ? "zmiana" : "zmian"} — brak dostępnej osoby.`
+              : ".");
+      window.sessionStorage.setItem("grafik_generate_message", message);
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Coś poszło nie tak.");
+      setBusy(false);
+    }
+  }
+
   async function handlePublish() {
     setBusy(true);
     setError(null);
@@ -347,14 +368,25 @@ export function ScheduleTable({
               Generator propozycji
               <span className="text-xs font-normal text-zinc-400">ⓘ</span>
             </span>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={handleRunDraft}
-              className="rounded-xl bg-zinc-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-50"
-            >
-              {busy ? "Generowanie…" : "Wygeneruj propozycję"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleRunDraft}
+                className="rounded-xl bg-zinc-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-50"
+              >
+                {busy ? "Generowanie…" : "Wygeneruj propozycję"}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleRunAiDraft}
+                title="AI samo układa przydział (nie tylko doradza) — każda propozycja jest w pełni sprawdzona pod kątem twardych reguł (dostępność, 7 dni, dzień wolny) i odrzucona z powrotem do poprawy, jeśli je łamie. Wolniejsze niż zwykły generator."
+                className="flex cursor-help items-center gap-1.5 rounded-xl border-[1.5px] border-zinc-800 bg-white px-4 py-2.5 text-sm font-bold text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                {busy ? "Generowanie…" : "Wygeneruj z AI"} <span className="text-xs font-normal text-zinc-400">ⓘ</span>
+              </button>
+            </div>
           </div>
         )}
 

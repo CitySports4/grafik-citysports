@@ -13,7 +13,7 @@ const montserrat = Montserrat({
 // scaffoldu) wcześniej wygrywał z tym w karcie przeglądarki.
 export const metadata: Metadata = {
   title: "City Sports",
-  description: "System zarządzania City Sports — grafik, sprzątanie, godziny, notatnik.",
+  description: "System zarządzania City Sports — grafik, sprzątanie, godziny, zadania.",
 };
 
 export default function RootLayout({

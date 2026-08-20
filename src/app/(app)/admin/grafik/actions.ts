@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { generateMonthStructure, runDraftGenerator } from "@/lib/schedule-generator";
+import { runAiDraftGenerator } from "@/lib/schedule-generator-ai";
 import { buildAvailabilityMap, applyPlannedAbsences, isHardUnavailable, type HardConstraint } from "@/lib/unavailability";
 import { weekdayLabel } from "@/lib/weekdays";
 import { askWithContext } from "@/lib/ai";
@@ -51,6 +52,15 @@ export async function resetMonthStructure(scheduleMonthId: string, year: number,
 export async function runDraft(scheduleMonthId: string): Promise<{ assignedCount: number; skippedCount: number }> {
   await requireAdmin();
   return runDraftGenerator(scheduleMonthId);
+}
+
+// AI ma tu pełne zaufanie do UKŁADU (nie tylko doradza jak reviewScheduleWithAI
+// niżej) — patrz komentarz na górze schedule-generator-ai.ts po dlaczego to
+// świadomy wyjątek i jak jest zabezpieczony (pełna rewalidacja + odrzucenie
+// i poprawka, nie ślepe zaufanie).
+export async function runAiDraft(scheduleMonthId: string): Promise<{ assignedCount: number; skippedCount: number; aiRounds: number }> {
+  await requireAdmin();
+  return runAiDraftGenerator(scheduleMonthId);
 }
 
 export async function assignShift(shiftId: string, employeeIdRaw: string) {

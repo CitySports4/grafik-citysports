@@ -401,7 +401,7 @@ export default async function EmployeeDetailPage({
           if (zoneCount) impacts.push(`${zoneCount} przypisanych stref sprzątania zostanie skasowanych`);
           if (timeEntryCount) impacts.push(`${timeEntryCount} zapisanych wpisów godzin pracy zostanie skasowanych`);
           if (absenceTotalCount) impacts.push(`${absenceTotalCount} zaplanowanych nieobecności zostanie skasowanych`);
-          if (noteCount) impacts.push(`${noteCount} notatek autorstwa tej osoby zostanie skasowanych`);
+          if (noteCount) impacts.push(`${noteCount} zadań autorstwa tej osoby zostanie skasowanych`);
           return (
             <>
               {impacts.length > 0 ? (

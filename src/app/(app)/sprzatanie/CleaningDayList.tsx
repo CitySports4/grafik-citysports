@@ -14,6 +14,7 @@ type Item = {
   assignee: { name: string; color_hex: string } | null;
   autoCovered: boolean;
   overdue: { daysLate: number; alert: boolean } | null;
+  coverageGap: boolean;
   checklist: ChecklistItem[];
   done: boolean;
 };
@@ -95,6 +96,11 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                           }`}
                         >
                           zaległe {it.overdue.daysLate} dni
+                        </span>
+                      )}
+                      {it.coverageGap && (
+                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                          brak kompetentnej osoby w cyklu
                         </span>
                       )}
                     </div>
