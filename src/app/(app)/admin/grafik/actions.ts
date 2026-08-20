@@ -4,11 +4,9 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
-import { generateMonthStructure, runDraftGenerator } from "@/lib/schedule-generator";
+import { generateMonthStructure } from "@/lib/schedule-generator";
 import { runAiDraftGenerator } from "@/lib/schedule-generator-ai";
 import { buildAvailabilityMap, applyPlannedAbsences, isHardUnavailable, type HardConstraint } from "@/lib/unavailability";
-import { weekdayLabel } from "@/lib/weekdays";
-import { askWithContext } from "@/lib/ai";
 
 // Poniższe akcje wywoływane są bezpośrednio z klienta (nie przez
 // `<form action={...}>`) i celowo NIE wołają revalidatePath: komponent
@@ -49,15 +47,13 @@ export async function resetMonthStructure(scheduleMonthId: string, year: number,
   await generateMonthStructure(scheduleMonthId, year, month);
 }
 
-export async function runDraft(scheduleMonthId: string): Promise<{ assignedCount: number; skippedCount: number }> {
-  await requireAdmin();
-  return runDraftGenerator(scheduleMonthId);
-}
-
-// AI ma tu pełne zaufanie do UKŁADU (nie tylko doradza jak reviewScheduleWithAI
-// niżej) — patrz komentarz na górze schedule-generator-ai.ts po dlaczego to
-// świadomy wyjątek i jak jest zabezpieczony (pełna rewalidacja + odrzucenie
-// i poprawka, nie ślepe zaufanie).
+// Jedyny generator w UI — AI ma tu pełne zaufanie do UKŁADU (nie tylko
+// doradza). Patrz komentarz na górze schedule-generator-ai.ts po dlaczego to
+// świadomy wyjątek od zasady w ai.ts i jak jest zabezpieczony (pełna
+// rewalidacja + odrzucenie i poprawka, nie ślepe zaufanie). Zwykły,
+// deterministyczny `runDraftGenerator` (schedule-generator.ts) zostaje w
+// kodzie nietknięty — to on dostarcza reguły, względem których rewalidowana
+// jest KAŻDA propozycja AI — ale nie jest już wpięty w żaden przycisk.
 export async function runAiDraft(scheduleMonthId: string): Promise<{ assignedCount: number; skippedCount: number; aiRounds: number }> {
   await requireAdmin();
   return runAiDraftGenerator(scheduleMonthId);
@@ -267,49 +263,6 @@ export async function publishMonth(scheduleMonthId: string) {
     .update({ status: "published", published_at: new Date().toISOString() })
     .eq("id", scheduleMonthId);
   if (error) throw new Error(dbErrorMessage(error));
-}
-
-// "Drugie oko" — czysto doradcza podpowiedź AI przeglądająca draft PRZED
-// publikacją. Sam układ grafiku (twarde reguły: min. 1 dzień wolny, max 7
-// dni z rzędu, dostępność) pozostaje w 100% deterministycznym kodem —
-// AI tutaj niczego nie zmienia, tylko czyta gotowy, już wygenerowany draft
-// i zwraca zwykły tekst z sugestiami dla admina. Wywoływana na żądanie
-// (przycisk), nie automatycznie, i nic nie zapisuje.
-export async function reviewScheduleWithAI(scheduleMonthId: string): Promise<string> {
-  await requireAdmin();
-  const supabase = createServerSupabaseClient();
-
-  const [{ data: days }, { data: employees }] = await Promise.all([
-    supabase
-      .from("schedule_day")
-      .select("date, weekday, schedule_shift(start_time, end_time, employee_id, is_closed)")
-      .eq("schedule_month_id", scheduleMonthId)
-      .order("date"),
-    supabase.from("employee").select("id, name").eq("active", true),
-  ]);
-
-  const nameById = new Map((employees ?? []).map((e) => [e.id, e.name]));
-
-  const lines: string[] = [];
-  for (const day of days ?? []) {
-    const shifts = (day.schedule_shift ?? [])
-      .filter((s) => !s.is_closed && s.employee_id)
-      .slice()
-      .sort((a, b) => a.start_time.localeCompare(b.start_time));
-    if (shifts.length === 0) continue;
-    const parts = shifts.map((s) => `${nameById.get(s.employee_id!) ?? "?"} ${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}`);
-    lines.push(`${day.date} (${weekdayLabel(day.weekday)}): ${parts.join(", ")}`);
-  }
-
-  if (lines.length === 0) {
-    return "Brak przypisanych zmian do sprawdzenia — najpierw wygeneruj lub uzupełnij grafik.";
-  }
-
-  return askWithContext(
-    "Jesteś doradcą admina City Sports przeglądającym draft grafiku PRZED publikacją. Twarde reguły (min. 1 dzień wolny w tygodniu, max 7 dni z rzędu, dostępność) są już wymuszone w kodzie — NIE zgłaszaj ich naruszeń, bo i tak by nie przeszły. Szukaj za to wzorców, których żadna reguła nie łapie: ta sama osoba ma kilka dni z rzędu zamknięcie/otwarcie, mimo że w reszcie miesiąca ma zwykle inaczej; bardzo nierówny rozkład godzin dzień po dniu u jednej osoby; późne zamknięcie i wczesne otwarcie następnego dnia u tej samej osoby (mało czasu na odpoczynek); dzień z wyraźnie za małą lub za dużą obsadą względem reszty miesiąca. Odpowiadaj PO POLSKU, maksymalnie 5 zwięzłych punktów, bez lania wody. Jeśli nic nietypowego nie widzisz, napisz jedno zdanie, że grafik wygląda standardowo. To są TYLKO sugestie dla człowieka — Ty niczego nie zmieniasz.",
-    "Przejrzyj ten draft grafiku i wypisz, na co warto zwrócić uwagę przed publikacją.",
-    `Grafik zmian (data, dzień tygodnia: kto pracuje i w jakich godzinach):\n${lines.join("\n")}`
-  );
 }
 
 export async function unpublishMonth(scheduleMonthId: string) {
