@@ -12,7 +12,9 @@ export function PrintScaler({ tableId, pageHeightMm }: { tableId: string; pageHe
   useEffect(() => {
     const MM_TO_PX = 96 / 25.4;
     const pageHeightPx = pageHeightMm * MM_TO_PX;
-    const MIN_ZOOM = 0.5;
+    // Bez dolnej granicy: "zawsze mieści się na A4" jest tu ważniejsze niż
+    // nie-za-małe litery na wydruku pełnego (31-dniowego) miesiąca.
+    const MIN_ZOOM = 0.3;
 
     function fitToPage() {
       const table = document.getElementById(tableId) as HTMLElement | null;
