@@ -109,7 +109,7 @@ export default async function PrintGrafikPage({
       )
       .eq("schedule_month_id", scheduleMonth.id)
       .order("date"),
-    supabase.from("employee").select("id, name, color_hex"),
+    supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
     // Poniedziałek jako reprezentatywny dzień powszedni do nagłówków kolumn —
     // rzeczywiste godziny per dzień (jeśli nadpisane) i tak są pokazane w komórce.
     supabase
@@ -126,6 +126,20 @@ export default async function PrintGrafikPage({
     return t ? timeRange(t.default_start_time, t.default_end_time) : `Zmiana ${i + 1}`;
   });
 
+  // Legenda kolorów pod tabelą — tylko osoby, które faktycznie mają choć
+  // jedną zmianę/wydarzenie w tym miesiącu (nie cała lista aktywnych, żeby
+  // nie zaśmiecać legendy kimś, kto akurat nie pracuje).
+  const usedEmployeeIds = new Set<string>();
+  for (const day of days ?? []) {
+    for (const s of day.schedule_shift ?? []) {
+      if (s.employee_id) usedEmployeeIds.add(s.employee_id);
+    }
+    for (const ev of day.schedule_event ?? []) {
+      for (const id of ev.participant_employee_ids ?? []) usedEmployeeIds.add(id);
+    }
+  }
+  const legendEmployees = (employees ?? []).filter((e) => usedEmployeeIds.has(e.id));
+
   return (
     <main className="p-6 print:p-0">
       <style>{`
@@ -133,7 +147,7 @@ export default async function PrintGrafikPage({
         @media print {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
-        #print-table { table-layout: fixed; }
+        #print-table table { table-layout: fixed; }
       `}</style>
 
       <div className="mb-4 flex items-center justify-between print:hidden">
@@ -150,7 +164,12 @@ export default async function PrintGrafikPage({
           jest, więc pełny miesiąc (31 dni) nie mieścił się na jednej stronie. */}
       <PrintScaler tableId="print-table" pageHeightMm={190} />
 
-      <table id="print-table" className="w-full border-collapse text-[10px] leading-tight">
+      {/* id na WSPÓLNYM kontenerze (tabela + legenda), nie na samej tabeli —
+          PrintScaler mierzy i skaluje ten element całościowo, więc legenda
+          liczy się do "czy mieści się na stronie", zamiast doklejać się
+          nieprzeskalowana pod już dopasowaną tabelą. */}
+      <div id="print-table">
+      <table className="w-full border-collapse text-[10px] leading-tight">
         <colgroup>
           <col style={{ width: 60 }} />
           <col style={{ width: 85 }} />
@@ -178,7 +197,7 @@ export default async function PrintGrafikPage({
           </tr>
         </thead>
         <tbody>
-          {(days ?? []).map((day) => {
+          {(days ?? []).map((day, index) => {
             const shifts = day.schedule_shift ?? [];
             const shiftsBySlot = new Map(shifts.map((s) => [s.slot_index, s]));
             const overflowShifts = shifts.filter((s) => s.slot_index >= SLOT_COUNT);
@@ -188,17 +207,25 @@ export default async function PrintGrafikPage({
               month: "numeric",
             });
             const isWeekend = day.weekday === 0 || day.weekday === 6;
+            // Gruba linia nad każdym poniedziałkiem (poza samą górą tabeli,
+            // tam już jest nagłówek) — dzieli miesiąc na czytelne bloki
+            // 7-dniowe, nie zmieniając nic poza samą kreską.
+            const isWeekStart = index > 0 && day.weekday === 1;
+            // Na <tr> border-top pod border-collapse bywa niespójnie
+            // renderowany między przeglądarkami — dopisujemy go do KAŻDEJ
+            // komórki z osobna, żeby na wydruku zawsze było widać.
+            const weekStartBorder = isWeekStart ? " border-t-[3px] border-t-brand-navy" : "";
             return (
               <tr key={day.id} className={`break-inside-avoid ${isWeekend ? "bg-zinc-300" : ""}`}>
-                <td className="border border-zinc-400 px-1.5 py-1 align-middle font-bold text-zinc-700">{dateLabel}</td>
-                <td className="border border-zinc-400 px-1.5 py-1 align-middle capitalize text-zinc-600">{weekdayLabel(day.weekday)}</td>
+                <td className={`border border-zinc-400 px-1.5 py-1 align-middle font-bold text-zinc-700${weekStartBorder}`}>{dateLabel}</td>
+                <td className={`border border-zinc-400 px-1.5 py-1 align-middle capitalize text-zinc-600${weekStartBorder}`}>{weekdayLabel(day.weekday)}</td>
                 {Array.from({ length: SLOT_COUNT }, (_, i) => {
                   const shift = shiftsBySlot.get(i);
                   const emp = shift?.employee_id ? employeeById.get(shift.employee_id) : null;
                   const actualLabel = shift ? timeRange(shift.start_time, shift.end_time) : null;
                   const headerMatches = actualLabel === slotHeaders[i];
                   return (
-                    <td key={i} className="border border-zinc-400 p-0.5 align-middle">
+                    <td key={i} className={`border border-zinc-400 p-0.5 align-middle${weekStartBorder}`}>
                       {!shift ? (
                         <span className="block px-1.5 text-center text-zinc-500">—</span>
                       ) : shift.is_closed ? (
@@ -218,7 +245,7 @@ export default async function PrintGrafikPage({
                     </td>
                   );
                 })}
-                <td className="border border-zinc-400 p-0.5 align-middle">
+                <td className={`border border-zinc-400 p-0.5 align-middle${weekStartBorder}`}>
                   <div className="flex flex-col gap-0.5">
                     {overflowShifts.map((shift) => {
                       const emp = shift.employee_id ? employeeById.get(shift.employee_id) : null;
@@ -253,6 +280,18 @@ export default async function PrintGrafikPage({
           })}
         </tbody>
       </table>
+
+      {legendEmployees.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-semibold text-zinc-700">
+          {legendEmployees.map((e) => (
+            <span key={e.id} className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: e.color_hex }} />
+              {e.name}
+            </span>
+          ))}
+        </div>
+      )}
+      </div>
     </main>
   );
 }
