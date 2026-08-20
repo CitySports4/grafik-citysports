@@ -29,7 +29,10 @@ function readableTextColor(hex: string): string {
 }
 
 const CLOSED_COLOR = "#3f3f46"; // zinc-700 — ta sama "waga" wizualna co pigułki pracowników, ale neutralna
-const EVENT_COLORS: Record<string, string> = {
+const UNASSIGNED_COLOR = "#a1a1aa";
+// Tylko fallback, gdy wydarzenie nie ma uczestników (kolor pigułki normalnie
+// bierze się z koloru osoby/osób, które je mają — patrz Pill niżej).
+const EVENT_FALLBACK_COLORS: Record<string, string> = {
   liga_open: "#dc2626",
   liga_deblowa: "#b91c1c",
   sprzatanie: "#7c3aed",
@@ -37,14 +40,39 @@ const EVENT_COLORS: Record<string, string> = {
   custom: "#db2777",
 };
 
+// Średni kolor kilku barw — do doboru czytelnego koloru tekstu na pigułce
+// podzielonej na pół (patrz Pill), gdzie jeden kolor tekstu musi pasować do
+// obu połówek na raz.
+function averageColor(colors: string[]): string {
+  let r = 0,
+    g = 0,
+    b = 0;
+  for (const c of colors) {
+    const clean = c.replace("#", "");
+    r += parseInt(clean.slice(0, 2), 16) || 0;
+    g += parseInt(clean.slice(2, 4), 16) || 0;
+    b += parseInt(clean.slice(4, 6), 16) || 0;
+  }
+  const n = colors.length || 1;
+  const hex = (v: number) => Math.round(v / n).toString(16).padStart(2, "0");
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
 // Pigułka — pełne kolorowe tło, wyśrodkowany pogrubiony tekst; ten sam
 // kształt dla przypisanej osoby, "NIECZYNNE" i wydarzeń, żeby cała tabela
-// czytała się jako jeden spójny system, nie mieszanka stylów.
-function Pill({ color, children }: { color: string; children: React.ReactNode }) {
+// czytała się jako jeden spójny system, nie mieszanka stylów. Wiele kolorów
+// (np. sprzątanie dwuosobowe) dzieli pigułkę na równe pionowe pasy zamiast
+// płynnego gradientu — ma być jasne, że to DWIE konkretne osoby, nie jedna
+// zmieszana barwa.
+function Pill({ colors, children }: { colors: string[]; children: React.ReactNode }) {
+  const bg =
+    colors.length <= 1
+      ? colors[0] ?? UNASSIGNED_COLOR
+      : `linear-gradient(90deg, ${colors.map((c, i) => `${c} ${(i * 100) / colors.length}% ${((i + 1) * 100) / colors.length}%`).join(", ")})`;
   return (
     <span
       className="block w-full truncate rounded-full px-1.5 py-0.5 text-center font-bold uppercase leading-tight"
-      style={{ backgroundColor: color, color: readableTextColor(color) }}
+      style={{ background: bg, color: readableTextColor(colors.length <= 1 ? colors[0] ?? UNASSIGNED_COLOR : averageColor(colors)) }}
     >
       {children}
     </span>
@@ -105,6 +133,7 @@ export default async function PrintGrafikPage({
         @media print {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
+        #print-table { table-layout: fixed; }
       `}</style>
 
       <div className="mb-4 flex items-center justify-between print:hidden">
@@ -117,14 +146,21 @@ export default async function PrintGrafikPage({
       <PrintScaler tableId="print-table" pageHeightMm={277} />
 
       <table id="print-table" className="w-full border-collapse text-[10px] leading-tight">
+        <colgroup>
+          <col style={{ width: 60 }} />
+          <col style={{ width: 85 }} />
+          {slotHeaders.map((_, i) => (
+            <col key={i} style={{ width: 140 }} />
+          ))}
+          {/* Wydarzenia — świadomie ograniczona szerokość (patrz #print-table
+              table-layout:fixed powyżej): długi tekst przycina się (Pill ma
+              truncate) zamiast rozpychać całą tabelę poza jedną stronę A4. */}
+          <col style={{ width: 320 }} />
+        </colgroup>
         <thead>
           <tr>
-            <th className="w-[55px] border border-zinc-400 bg-brand-navy px-1.5 py-1.5 text-left font-bold uppercase tracking-wide text-white">
-              Data
-            </th>
-            <th className="w-[75px] border border-zinc-400 bg-brand-navy px-1.5 py-1.5 text-left font-bold uppercase tracking-wide text-white">
-              Dzień
-            </th>
+            <th className="border border-zinc-400 bg-brand-navy px-1.5 py-1.5 text-left font-bold uppercase tracking-wide text-white">Data</th>
+            <th className="border border-zinc-400 bg-brand-navy px-1.5 py-1.5 text-left font-bold uppercase tracking-wide text-white">Dzień</th>
             {slotHeaders.map((label, i) => (
               <th key={i} className="border border-zinc-400 bg-brand-navy px-1.5 py-1.5 text-left font-bold uppercase tracking-wide text-white">
                 {label}
@@ -160,10 +196,10 @@ export default async function PrintGrafikPage({
                       {!shift ? (
                         <span className="block px-1.5 text-center text-zinc-300">—</span>
                       ) : shift.is_closed ? (
-                        <Pill color={CLOSED_COLOR}>Nieczynne</Pill>
+                        <Pill colors={[CLOSED_COLOR]}>Nieczynne</Pill>
                       ) : emp ? (
                         <>
-                          <Pill color={emp.color_hex}>{emp.name}</Pill>
+                          <Pill colors={[emp.color_hex]}>{emp.name}</Pill>
                           {!headerMatches && <div className="mt-0.5 text-center text-[8px] font-normal normal-case text-zinc-500">{actualLabel}</div>}
                         </>
                       ) : (
@@ -178,21 +214,26 @@ export default async function PrintGrafikPage({
                       const emp = shift.employee_id ? employeeById.get(shift.employee_id) : null;
                       const label = `${timeRange(shift.start_time, shift.end_time)} ${shift.is_closed ? "Nieczynne" : emp ? emp.name : "— nieprzypisane —"}`;
                       return (
-                        <Pill key={shift.id} color={shift.is_closed ? CLOSED_COLOR : emp ? emp.color_hex : "#a1a1aa"}>
+                        <Pill key={shift.id} colors={[shift.is_closed ? CLOSED_COLOR : emp ? emp.color_hex : UNASSIGNED_COLOR]}>
                           {label}
                         </Pill>
                       );
                     })}
                     {events.map((ev) => {
-                      const participants = (ev.participant_employee_ids ?? [])
-                        .map((id: string) => employeeById.get(id)?.name)
-                        .filter(Boolean)
-                        .join(", ");
-                      const label = `${ev.start_time ? `${formatHm(ev.start_time)}${ev.end_time ? `-${formatHm(ev.end_time)}` : ""} ` : ""}${
-                        EVENT_TYPE_LABELS[ev.type] ?? ev.type
-                      }${ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}${participants ? ` (${participants})` : ""}`;
+                      // Skrócone etykiety — kolor pigułki (osoba/osoby, patrz
+                      // Pill) już mówi KTO, więc nie powtarzamy tego w tekście
+                      // i zostawiamy tylko godzinę startu, nie cały zakres.
+                      const participantColors = (ev.participant_employee_ids ?? [])
+                        .map((id: string) => employeeById.get(id)?.color_hex)
+                        .filter((c: string | undefined): c is string => Boolean(c));
+                      const colors = participantColors.length > 0 ? participantColors : [EVENT_FALLBACK_COLORS[ev.type] ?? EVENT_FALLBACK_COLORS.custom];
+                      const time = ev.start_time ? formatHm(ev.start_time) : "";
+                      const label =
+                        ev.type === "sprzatanie"
+                          ? `${time} Sprzątanie`
+                          : `${time} ${EVENT_TYPE_LABELS[ev.type] ?? ev.type}${ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}`;
                       return (
-                        <Pill key={ev.id} color={EVENT_COLORS[ev.type] ?? EVENT_COLORS.custom}>
+                        <Pill key={ev.id} colors={colors}>
                           {label}
                         </Pill>
                       );
