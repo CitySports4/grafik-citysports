@@ -5,6 +5,7 @@ import {
   resolveTasksForDate,
   resolveCarryOverrides,
   computeOverdueTasks,
+  computeCoverageGaps,
   balanceSlotAssignments,
   allCycleWindows,
   type CleaningTask,
@@ -22,18 +23,33 @@ export type CleaningDayItem = {
   assignee: { id: string; name: string; color_hex: string } | null;
   autoCovered: boolean;
   overdue: OverdueTask | null;
+  coverageGap: boolean;
   checklist: { id: string; label: string; done: boolean }[];
   done: boolean;
 };
+
+// Ile dni wstecz liczymy "ostatnie obciążenie" osoby minutami sprzątania na
+// potrzeby uczciwego wyboru dnia w resolveCyclicDueDates — ~4 tygodnie,
+// spójne z długością okna "monthly" w cleaning.ts.
+const RECENT_LOAD_DAYS = 28;
 
 // Cała logika dnia sprzątania (rozwiązanie zadań cyklicznych względem
 // grafiku, carry, skip-with, zaległości, balansowanie) wydzielona z
 // /sprzatanie, żeby móc jej użyć też z /zadania (skrócony podgląd dnia) bez
 // duplikowania zapytań i obliczeń.
-export async function getCleaningDayItems(dateKey: string): Promise<{ items: CleaningDayItem[]; todayPublished: boolean }> {
+//
+// `includeDraft` — domyślnie widok dnia liczy się tylko z OPUBLIKOWANEGO
+// grafiku (ktoś może dziś realnie na to liczyć). Podgląd miesiąca
+// (getCleaningMonthPreview) potrzebuje tego samego wyliczenia dla miesiąca,
+// który admin dopiero układa — stąd opcja pominięcia filtra "published".
+export async function getCleaningDayItems(
+  dateKey: string,
+  opts?: { includeDraft?: boolean }
+): Promise<{ items: CleaningDayItem[]; todayPublished: boolean }> {
   const dateObj = new Date(dateKey + "T00:00:00");
   const weekday = dateObj.getDay();
   const yesterdayKey = toDateKey(new Date(dateObj.getTime() - 86400000));
+  const recentStartKey = toDateKey(new Date(dateObj.getTime() - RECENT_LOAD_DAYS * 86400000));
 
   const supabase = createServerSupabaseClient();
 
@@ -45,6 +61,13 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
   const rangeStart = sortedWindowDates[0];
   const rangeEnd = sortedWindowDates[sortedWindowDates.length - 1];
 
+  let windowDaysQuery = supabase
+    .from("schedule_day")
+    .select("date, schedule_shift(start_time, employee_id), schedule_month!inner(status)")
+    .gte("date", rangeStart)
+    .lte("date", rangeEnd);
+  if (!opts?.includeDraft) windowDaysQuery = windowDaysQuery.eq("schedule_month.status", "published");
+
   const [
     { data: windowDays },
     { data: tasks },
@@ -54,13 +77,9 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
     { data: employees },
     { data: employeeZones },
     { data: timeBudgets },
+    { data: recentCompletions },
   ] = await Promise.all([
-    supabase
-      .from("schedule_day")
-      .select("date, schedule_shift(start_time, employee_id), schedule_month!inner(status)")
-      .gte("date", rangeStart)
-      .lte("date", rangeEnd)
-      .eq("schedule_month.status", "published"),
+    windowDaysQuery,
     supabase
       .from("cleaning_task")
       .select(
@@ -77,9 +96,28 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
     supabase.from("employee").select("id, name, color_hex, no_ladder"),
     supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
     supabase.from("cleaning_time_budget").select("employee_id, slot, budget_minutes"),
+    supabase
+      .from("cleaning_completion")
+      .select("employee_id, task_id, date")
+      .gte("date", recentStartKey)
+      .lt("date", dateKey)
+      .not("completed_at", "is", null)
+      .not("employee_id", "is", null),
   ]);
 
   const budgetBySlotAndEmployee = new Map((timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}`, b.budget_minutes]));
+
+  // Minuty sprzątania z ostatnich ~4 tygodni per osoba — patrz komentarz przy
+  // resolveCyclicDueDates w cleaning.ts. Budowane z rzeczywistych wpisów
+  // wykonania (cleaning_completion.employee_id), nie z "kto był przypisany"
+  // (to się nigdzie nie zapisuje — przydział liczy się na żywo).
+  const timeMinutesByTaskId = new Map<string, number>((tasks ?? []).map((t) => [t.id, t.time_minutes]));
+  const recentMinutesByEmployee = new Map<string, number>();
+  for (const c of recentCompletions ?? []) {
+    if (!c.employee_id) continue;
+    const minutes = timeMinutesByTaskId.get(c.task_id) ?? 0;
+    recentMinutesByEmployee.set(c.employee_id, (recentMinutesByEmployee.get(c.employee_id) ?? 0) + minutes);
+  }
 
   const windowDaySlotsByDate = new Map<string, WindowDay>();
   for (const dk of allWindowDates) {
@@ -127,7 +165,8 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
     cycleStart,
     daySlots,
     windowDaySlotsByDate,
-    competencyByEmployee
+    competencyByEmployee,
+    recentMinutesByEmployee
   );
 
   const carryPairIds = [...new Set(resolved.map((r) => r.task.carry_pair_task_id).filter((x): x is string => !!x))];
@@ -163,13 +202,33 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
   const overdue = computeOverdueTasks((allActiveNonDaily ?? []) as CleaningTask[], lastDoneByTask, dateKey).filter(
     (o) => !resolvedIds.has(o.task.id)
   );
+  // Zawsze pokaż zaległość, nawet gdy dziś akurat nikt kompetentny nie
+  // pracuje na właściwym slocie — inaczej zaległe zadanie znika z widoku w
+  // dni, gdy nie ma go komu automatycznie przypisać, zamiast zostać
+  // widoczną luką (tak jak nieobsadzona zmiana) do ręcznej reakcji.
   for (const o of overdue) {
     const candidate = daySlots[o.task.slot];
     const competent = candidate ? (competencyByEmployee.get(candidate)?.has(o.task.zone_id) ?? false) : false;
-    if (!competent) continue;
-    resolved.push({ task: o.task, employeeId: candidate, autoCovered: false });
+    resolved.push({ task: o.task, employeeId: competent ? candidate : null, autoCovered: false });
   }
   const overdueByTask = new Map(overdue.map((o) => [o.task.id, o]));
+
+  // Zadania cykliczne, które w BIEŻĄCYM oknie nie mają ani jednego dnia z
+  // kompetentną osobą — nigdy nie staną się "due" i (jeśli nigdy wcześniej
+  // nie zostały zrobione) nigdy nie trafią do `overdue` powyżej, bo ta
+  // ścieżka wymaga historii wykonań. Bez tego są całkowicie niewidoczne.
+  const resolvedIds2 = new Set(resolved.map((r) => r.task.id));
+  const coverageGaps = computeCoverageGaps(
+    (allActiveNonDaily ?? []) as CleaningTask[],
+    dateKey,
+    cycleStart,
+    windowDaySlotsByDate,
+    competencyByEmployee
+  ).filter((g) => !resolvedIds2.has(g.task.id));
+  for (const g of coverageGaps) {
+    resolved.push({ task: g.task, employeeId: null, autoCovered: false });
+  }
+  const coverageGapIds = new Set(coverageGaps.map((g) => g.task.id));
 
   const taskIds = resolved.map((r) => r.task.id);
   const { data: completions } =
@@ -187,6 +246,7 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
     assignee: r.employeeId ? employeeById.get(r.employeeId) ?? null : null,
     autoCovered: r.autoCovered,
     overdue: overdueByTask.get(r.task.id) ?? null,
+    coverageGap: coverageGapIds.has(r.task.id),
     checklist: checklistFor(r.task).map((c) => ({
       id: c.id,
       label: c.label,
@@ -198,4 +258,24 @@ export async function getCleaningDayItems(dateKey: string): Promise<{ items: Cle
   }));
 
   return { items, todayPublished };
+}
+
+export type CleaningMonthPreviewDay = { date: string; weekday: number; items: CleaningDayItem[] };
+
+// Zbiorczy podgląd całego miesiąca — kto sprząta co, którego dnia — liczony
+// z draftu grafiku, ZANIM admin go opublikuje (stąd includeDraft: true; bez
+// tego nic by się nie wyliczyło, bo /sprzatanie na co dzień celowo liczy się
+// tylko z opublikowanego grafiku). Ponownie używa getCleaningDayItems per
+// dzień (ta sama logika co codzienny widok, żadnej równoległej reimplementacji
+// do utrzymania) — dni liczone równolegle, bo to i tak strona admina
+// odpalana na żądanie, nie ścieżka o którą trzeba martwić się per request.
+export async function getCleaningMonthPreview(dateKeys: string[]): Promise<CleaningMonthPreviewDay[]> {
+  const results = await Promise.all(
+    dateKeys.map(async (date) => {
+      const weekday = new Date(date + "T00:00:00").getDay();
+      const { items } = await getCleaningDayItems(date, { includeDraft: true });
+      return { date, weekday, items };
+    })
+  );
+  return results;
 }

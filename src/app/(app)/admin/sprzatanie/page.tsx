@@ -119,15 +119,20 @@ export default async function CleaningConfigPage({
     <div className="flex flex-col gap-6">
       <BackLink href="/admin" label="Panel admina" />
 
-      <div>
-        <h1 className="text-lg font-bold text-zinc-900">Konfiguracja sprzątania</h1>
-        <p className="text-sm text-zinc-500">
-          Strefy, zadania, checklisty i kto może sprzątać co. Przydział zadań na dany dzień zależy
-          od tego, kto ma tego dnia zmianę (otwarcie/środek/zamknięcie/po zamknięciu) — patrz{" "}
-          <span className="font-semibold">/sprzatanie</span>. Zadania nie-codzienne (co tydzień i
-          rzadziej) nie mają ustalonego dnia tygodnia — system sam wybiera dzień w danym okresie, w
-          którym kompetentna osoba faktycznie pracuje; zmiana w grafiku sama zmienia ten wybór.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-bold text-zinc-900">Konfiguracja sprzątania</h1>
+          <p className="text-sm text-zinc-500">
+            Strefy, zadania, checklisty i kto może sprzątać co. Przydział zadań na dany dzień zależy
+            od tego, kto ma tego dnia zmianę (otwarcie/środek/zamknięcie/po zamknięciu) — patrz{" "}
+            <span className="font-semibold">/sprzatanie</span>. Zadania nie-codzienne (co tydzień i
+            rzadziej) nie mają ustalonego dnia tygodnia — system sam wybiera dzień w danym okresie, w
+            którym kompetentna osoba faktycznie pracuje; zmiana w grafiku sama zmienia ten wybór.
+          </p>
+        </div>
+        <Link href="/admin/sprzatanie/podglad" className="shrink-0 rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-900">
+          Podgląd miesiąca →
+        </Link>
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-zinc-200">

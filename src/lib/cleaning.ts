@@ -120,7 +120,7 @@ export type WindowDay = { dateKey: string; weekday: number; daySlots: Record<Cle
 
 // Czy dany dzień w oknie kwalifikuje się jako kandydat na wykonanie zadania:
 // bez naruszenia ograniczenia dnia i z kompetentną osobą na właściwym slocie.
-function qualifiesForTask(task: CleaningTask, day: WindowDay, competencyByEmployee: Map<string, Set<string>>): boolean {
+export function qualifiesForTask(task: CleaningTask, day: WindowDay, competencyByEmployee: Map<string, Set<string>>): boolean {
   if ((task.day_constraint === "mon_fri" || task.day_constraint === "not_weekend") && (day.weekday === 0 || day.weekday === 6)) {
     return false;
   }
@@ -135,21 +135,55 @@ const OCCURRENCES_PER_WINDOW: Partial<Record<CleaningFrequency, number>> = { "2x
 // sztywnego, skonfigurowanego dnia tygodnia, dla każdego okresu (tydzień
 // albo blok tygodni) wybiera dynamicznie, który dzień(-nie) w tym oknie ma
 // zostać wykonane zadanie — na podstawie tego, kto faktycznie tego dnia
-// pracuje i ma kompetencję do strefy. Gdy w oknie jest więcej kwalifikujących
-// się dni niż trzeba, rozkłada wybór równomiernie (maksymalizując najmniejszy
-// odstęp) zamiast zawsze brać pierwszy z brzegu — więc zmiana w grafiku (np.
-// osoba sprzątająca zamieniona na niesprzątającą) sama zmienia, który dzień
-// zostanie wybrany. Gdy w całym oknie NIKT kompetentny nie pracuje ani razu —
-// zadanie w ogóle nie staje się "due", więc trafia do computeOverdueTasks
-// jako realna luka zamiast po cichu zniknąć.
+// pracuje i ma kompetencję do strefy. Gdy w całym oknie NIKT kompetentny nie
+// pracuje ani razu, zadanie w ogóle nie staje się "due" — patrz
+// computeCoverageGaps, które wyłapuje właśnie ten przypadek jako widoczną
+// lukę (bez tego zadanie po prostu nigdzie by się nie pojawiło).
+//
+// Gdy w oknie jest więcej kwalifikujących się dni niż trzeba, wybór decyduje
+// uczciwość: preferujemy dzień, którego osoba miała najmniej minut
+// sprzątania w ostatnich ~4 tygodniach (`recentMinutesByEmployee`) — inaczej
+// ten sam duet, który najczęściej otwiera dany slot, zawsze dostawałby
+// zadania tej strefy, mimo że inni kompetentni ludzie też czasem tam
+// pracują. Przy kilku wystąpieniach w tym samym oknie (2x/3x-w-tygodniu)
+// obciążenie aktualizuje się na bieżąco w trakcie wyboru, żeby nie oddać
+// wszystkich wystąpień jednej, akurat najmniej obciążonej osobie. Brak
+// danych o obciążeniu (`recentMinutesByEmployee` nieprzekazane) — dawne
+// zachowanie: maksymalizacja odstępu w czasie między wybranymi dniami.
 export function resolveCyclicDueDates(
   task: CleaningTask,
   windowDays: WindowDay[],
-  competencyByEmployee: Map<string, Set<string>>
+  competencyByEmployee: Map<string, Set<string>>,
+  recentMinutesByEmployee?: Map<string, number>
 ): Set<string> {
   const needed = OCCURRENCES_PER_WINDOW[task.frequency] ?? 1;
   const qualifying = windowDays.filter((d) => qualifiesForTask(task, d, competencyByEmployee)).map((d) => d.dateKey);
   if (qualifying.length <= needed) return new Set(qualifying);
+
+  if (recentMinutesByEmployee) {
+    const employeeOfDay = new Map(windowDays.map((d) => [d.dateKey, d.daySlots[task.slot]]));
+    const running = new Map(recentMinutesByEmployee);
+    const remaining = new Set(qualifying);
+    const chosen: string[] = [];
+    while (chosen.length < needed && remaining.size > 0) {
+      let best: string | null = null;
+      let bestLoad = Infinity;
+      for (const dk of remaining) {
+        const emp = employeeOfDay.get(dk);
+        const load = emp ? running.get(emp) ?? 0 : Infinity;
+        if (load < bestLoad) {
+          bestLoad = load;
+          best = dk;
+        }
+      }
+      if (!best) break;
+      chosen.push(best);
+      remaining.delete(best);
+      const emp = employeeOfDay.get(best);
+      if (emp) running.set(emp, (running.get(emp) ?? 0) + task.time_minutes);
+    }
+    return new Set(chosen);
+  }
 
   const timeOf = (dk: string) => new Date(dk + "T00:00:00").getTime();
   const chosen: string[] = [qualifying[0]];
@@ -167,6 +201,35 @@ export function resolveCyclicDueDates(
     chosen.push(best);
   }
   return new Set(chosen);
+}
+
+// Zadania cykliczne, których BIEŻĄCE okno nie ma ani jednego dnia z
+// kompetentną osobą na właściwym slocie — nigdy nie staną się "due" (patrz
+// resolveCyclicDueDates), więc bez tego nie pojawiają się NIGDZIE: ani jako
+// zadanie dnia, ani jako zaległość w computeOverdueTasks (ta wymaga historii
+// wykonań — zadanie, które nigdy nie miało kompetentnej osoby, nigdy nie
+// miało też okazji zostać zrobione). Zwracane dla każdego dnia w oknie —
+// widoczne tak długo, jak długo trwa luka.
+export type CoverageGap = { task: CleaningTask };
+
+export function computeCoverageGaps(
+  tasks: CleaningTask[],
+  dateKey: string,
+  cycleStart: string | null,
+  windowDaySlotsByDate: Map<string, WindowDay>,
+  competencyByEmployee: Map<string, Set<string>>
+): CoverageGap[] {
+  const gaps: CoverageGap[] = [];
+  for (const task of tasks) {
+    if (!task.active || task.frequency === "daily") continue;
+    const window = cycleWindowDates(task, dateKey, cycleStart);
+    if (!window) continue;
+    const windowDays = window.map((dk) => windowDaySlotsByDate.get(dk)).filter((d): d is WindowDay => !!d);
+    if (windowDays.length === 0) continue;
+    const hasQualifying = windowDays.some((d) => qualifiesForTask(task, d, competencyByEmployee));
+    if (!hasQualifying) gaps.push({ task });
+  }
+  return gaps;
 }
 
 export type ResolvedCleaningTask = {
@@ -190,7 +253,8 @@ export function resolveTasksForDate(
   cycleStart: string | null,
   daySlots: Record<CleaningSlot, string | null>,
   windowDaySlotsByDate: Map<string, WindowDay>,
-  competencyByEmployee: Map<string, Set<string>>
+  competencyByEmployee: Map<string, Set<string>>,
+  recentMinutesByEmployee?: Map<string, number>
 ): ResolvedCleaningTask[] {
   const due = tasks.filter((task) => {
     if (!task.active) return false;
@@ -198,7 +262,7 @@ export function resolveTasksForDate(
     const window = cycleWindowDates(task, dateKey, cycleStart);
     if (!window) return false;
     const windowDays = window.map((dk) => windowDaySlotsByDate.get(dk)).filter((d): d is WindowDay => !!d);
-    return resolveCyclicDueDates(task, windowDays, competencyByEmployee).has(dateKey);
+    return resolveCyclicDueDates(task, windowDays, competencyByEmployee, recentMinutesByEmployee).has(dateKey);
   });
   const afterSkip = applySkipWith(due);
   return afterSkip.map((task) => {
