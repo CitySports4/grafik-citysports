@@ -5,6 +5,7 @@ import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { BackLink } from "@/components/BackLink";
 import { ColorDot } from "@/components/ColorDot";
+import { AiPlanButton } from "./AiPlanButton";
 
 const SLOT_LABELS: Record<string, string> = {
   otwarcie: "Otwarcie",
@@ -51,13 +52,16 @@ export default async function CleaningMonthPreviewPage({
             , przed publikacją. Zmiana obsady w grafiku od razu zmienia ten podgląd.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          <Link href={prevLink} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
-            ← poprzedni
-          </Link>
-          <Link href={nextLink} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
-            następny →
-          </Link>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-sm">
+            <Link href={prevLink} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+              ← poprzedni
+            </Link>
+            <Link href={nextLink} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+              następny →
+            </Link>
+          </div>
+          {scheduleMonth && <AiPlanButton dateKeys={dateKeys} />}
         </div>
       </div>
 

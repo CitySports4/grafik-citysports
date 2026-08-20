@@ -158,6 +158,22 @@ export async function getCleaningDayItems(
 
   const daySlots = windowDaySlotsByDate.get(dateKey)!.daySlots;
 
+  // Wybory AI (patrz cleaning-generator-ai.ts) dla okien cyklicznych zadań
+  // dotykających tego dnia — tylko konkretne window_start z `windows`
+  // wyliczone dla `dateKey`, nie szeroki zakres dat. Zawsze rewalidowane w
+  // resolveCyclicDueDates, nigdy ślepo zaufane.
+  const windowStarts = [...new Set(windows.map((w) => w[0]).filter((d): d is string => !!d))];
+  const { data: aiChoices } =
+    windowStarts.length > 0
+      ? await supabase.from("cleaning_ai_day_choice").select("task_id, window_start, chosen_date").in("window_start", windowStarts)
+      : { data: [] };
+  const aiChosenDatesByTaskWindow = new Map<string, Set<string>>();
+  for (const c of aiChoices ?? []) {
+    const key = `${c.task_id}|${c.window_start}`;
+    if (!aiChosenDatesByTaskWindow.has(key)) aiChosenDatesByTaskWindow.set(key, new Set());
+    aiChosenDatesByTaskWindow.get(key)!.add(c.chosen_date);
+  }
+
   let resolved = resolveTasksForDate(
     (tasks ?? []) as CleaningTask[],
     dateKey,
@@ -166,7 +182,8 @@ export async function getCleaningDayItems(
     daySlots,
     windowDaySlotsByDate,
     competencyByEmployee,
-    recentMinutesByEmployee
+    recentMinutesByEmployee,
+    aiChosenDatesByTaskWindow
   );
 
   const carryPairIds = [...new Set(resolved.map((r) => r.task.carry_pair_task_id).filter((x): x is string => !!x))];

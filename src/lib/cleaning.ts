@@ -129,7 +129,7 @@ export function qualifiesForTask(task: CleaningTask, day: WindowDay, competencyB
   return competencyByEmployee.get(candidate)?.has(task.zone_id) ?? false;
 }
 
-const OCCURRENCES_PER_WINDOW: Partial<Record<CleaningFrequency, number>> = { "2xweek": 2, "3xweek": 3 };
+export const OCCURRENCES_PER_WINDOW: Partial<Record<CleaningFrequency, number>> = { "2xweek": 2, "3xweek": 3 };
 
 // Serce zasady "sprzątanie zależy od grafiku, nie na odwrót": zamiast
 // sztywnego, skonfigurowanego dnia tygodnia, dla każdego okresu (tydzień
@@ -154,11 +154,21 @@ export function resolveCyclicDueDates(
   task: CleaningTask,
   windowDays: WindowDay[],
   competencyByEmployee: Map<string, Set<string>>,
-  recentMinutesByEmployee?: Map<string, number>
+  recentMinutesByEmployee?: Map<string, number>,
+  aiChosenDates?: Set<string>
 ): Set<string> {
   const needed = OCCURRENCES_PER_WINDOW[task.frequency] ?? 1;
   const qualifying = windowDays.filter((d) => qualifiesForTask(task, d, competencyByEmployee)).map((d) => d.dateKey);
   if (qualifying.length <= needed) return new Set(qualifying);
+
+  // Wybór AI (patrz cleaning-generator-ai.ts) — tylko jeśli nadal realnie
+  // się kwalifikuje (kompetencje/grafik mogły zmienić się od momentu, gdy
+  // AI wybierało); nigdy nie ufamy zapisanej dacie bez rewalidacji. Za mało
+  // wciąż-ważnych dat od AI — po cichu spadamy do zwykłej logiki niżej.
+  if (aiChosenDates) {
+    const validAiDates = qualifying.filter((d) => aiChosenDates.has(d));
+    if (validAiDates.length >= needed) return new Set(validAiDates.slice(0, needed));
+  }
 
   if (recentMinutesByEmployee) {
     const employeeOfDay = new Map(windowDays.map((d) => [d.dateKey, d.daySlots[task.slot]]));
@@ -254,7 +264,8 @@ export function resolveTasksForDate(
   daySlots: Record<CleaningSlot, string | null>,
   windowDaySlotsByDate: Map<string, WindowDay>,
   competencyByEmployee: Map<string, Set<string>>,
-  recentMinutesByEmployee?: Map<string, number>
+  recentMinutesByEmployee?: Map<string, number>,
+  aiChosenDatesByTaskWindow?: Map<string, Set<string>>
 ): ResolvedCleaningTask[] {
   const due = tasks.filter((task) => {
     if (!task.active) return false;
@@ -262,7 +273,8 @@ export function resolveTasksForDate(
     const window = cycleWindowDates(task, dateKey, cycleStart);
     if (!window) return false;
     const windowDays = window.map((dk) => windowDaySlotsByDate.get(dk)).filter((d): d is WindowDay => !!d);
-    return resolveCyclicDueDates(task, windowDays, competencyByEmployee, recentMinutesByEmployee).has(dateKey);
+    const aiChosenDates = aiChosenDatesByTaskWindow?.get(`${task.id}|${window[0]}`);
+    return resolveCyclicDueDates(task, windowDays, competencyByEmployee, recentMinutesByEmployee, aiChosenDates).has(dateKey);
   });
   const afterSkip = applySkipWith(due);
   return afterSkip.map((task) => {
