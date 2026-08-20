@@ -72,7 +72,7 @@ export async function generateMonthStructure(scheduleMonthId: string, year: numb
   }
 }
 
-type Employee = {
+export type Employee = {
   id: string;
   name: string;
   is_instructor: boolean;
@@ -88,7 +88,7 @@ type ClassEntry = { weekday: number; start_time: string; end_time: string };
 // sprzed początku miesiąca, żeby seria licząca się od końca sierpnia nie
 // zerowała się sztucznie 1 września. Używane, żeby nikt nie pracował więcej
 // niż 7 dni pod rząd.
-function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>): number {
+export function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>): number {
   let count = 0;
   const cursor = new Date(dateKey + "T00:00:00");
   while (true) {
@@ -106,7 +106,7 @@ function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>): numbe
 // maraton bez odpoczynku. Legalny przypadek "rano + wieczór" (np.
 // Krzysztof 2x w niedzielę) ma tę przerwę z natury; blokujemy sytuacje bez
 // niej lub z przerwą krótszą niż realny odpoczynek.
-const MIN_BREAK_MINUTES = 360; // 6h
+export const MIN_BREAK_MINUTES = 360; // 6h
 
 // Odpoczynek MIĘDZY dniami — kto zamykał wczoraj, nie powinien dziś otwierać
 // bez realnej przerwy. 11h to punkt odniesienia z Kodeksu pracy; jesteśmy na
@@ -114,7 +114,7 @@ const MIN_BREAK_MINUTES = 360; // 6h
 // ma wyboru" (za mało ludzi) — dlatego to KARA w `penalty()`, nie blokada w
 // `eligibleFor`: generator tego mocno unika, ale jeśli to jedyna dostępna
 // osoba na zmianę, i tak ją przydzieli, zamiast zostawić zmianę pustą.
-const MIN_DAILY_REST_MINUTES = 660; // 11h
+export const MIN_DAILY_REST_MINUTES = 660; // 11h
 const REST_VIOLATION_PENALTY = 1000; // ta sama skala co konflikt z zajęciami — patrz penalty()
 
 // Miękka waga rotacji weekendów (patrz weekendCountByEmployee) — na tyle
@@ -129,7 +129,7 @@ const WEEKEND_FAIRNESS_WEIGHT = 15;
 // preferencji" (-50) — czyli realna preferencja/niedostępność wciąż
 // wygrywa, ale sama chęć wyrównania godzin musi być wyraźna, nie kosmetyczna.
 const STICKY_BONUS = -40;
-function tooCloseForDoubleShift(
+export function tooCloseForDoubleShift(
   a: { start_time: string; end_time: string },
   b: { start_time: string; end_time: string }
 ): boolean {
