@@ -77,7 +77,6 @@ export async function GET(request: Request) {
     author_employee_id: authorId,
     title: `🤖 Zaległości sprzątania (${overdue.length})`,
     body,
-    is_task: true,
     status: "todo",
     source: "ai",
   });

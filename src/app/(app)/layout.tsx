@@ -25,10 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ],
     },
   ];
-  const trailingLinks = [
-    { href: "/zadania", label: "Zadania" },
-    { href: "/notatnik", label: "Notatnik" },
-  ];
+  const trailingLinks = [{ href: "/zadania", label: "Zadania" }];
   if (employee.roles.includes("admin")) {
     trailingLinks.push({ href: "/admin", label: "Panel admina" });
   }

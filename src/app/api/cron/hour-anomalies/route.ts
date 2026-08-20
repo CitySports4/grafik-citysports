@@ -86,7 +86,6 @@ export async function GET(request: Request) {
     author_employee_id: authorId,
     title: `🤖 Rozbieżności godzin — ${dateKey}`,
     body,
-    is_task: true,
     status: "todo",
     source: "ai",
   });
