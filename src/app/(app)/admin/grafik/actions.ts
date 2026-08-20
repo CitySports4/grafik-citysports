@@ -59,6 +59,10 @@ export async function runAiDraft(scheduleMonthId: string): Promise<{ assignedCou
   return runAiDraftGenerator(scheduleMonthId);
 }
 
+// Ręczny wybór w edytorze BLOKUJE zmianę — żaden generator (AI ani
+// deterministyczny) jej potem nie rusza (patrz manually_locked w
+// schedule-generator-ai.ts). Jedyny sposób na odblokowanie: świadomie
+// wybrać z powrotem "— nieprzypisane —", co zwalnia zmianę do puli.
 export async function assignShift(shiftId: string, employeeIdRaw: string) {
   await requireAdmin();
   const supabase = createServerSupabaseClient();
@@ -66,14 +70,14 @@ export async function assignShift(shiftId: string, employeeIdRaw: string) {
   if (employeeIdRaw === "__closed__") {
     const { error } = await supabase
       .from("schedule_shift")
-      .update({ employee_id: null, is_closed: true })
+      .update({ employee_id: null, is_closed: true, manually_locked: true })
       .eq("id", shiftId);
     if (error) throw new Error(dbErrorMessage(error));
   } else {
     const employee_id = employeeIdRaw || null;
     const { error } = await supabase
       .from("schedule_shift")
-      .update({ employee_id, is_closed: false })
+      .update({ employee_id, is_closed: false, manually_locked: employee_id !== null })
       .eq("id", shiftId);
     if (error) throw new Error(dbErrorMessage(error));
   }
@@ -108,7 +112,7 @@ export async function closeWholeDay(scheduleDayId: string) {
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("schedule_shift")
-    .update({ employee_id: null, is_closed: true })
+    .update({ employee_id: null, is_closed: true, manually_locked: true })
     .eq("schedule_day_id", scheduleDayId);
   if (error) throw new Error(dbErrorMessage(error));
 }
@@ -221,7 +225,7 @@ export async function assignEventParticipantsToShifts(
     );
     if (pickIndex === -1) continue;
     const employeeId = remaining.splice(pickIndex, 1)[0];
-    await supabase.from("schedule_shift").update({ employee_id: employeeId, is_closed: false }).eq("id", shift.id);
+    await supabase.from("schedule_shift").update({ employee_id: employeeId, is_closed: false, manually_locked: true }).eq("id", shift.id);
     assignments.push({ shiftId: shift.id, employeeId });
   }
 

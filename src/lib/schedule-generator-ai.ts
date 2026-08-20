@@ -36,6 +36,8 @@ type ShiftToAssign = {
   originalEmployeeId: string | null;
 };
 
+type LockedShift = ShiftToAssign & { employeeId: string };
+
 type ProposedAssignment = { shiftId: string; employeeId: string };
 
 const WEEKDAY_NAMES = ["niedziela", "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota"];
@@ -62,7 +64,9 @@ async function gatherContext(scheduleMonthId: string) {
 
   const { data: days } = await supabase
     .from("schedule_day")
-    .select("id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, end_time, participant_employee_ids)")
+    .select(
+      "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed, manually_locked), schedule_event(id, type, start_time, end_time, participant_employee_ids)"
+    )
     .eq("schedule_month_id", scheduleMonthId);
 
   const { data: employees } = await supabase
@@ -180,14 +184,21 @@ async function gatherContext(scheduleMonthId: string) {
     for (const [empId, weeks] of workedWeekendWeeksByEmployee) weekendCountByEmployee.set(empId, weeks.size);
   }
 
-  // Zmiany do obsadzenia: otwarte (nie zamknięte) i — patrz komentarz na
-  // górze pliku — pomijamy dni "podzielone na pół" (pon-czw, dokładnie 2
-  // osoby dostępne na cały dzień na 3 zmiany), bo to zostaje przy
-  // deterministycznym generatorze. Rozpoznajemy je tak samo jak on: dzień
-  // pon-czw z dokładnie 3 otwartymi zmianami I bez żadnej już przypisanej —
-  // uproszczenie względem pełnej logiki tamtego bloku, ale wystarczające,
-  // żeby nie podsuwać AI dnia, który i tak lepiej rozwiąże istniejący kod.
+  // Zmiany do obsadzenia: otwarte (nie zamknięte), NIEZABLOKOWANE ręcznie —
+  // ręczny wybór w edytorze (patrz assignShift w admin/grafik/actions.ts)
+  // ustawia manually_locked, i to jest jedyna rzecz, której AI w ogóle nie
+  // dostaje do zmiany (patrz komentarz na górze pliku o pełnym zaufaniu do
+  // UKŁADU — dotyczy zmian NIEPRZYPISANYCH, nie nadpisywania decyzji admina).
+  // Zablokowane zmiany trafiają do osobnej listy `lockedShifts` — nie są
+  // przydzielane od nowa, ale MUSZĄ zostać wliczone w kontekst (godziny,
+  // seria dni, dzień wolny), inaczej AI planowałoby resztę miesiąca w
+  // oderwaniu od tego, co już naprawdę pracuje.
+  //
+  // Osobno pomijamy dni "podzielone na pół" (pon-czw, dokładnie 2 osoby
+  // dostępne na cały dzień na 3 zmiany), bo to zostaje przy deterministycznym
+  // generatorze — precyzyjna matematyka minut, nie osąd.
   const shiftsToAssign: ShiftToAssign[] = [];
+  const lockedShifts: LockedShift[] = [];
   const shiftMetaById = new Map<string, ShiftToAssign>();
   for (const day of days ?? []) {
     const open = (day.schedule_shift ?? []).filter((s) => !s.is_closed);
@@ -203,8 +214,13 @@ async function gatherContext(scheduleMonthId: string) {
         endTime: s.end_time,
         originalEmployeeId: s.employee_id,
       };
-      shiftsToAssign.push(meta);
       shiftMetaById.set(s.id, meta);
+      if (s.manually_locked && s.employee_id) {
+        lockedShifts.push({ ...meta, employeeId: s.employee_id });
+        hoursAssigned.set(s.employee_id, (hoursAssigned.get(s.employee_id) ?? 0) + hoursBetween(s.start_time, s.end_time));
+      } else {
+        shiftsToAssign.push(meta);
+      }
     }
   }
 
@@ -218,6 +234,7 @@ async function gatherContext(scheduleMonthId: string) {
   return {
     employees: (employees ?? []) as Employee[],
     shiftsToAssign,
+    lockedShifts,
     shiftMetaById,
     availability,
     hardUnavailableByEmployee,
@@ -246,6 +263,16 @@ function buildPrompt(ctx: Context): string {
   lines.push("ZMIANY DO OBSADZENIA (shiftId | data (dzień tygodnia) | godziny):");
   for (const s of ctx.shiftsToAssign) {
     lines.push(`${s.shiftId} | ${s.date} (${WEEKDAY_NAMES[s.weekday]}) | ${s.startTime.slice(0, 5)}-${s.endTime.slice(0, 5)}${s.originalEmployeeId ? ` [obecnie: ${s.originalEmployeeId}]` : ""}`);
+  }
+
+  if (ctx.lockedShifts.length > 0) {
+    lines.push("");
+    lines.push(
+      "ZABLOKOWANE (admin przypisał ręcznie — NIE dostajesz ich do zmiany, nie pojawiają się na liście wyżej, ale MUSISZ je uwzględnić przy planowaniu reszty: godziny tej osoby, seria dni z rzędu, dzień wolny w tygodniu):"
+    );
+    for (const s of ctx.lockedShifts) {
+      lines.push(`${s.employeeId} zajęty ${s.date} (${WEEKDAY_NAMES[s.weekday]}) ${s.startTime.slice(0, 5)}-${s.endTime.slice(0, 5)}`);
+    }
   }
 
   const hardLines: string[] = [];
@@ -301,7 +328,11 @@ function buildPrompt(ctx: Context): string {
   return lines.join("\n");
 }
 
-const SYSTEM_PROMPT = `Jesteś generatorem grafiku pracy dla klubu sportowego City Sports. Dostajesz listę zmian do obsadzenia w jednym miesiącu oraz pełne dane o pracownikach. Przydziel KAŻDĄ zmianę do jednej, konkretnej osoby — chyba że naprawdę nikt się nie nadaje, wtedy świadomie pomiń tę zmianę (nie zgaduj).
+const SYSTEM_PROMPT = `Jesteś generatorem grafiku pracy dla klubu sportowego City Sports. Dostajesz listę zmian do obsadzenia w jednym miesiącu oraz pełne dane o pracownikach. Przydziel KAŻDĄ zmianę z listy ZMIANY DO OBSADZENIA do jednej, konkretnej osoby.
+
+Sekcja ZABLOKOWANE (jeśli jest) to zmiany, które admin już przypisał ręcznie — NIE są na liście do obsadzenia i NIE możesz ich zwrócić w assign_shifts (nie ma dla nich shiftId w Twoich danych). Uwzględnij je tylko jako fakt przy planowaniu reszty (godziny tej osoby, seria dni, dzień wolny).
+
+Rozpatrz KAŻDĄ zmianę z listy DO OBSADZENIA osobno i indywidualnie — nawet jeśli kilka dni z rzędu wygląda podobnie trudno (mało dostępnych osób), nie porzucaj całego bloku dni na raz. Pomiń konkretną zmianę TYLKO gdy dla NIEJ naprawdę nikt się nie nadaje (sprawdź to per zmiana, nie "na oko" dla całego tygodnia) — pusta zmiana to ostateczność, nie wygodne domyślne rozwiązanie.
 
 TWARDE ZASADY — przydział łamiący którąkolwiek zostanie odrzucony i wrócą do Ciebie do poprawy:
 1. Poniedziałek-czwartek: jedna osoba = najwyżej jedna zmiana danego dnia (różne zmiany tego dnia muszą trafić do różnych osób).
@@ -396,14 +427,21 @@ function validateAssignment(assignments: ProposedAssignment[], ctx: Context): st
   // Grupuj przydziały po (employeeId, date) w porządku chronologicznym —
   // wszystkie kolejne sprawdzenia (seria dni, dzień wolny/tydzień,
   // odpoczynek) liczą się w kolejności dat, tak jak w zwykłym generatorze.
-  const shiftsByEmployeeDate = new Map<string, Map<string, ShiftToAssign[]>>();
-  for (const [shiftId, employeeId] of byShiftId) {
-    const meta = ctx.shiftMetaById.get(shiftId)!;
+  // Zablokowane (ręczne) zmiany wchodzą do TEJ SAMEJ mapy, żeby liczyły się
+  // do serii dni/tygodnia — ale są oznaczone `locked`, żeby naruszenie
+  // wynikające WYŁĄCZNIE z nich (bez udziału żadnej nowej, proponowanej
+  // przez AI zmiany) nie trafiało do listy błędów: AI i tak nie ma jak tego
+  // naprawić, bo tych zmian nie dostało do zmiany.
+  type Entry = ShiftToAssign & { locked: boolean };
+  const shiftsByEmployeeDate = new Map<string, Map<string, Entry[]>>();
+  function addEntry(employeeId: string, meta: ShiftToAssign, locked: boolean) {
     if (!shiftsByEmployeeDate.has(employeeId)) shiftsByEmployeeDate.set(employeeId, new Map());
     const byDate = shiftsByEmployeeDate.get(employeeId)!;
     if (!byDate.has(meta.date)) byDate.set(meta.date, []);
-    byDate.get(meta.date)!.push(meta);
+    byDate.get(meta.date)!.push({ ...meta, locked });
   }
+  for (const locked of ctx.lockedShifts) addEntry(locked.employeeId, locked, true);
+  for (const [shiftId, employeeId] of byShiftId) addEntry(employeeId, ctx.shiftMetaById.get(shiftId)!, false);
 
   for (const [employeeId, byDate] of shiftsByEmployeeDate) {
     const empName = employeeById.get(employeeId)?.name ?? employeeId;
@@ -412,12 +450,13 @@ function validateAssignment(assignments: ProposedAssignment[], ctx: Context): st
 
     for (const date of sortedDates) {
       const shiftsToday = byDate.get(date)!.slice().sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+      const hasNew = shiftsToday.some((s) => !s.locked);
       const weekday = shiftsToday[0].weekday;
       const blockDouble = weekday >= 1 && weekday <= 4;
 
-      if (blockDouble && shiftsToday.length > 1) {
+      if (hasNew && blockDouble && shiftsToday.length > 1) {
         violations.push(`${empName} ma ${shiftsToday.length} zmiany tego samego dnia (${date}), a pon-czw to zabronione — każda zmiana tego dnia musi trafić do innej osoby.`);
-      } else if (!blockDouble && shiftsToday.length > 1) {
+      } else if (hasNew && !blockDouble && shiftsToday.length > 1) {
         for (let i = 1; i < shiftsToday.length; i++) {
           const prevShift = { start_time: shiftsToday[i - 1].startTime, end_time: shiftsToday[i - 1].endTime };
           const nextShift = { start_time: shiftsToday[i].startTime, end_time: shiftsToday[i].endTime };
@@ -430,27 +469,33 @@ function validateAssignment(assignments: ProposedAssignment[], ctx: Context): st
       }
 
       for (const s of shiftsToday) {
+        if (s.locked) continue; // ręczny wybór admina — nie naszej oceny
         if (isHardUnavailable(employeeId, date, weekday, s.slotIndex, s.startTime, s.endTime, ctx.availability, ctx.hardUnavailableByEmployee)) {
           violations.push(`${empName} przydzielony ${date} ${s.startTime.slice(0, 5)}-${s.endTime.slice(0, 5)} mimo twardej niedostępności w tym terminie.`);
         }
       }
 
-      const streak = consecutiveDaysBefore(date, workedDates);
-      if (streak >= 7) {
-        violations.push(`${empName} miałby ${date} ${streak + 1}. dzień z rzędu bez przerwy — max to 7.`);
+      if (hasNew) {
+        const streak = consecutiveDaysBefore(date, workedDates);
+        if (streak >= 7) {
+          violations.push(`${empName} miałby ${date} ${streak + 1}. dzień z rzędu bez przerwy — max to 7.`);
+        }
       }
     }
 
     // Dzień wolny w tygodniu — te same zasady co daysInWeekBucket w
     // schedule-generator.ts (tylko dni faktycznie obecne w tym miesiącu).
-    const byWeek = new Map<string, number>();
+    const byWeek = new Map<string, { count: number; hasNew: boolean }>();
     for (const date of sortedDates) {
       const wk = mondayOfWeek(date);
-      byWeek.set(wk, (byWeek.get(wk) ?? 0) + 1);
+      const entry = byWeek.get(wk) ?? { count: 0, hasNew: false };
+      entry.count++;
+      if (byDate.get(date)!.some((s) => !s.locked)) entry.hasNew = true;
+      byWeek.set(wk, entry);
     }
-    for (const [wk, count] of byWeek) {
+    for (const [wk, { count, hasNew }] of byWeek) {
       const capacity = Math.max(1, (ctx.daysInWeekBucket.get(wk)?.size ?? 1) - 1);
-      if (count > capacity) {
+      if (hasNew && count > capacity) {
         violations.push(`${empName} pracuje ${count} dni w tygodniu zaczynającym się ${wk} — brakuje przynajmniej 1 dnia wolnego.`);
       }
     }
@@ -485,8 +530,24 @@ export async function runAiDraftGenerator(scheduleMonthId: string): Promise<{ as
     throw new Error(`AI nie ułożyło poprawnego grafiku po ${MAX_AI_ROUNDS} próbach. Pozostałe problemy:\n${violations.join("\n")}`);
   }
 
+  // Jeśli AI zostawiło sporo zmian bez przydziału, daj mu jeszcze JEDNĄ
+  // szansę, żeby sprawdziło je indywidualnie zamiast porzucać cały blok dni
+  // naraz — ale tylko raz: jeśli poprawka wprowadzi nowe naruszenia albo
+  // nic nie zmieni, zostajemy przy poprzednim, już poprawnym wyniku.
+  let proposedByShiftId = new Map(assignments.map((a) => [a.shiftId, a.employeeId]));
+  const unassigned = ctx.shiftsToAssign.filter((s) => !proposedByShiftId.has(s.shiftId));
+  if (unassigned.length >= 3) {
+    const nudge = `${basePrompt}\n\nZOSTAWIŁEŚ BEZ PRZYDZIAŁU ${unassigned.length} ZMIAN — sprawdź KAŻDĄ z nich jeszcze raz, osobno, zanim uznasz że nikt się nie nadaje:\n${unassigned
+      .map((s) => `${s.shiftId} | ${s.date} (${WEEKDAY_NAMES[s.weekday]}) | ${s.startTime.slice(0, 5)}-${s.endTime.slice(0, 5)}`)
+      .join("\n")}\n\nZwróć PEŁNY przydział — wszystko, co już poprawnie ułożyłeś, plus poprawki dla zmian wyżej, jeśli jednak kogoś znajdziesz.`;
+    const retryAssignments = await callAi(nudge);
+    if (validateAssignment(retryAssignments, ctx).length === 0) {
+      assignments = retryAssignments;
+      proposedByShiftId = new Map(assignments.map((a) => [a.shiftId, a.employeeId]));
+    }
+  }
+
   const supabase = createServerSupabaseClient();
-  const proposedByShiftId = new Map(assignments.map((a) => [a.shiftId, a.employeeId]));
   const changedUpdates: { id: string; employee_id: string }[] = [];
   for (const meta of ctx.shiftMetaById.values()) {
     const employeeId = proposedByShiftId.get(meta.shiftId);
