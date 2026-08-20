@@ -108,6 +108,21 @@ function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>): numbe
 // niej lub z przerwą krótszą niż realny odpoczynek.
 const MIN_BREAK_MINUTES = 360; // 6h
 
+// Odpoczynek MIĘDZY dniami — kto zamykał wczoraj, nie powinien dziś otwierać
+// bez realnej przerwy. 11h to punkt odniesienia z Kodeksu pracy; jesteśmy na
+// umowach zlecenie więc to nie twardy prawny wymóg, i "czasem po prostu nie
+// ma wyboru" (za mało ludzi) — dlatego to KARA w `penalty()`, nie blokada w
+// `eligibleFor`: generator tego mocno unika, ale jeśli to jedyna dostępna
+// osoba na zmianę, i tak ją przydzieli, zamiast zostawić zmianę pustą.
+const MIN_DAILY_REST_MINUTES = 660; // 11h
+const REST_VIOLATION_PENALTY = 1000; // ta sama skala co konflikt z zajęciami — patrz penalty()
+
+// Miękka waga rotacji weekendów (patrz weekendCountByEmployee) — na tyle
+// mała, że realny niedobór godzin (deficitToMin*10) czy twarda niedostępność
+// zawsze wygrywają, ale wystarczająca, by przy PODOBNIE dopasowanych
+// kandydatach preferować tego, kto ostatnio miał mniej weekendów.
+const WEEKEND_FAIRNESS_WEIGHT = 15;
+
 // Patrz komentarz przy `penalty()` — im bardziej ujemne, tym mocniej
 // generator woli zostawić kogoś na jego obecnej zmianie zamiast przełożyć
 // dla drobnej poprawy wyrównania. -40 mniej więcej odpowiada "1 punktowi
@@ -233,12 +248,19 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
   // w tygodniu" (ten zostaje liczony jak dotąd, tylko z dni bieżącego
   // miesiąca — patrz komentarz przy `daysInWeekBucket`).
   const priorWorkedDates = new Map<string, Set<string>>();
+  // Zmiany z OSTATNIEGO dnia przed początkiem miesiąca — jedyny dzień z tego
+  // ogona, który realnie wpływa na sprawdzenie odpoczynku dobowego dla 1.
+  // dnia miesiąca (patrz `MIN_DAILY_REST_MINUTES` niżej i seed
+  // `shiftsByEmployeeDate` przy jej deklaracji).
+  const priorLastDayShiftsByEmployee = new Map<string, { start_time: string; end_time: string }[]>();
+  let priorLastDayKey: string | null = null;
   if (monthDates.length > 0) {
     const priorStart = toDateKey(new Date(new Date(monthDates[0] + "T00:00:00").getTime() - 7 * 86400000));
     const priorEnd = toDateKey(new Date(new Date(monthDates[0] + "T00:00:00").getTime() - 86400000));
+    priorLastDayKey = priorEnd;
     const { data: priorDays } = await supabase
       .from("schedule_day")
-      .select("date, schedule_shift(employee_id, is_closed), schedule_month!inner(status)")
+      .select("date, schedule_shift(employee_id, is_closed, start_time, end_time), schedule_month!inner(status)")
       .gte("date", priorStart)
       .lte("date", priorEnd)
       .eq("schedule_month.status", "published");
@@ -247,6 +269,10 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
         if (!s.employee_id || s.is_closed) continue;
         if (!priorWorkedDates.has(s.employee_id)) priorWorkedDates.set(s.employee_id, new Set());
         priorWorkedDates.get(s.employee_id)!.add(d.date);
+        if (d.date === priorEnd) {
+          if (!priorLastDayShiftsByEmployee.has(s.employee_id)) priorLastDayShiftsByEmployee.set(s.employee_id, []);
+          priorLastDayShiftsByEmployee.get(s.employee_id)!.push({ start_time: s.start_time, end_time: s.end_time });
+        }
       }
     }
   }
@@ -257,6 +283,45 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
     const combined = new Set(daysAssigned.get(employeeId) ?? []);
     for (const d of priorWorkedDates.get(employeeId) ?? []) combined.add(d);
     return combined;
+  }
+
+  // Uczciwa rotacja weekendów: ile tygodni (pon-nd) z ostatnich ~8 przed tym
+  // miesiącem dana osoba miała choć jedną zmianę w sobotę/niedzielę —
+  // narastająco doliczane w trakcie tego uruchomienia (patrz przy penalty()
+  // niżej), żeby ten sam duet nie dostawał stale weekendów tylko dlatego, że
+  // akurat jest najlepiej dopasowany danego tygodnia. Podobne uproszczenie co
+  // hoursAssigned: liczy narastająco od punktu startowego, nie w ściśle
+  // przesuwnym oknie ostatnich N tygodni.
+  const weekendCountByEmployee = new Map<string, number>();
+  const countedWeekendWeeksThisRun = new Map<string, Set<string>>();
+  if (monthDates.length > 0) {
+    const lookbackStart = toDateKey(new Date(new Date(monthDates[0] + "T00:00:00").getTime() - 56 * 86400000));
+    const lookbackEnd = toDateKey(new Date(new Date(monthDates[0] + "T00:00:00").getTime() - 86400000));
+    const { data: weekendDays } = await supabase
+      .from("schedule_day")
+      .select("date, weekday, schedule_shift(employee_id, is_closed), schedule_month!inner(status)")
+      .gte("date", lookbackStart)
+      .lte("date", lookbackEnd)
+      .in("weekday", [0, 6])
+      .eq("schedule_month.status", "published");
+    const workedWeekendWeeksByEmployee = new Map<string, Set<string>>();
+    for (const d of weekendDays ?? []) {
+      const wk = mondayOfWeek(d.date);
+      for (const s of d.schedule_shift ?? []) {
+        if (!s.employee_id || s.is_closed) continue;
+        if (!workedWeekendWeeksByEmployee.has(s.employee_id)) workedWeekendWeeksByEmployee.set(s.employee_id, new Set());
+        workedWeekendWeeksByEmployee.get(s.employee_id)!.add(wk);
+      }
+    }
+    for (const [empId, weeks] of workedWeekendWeeksByEmployee) weekendCountByEmployee.set(empId, weeks.size);
+  }
+  function registerWeekendWorked(employeeId: string, dateKey: string) {
+    const wk = mondayOfWeek(dateKey);
+    if (!countedWeekendWeeksThisRun.has(employeeId)) countedWeekendWeeksThisRun.set(employeeId, new Set());
+    const counted = countedWeekendWeeksThisRun.get(employeeId)!;
+    if (counted.has(wk)) return;
+    counted.add(wk);
+    weekendCountByEmployee.set(employeeId, (weekendCountByEmployee.get(employeeId) ?? 0) + 1);
   }
 
   const hardUnavailableByEmployee = new Map<string, { weekday: number; start: string | null; end: string | null }[]>();
@@ -291,6 +356,11 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
   // uruchomienia wyłącznie po to, żeby na końcu odfiltrować zapis do bazy
   // do realnych zmian (patrz `changedUpdates` niżej).
   const shiftsByEmployeeDate = new Map<string, Map<string, { start_time: string; end_time: string }[]>>();
+  if (priorLastDayKey) {
+    for (const [empId, shifts] of priorLastDayShiftsByEmployee) {
+      shiftsByEmployeeDate.set(empId, new Map([[priorLastDayKey, shifts]]));
+    }
+  }
   const weekdayByDate = new Map<string, number>();
   const originalAssignmentByShiftId = new Map<string, { employee_id: string | null; start_time: string; end_time: string }>();
   for (const day of days ?? []) {
@@ -337,6 +407,7 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
     const blockDoubleShift = weekday >= 1 && weekday <= 4;
     const weekKey = mondayOfWeek(day.date);
     const weekCapacity = Math.max(1, (daysInWeekBucket.get(weekKey)?.size ?? 1) - 1);
+    const yesterdayKey = toDateKey(new Date(new Date(day.date + "T00:00:00").getTime() - 86400000));
 
     const eligibleFor = (shift: { start_time: string; end_time: string; slot_index: number }) =>
       (employees ?? []).filter((emp) => {
@@ -445,6 +516,14 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
             const h = effectiveShiftHours(startTime, endTime, weekday, classByEmployee.get(seg.employee.id) ?? []);
             hoursAssigned.set(seg.employee.id, (hoursAssigned.get(seg.employee.id) ?? 0) + h);
             updates.push({ id: seg.shift.id, employee_id: seg.employee.id, start_time: startTime, end_time: endTime });
+            // Zasil shiftsByEmployeeDate też tutaj — inaczej sprawdzenie
+            // odpoczynku dobowego (patrz `penalty()`) nie widziałoby zmian z
+            // dni podzielonych na pół i nie wykryłoby zbyt krótkiej przerwy
+            // na następny dzień.
+            if (!shiftsByEmployeeDate.has(seg.employee.id)) shiftsByEmployeeDate.set(seg.employee.id, new Map());
+            const segByDate = shiftsByEmployeeDate.get(seg.employee.id)!;
+            if (!segByDate.has(day.date)) segByDate.set(day.date, []);
+            segByDate.get(day.date)!.push({ start_time: startTime, end_time: endTime });
           }
           for (const emp of [splitEmp, midEmp]) {
             if (!daysAssigned.has(emp.id)) daysAssigned.set(emp.id, new Set());
@@ -459,6 +538,15 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
     const penalty = (emp: Employee, shift: { id: string; start_time: string; end_time: string }): number => {
       let score = 0;
       if (hasClassConflict(emp, shift)) score += 1000;
+      const yesterdaysShifts = shiftsByEmployeeDate.get(emp.id)?.get(yesterdayKey) ?? [];
+      if (yesterdaysShifts.length > 0) {
+        const latestEnd = Math.max(...yesterdaysShifts.map((s) => timeToMinutes(s.end_time)));
+        const restMinutes = 24 * 60 - latestEnd + timeToMinutes(shift.start_time);
+        if (restMinutes < MIN_DAILY_REST_MINUTES) score += REST_VIOLATION_PENALTY;
+      }
+      if (weekday === 0 || weekday === 6) {
+        score += (weekendCountByEmployee.get(emp.id) ?? 0) * WEEKEND_FAIRNESS_WEIGHT;
+      }
       // "Lepkość": kto już miał tę zmianę PRZED tym uruchomieniem zostaje na
       // niej, dopóki różnica z kimś innym (niedobór godzin, konflikt zajęć)
       // nie jest wyraźnie większa niż ten bonus — bez tego pełna
@@ -543,9 +631,170 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       const chosenByDate = shiftsByEmployeeDate.get(chosen.id)!;
       if (!chosenByDate.has(day.date)) chosenByDate.set(day.date, []);
       chosenByDate.get(day.date)!.push({ start_time: shift.start_time, end_time: shift.end_time });
+      if (weekday === 0 || weekday === 6) registerWeekendWorked(chosen.id, day.date);
 
       updates.push({ id: shift.id, employee_id: chosen.id });
       remainingShifts.splice(bestIndex, 1);
+    }
+  }
+
+  // ── Local search: zamiana dwóch przydziałów w tym samym tygodniu, jeśli
+  // poprawia globalny balans ───────────────────────────────────────────
+  // Powyższy przydział jest zachłanny dzień po dniu — może zostawić dwie
+  // osoby przypisane "wspak" (osoba nad celem dostała poniedziałkową zmianę,
+  // osoba pod celem identyczną zmianę w czwartek), mimo że każda decyzja z
+  // osobna była w swoim dniu najlepsza lokalnie. Szukamy par: identyczna
+  // zmiana czasowo (ten sam start/koniec), inny dzień, ALE pon-czw i ten sam
+  // tydzień — dzięki temu liczba dni w tygodniu i cotygodniowy dzień wolny
+  // się nie zmieniają (więc nie trzeba przeliczać tego limitu), a
+  // ograniczenie do pon-czw omija cały osobny zestaw reguł dla pt/sob/nd
+  // (podwójne zmiany, rotacja weekendów) i dni podzielonych na pół. Każda
+  // zamiana jest w pełni rewalidowana (dostępność, seria dni z rzędu,
+  // odpoczynek dobowy) na stanie PO wcześniejszych zamianach w tej turze —
+  // każda zmiana bierze udział najwyżej w jednej zamianie na uruchomienie.
+  type ShiftMeta = { shiftId: string; date: string; weekday: number; slotIndex: number; startTime: string; endTime: string; employeeId: string };
+  const shiftMetaById = new Map<string, ShiftMeta>();
+  const updateByShiftId = new Map(updates.map((u) => [u.id, u]));
+  for (const day of sortedDays) {
+    if (day.weekday < 1 || day.weekday > 4) continue;
+    for (const shift of day.schedule_shift ?? []) {
+      if (shift.is_closed) continue;
+      const u = updateByShiftId.get(shift.id);
+      if (!u) continue;
+      shiftMetaById.set(shift.id, {
+        shiftId: shift.id,
+        date: day.date,
+        weekday: day.weekday,
+        slotIndex: shift.slot_index,
+        startTime: u.start_time ?? shift.start_time,
+        endTime: u.end_time ?? shift.end_time,
+        employeeId: u.employee_id,
+      });
+    }
+  }
+  const shiftCountByEmployeeDate = new Map<string, number>();
+  for (const m of shiftMetaById.values()) {
+    const key = `${m.employeeId}|${m.date}`;
+    shiftCountByEmployeeDate.set(key, (shiftCountByEmployeeDate.get(key) ?? 0) + 1);
+  }
+
+  function hasHardConflict(employeeId: string, date: string, weekday: number, slotIndex: number, startTime: string, endTime: string): boolean {
+    const hardRules = hardUnavailableByEmployee.get(employeeId) ?? [];
+    for (const r of hardRules) {
+      if (r.weekday !== weekday) continue;
+      if (!r.start || !r.end) return true;
+      if (overlapMinutes(startTime, endTime, r.start, r.end) > 0) return true;
+    }
+    const byDate = unavailability.get(employeeId)?.get(date);
+    if (byDate?.wholeDay) return true;
+    if (byDate?.slots.has(slotIndex)) return true;
+    return false;
+  }
+
+  function restOk(employeeId: string, date: string, startTime: string, endTime: string, ignoreDate: string): boolean {
+    const dateObj = new Date(date + "T00:00:00");
+    const prevKey = toDateKey(new Date(dateObj.getTime() - 86400000));
+    const nextKey = toDateKey(new Date(dateObj.getTime() + 86400000));
+    if (prevKey !== ignoreDate) {
+      const prevShifts = shiftsByEmployeeDate.get(employeeId)?.get(prevKey) ?? [];
+      if (prevShifts.length > 0) {
+        const latestEnd = Math.max(...prevShifts.map((s) => timeToMinutes(s.end_time)));
+        if (24 * 60 - latestEnd + timeToMinutes(startTime) < MIN_DAILY_REST_MINUTES) return false;
+      }
+    }
+    if (nextKey !== ignoreDate) {
+      const nextShifts = shiftsByEmployeeDate.get(employeeId)?.get(nextKey) ?? [];
+      if (nextShifts.length > 0) {
+        const earliestStart = Math.min(...nextShifts.map((s) => timeToMinutes(s.start_time)));
+        if (24 * 60 - timeToMinutes(endTime) + earliestStart < MIN_DAILY_REST_MINUTES) return false;
+      }
+    }
+    return true;
+  }
+
+  function streakOk(employeeId: string, dateToAdd: string, dateToRemove: string): boolean {
+    const hypothetical = workedDatesForStreak(employeeId);
+    hypothetical.delete(dateToRemove);
+    hypothetical.add(dateToAdd);
+    if (consecutiveDaysBefore(dateToAdd, hypothetical) >= 7) return false;
+    const nextKey = toDateKey(new Date(new Date(dateToAdd + "T00:00:00").getTime() + 86400000));
+    if (hypothetical.has(nextKey) && consecutiveDaysBefore(nextKey, hypothetical) >= 7) return false;
+    return true;
+  }
+
+  function ratio(emp: Employee): number {
+    return emp.target_hours_month > 0 ? (hoursAssigned.get(emp.id) ?? 0) / emp.target_hours_month : 0;
+  }
+
+  const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
+  const settledShiftIds = new Set<string>();
+  const byTimeSlot = new Map<string, ShiftMeta[]>();
+  for (const m of shiftMetaById.values()) {
+    const key = `${m.startTime}|${m.endTime}`;
+    if (!byTimeSlot.has(key)) byTimeSlot.set(key, []);
+    byTimeSlot.get(key)!.push(m);
+  }
+
+  for (const group of byTimeSlot.values()) {
+    for (let i = 0; i < group.length; i++) {
+      const m1 = group[i];
+      if (settledShiftIds.has(m1.shiftId)) continue;
+      for (let j = i + 1; j < group.length; j++) {
+        const m2 = group[j];
+        if (settledShiftIds.has(m2.shiftId)) continue;
+        if (m1.date === m2.date || m1.employeeId === m2.employeeId) continue;
+        if (mondayOfWeek(m1.date) !== mondayOfWeek(m2.date)) continue;
+
+        const empA = employeeById.get(m1.employeeId);
+        const empB = employeeById.get(m2.employeeId);
+        if (!empA || !empB) continue;
+        if ((shiftCountByEmployeeDate.get(`${empA.id}|${m1.date}`) ?? 0) !== 1) continue;
+        if ((shiftCountByEmployeeDate.get(`${empB.id}|${m2.date}`) ?? 0) !== 1) continue;
+        if ((shiftCountByEmployeeDate.get(`${empA.id}|${m2.date}`) ?? 0) > 0) continue;
+        if ((shiftCountByEmployeeDate.get(`${empB.id}|${m1.date}`) ?? 0) > 0) continue;
+
+        if (hasHardConflict(empA.id, m2.date, m2.weekday, m2.slotIndex, m2.startTime, m2.endTime)) continue;
+        if (hasHardConflict(empB.id, m1.date, m1.weekday, m1.slotIndex, m1.startTime, m1.endTime)) continue;
+        if (!streakOk(empA.id, m2.date, m1.date)) continue;
+        if (!streakOk(empB.id, m1.date, m2.date)) continue;
+        if (!restOk(empA.id, m2.date, m2.startTime, m2.endTime, m1.date)) continue;
+        if (!restOk(empB.id, m1.date, m1.startTime, m1.endTime, m2.date)) continue;
+
+        const hA1 = effectiveShiftHours(m1.startTime, m1.endTime, m1.weekday, classByEmployee.get(empA.id) ?? []);
+        const hA2 = effectiveShiftHours(m2.startTime, m2.endTime, m2.weekday, classByEmployee.get(empA.id) ?? []);
+        const hB2 = effectiveShiftHours(m2.startTime, m2.endTime, m2.weekday, classByEmployee.get(empB.id) ?? []);
+        const hB1 = effectiveShiftHours(m1.startTime, m1.endTime, m1.weekday, classByEmployee.get(empB.id) ?? []);
+
+        const before = Math.abs(ratio(empA) - 1) + Math.abs(ratio(empB) - 1);
+        const newHoursA = (hoursAssigned.get(empA.id) ?? 0) - hA1 + hA2;
+        const newHoursB = (hoursAssigned.get(empB.id) ?? 0) - hB2 + hB1;
+        const newRatioA = empA.target_hours_month > 0 ? newHoursA / empA.target_hours_month : 0;
+        const newRatioB = empB.target_hours_month > 0 ? newHoursB / empB.target_hours_month : 0;
+        const after = Math.abs(newRatioA - 1) + Math.abs(newRatioB - 1);
+        if (after >= before - 0.02) continue; // za mało zyskujemy, żeby ryzykować zamianę
+
+        // Zamiana zaakceptowana — zaktualizuj stan tak samo, jak przy
+        // zwykłym przydziale, żeby kolejne pary w tej pętli widziały spójny
+        // obraz.
+        updateByShiftId.get(m1.shiftId)!.employee_id = empB.id;
+        updateByShiftId.get(m2.shiftId)!.employee_id = empA.id;
+        hoursAssigned.set(empA.id, newHoursA);
+        hoursAssigned.set(empB.id, newHoursB);
+        daysAssigned.get(empA.id)?.delete(m1.date);
+        daysAssigned.get(empA.id)?.add(m2.date);
+        daysAssigned.get(empB.id)?.delete(m2.date);
+        daysAssigned.get(empB.id)?.add(m1.date);
+        shiftsByEmployeeDate.get(empA.id)?.delete(m1.date);
+        if (!shiftsByEmployeeDate.has(empA.id)) shiftsByEmployeeDate.set(empA.id, new Map());
+        shiftsByEmployeeDate.get(empA.id)!.set(m2.date, [{ start_time: m2.startTime, end_time: m2.endTime }]);
+        shiftsByEmployeeDate.get(empB.id)?.delete(m2.date);
+        if (!shiftsByEmployeeDate.has(empB.id)) shiftsByEmployeeDate.set(empB.id, new Map());
+        shiftsByEmployeeDate.get(empB.id)!.set(m1.date, [{ start_time: m1.startTime, end_time: m1.endTime }]);
+
+        settledShiftIds.add(m1.shiftId);
+        settledShiftIds.add(m2.shiftId);
+        break;
+      }
     }
   }
 
