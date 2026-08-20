@@ -12,11 +12,9 @@ import {
   updateEventTimes,
   updateEventParticipants,
   deleteEvent,
-  runDraft,
   runAiDraft,
   publishMonth,
   unpublishMonth,
-  reviewScheduleWithAI,
 } from "./actions";
 import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
@@ -61,7 +59,6 @@ export function ScheduleTable({
   classByEmployee,
   unavailableByDayAndSlot,
   unavailableWholeDay,
-  sameDayExceptionByDate,
 }: {
   scheduleMonthId: string;
   scheduleMonthStatus: "draft" | "published";
@@ -70,19 +67,15 @@ export function ScheduleTable({
   classByEmployee: Record<string, ClassEntry[]>;
   unavailableByDayAndSlot: Record<string, Record<number, string[]>>;
   unavailableWholeDay: Record<string, string[]>;
-  sameDayExceptionByDate: Record<string, string[]>;
 }) {
   const [days, setDays] = useState(initialDays);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [aiReview, setAiReview] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
 
   // Wynik generatora przeżywa `window.location.reload()` (patrz
-  // handleRunDraft) tylko dzięki sessionStorage — sam stan komponentu
+  // handleRunAiDraft) tylko dzięki sessionStorage — sam stan komponentu
   // znika przy przeładowaniu strony.
   useEffect(() => {
     const stored = window.sessionStorage.getItem("grafik_generate_message");
@@ -266,26 +259,6 @@ export function ScheduleTable({
     }
   }
 
-  async function handleRunDraft() {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await runDraft(scheduleMonthId);
-      const message =
-        result.assignedCount === 0
-          ? "Generator niczego nie zmienił — grafik był już najlepiej ułożony."
-          : `Zaktualizowano ${result.assignedCount} ${result.assignedCount === 1 ? "zmianę" : "zmian"}` +
-            (result.skippedCount > 0
-              ? `. Bez obsady zostało ${result.skippedCount} ${result.skippedCount === 1 ? "zmiana" : "zmian"} — brak dostępnej osoby.`
-              : ".");
-      window.sessionStorage.setItem("grafik_generate_message", message);
-      window.location.reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Coś poszło nie tak.");
-      setBusy(false);
-    }
-  }
-
   async function handleRunAiDraft() {
     setBusy(true);
     setError(null);
@@ -315,19 +288,6 @@ export function ScheduleTable({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Coś poszło nie tak.");
       setBusy(false);
-    }
-  }
-
-  async function handleAiReview() {
-    setAiLoading(true);
-    setAiError(null);
-    try {
-      const text = await reviewScheduleWithAI(scheduleMonthId);
-      setAiReview(text);
-    } catch (err) {
-      setAiError(err instanceof Error ? err.message : "Nie udało się pobrać sugestii AI.");
-    } finally {
-      setAiLoading(false);
     }
   }
 
@@ -363,30 +323,19 @@ export function ScheduleTable({
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
             <span
               className="flex cursor-help items-center gap-1.5 text-sm font-semibold text-zinc-900"
-              title="Pełna reoptymalizacja: uwzględnia dyspozycyjność i zajęcia instruktorów, wyrównuje godziny i MOŻE przełożyć już przypisane zmiany, jeśli znajdzie lepszy układ — ale zapisuje tylko to, co się realnie zmieniło."
+              title="AI samo układa cały przydział (uwzględnia dyspozycyjność, zajęcia instruktorów, cele godzinowe) i MOŻE przełożyć już przypisane zmiany, jeśli znajdzie lepszy układ. Każda propozycja jest w pełni sprawdzona pod kątem twardych reguł (dostępność, 7 dni, dzień wolny, przerwy) i odrzucona z powrotem do AI do poprawy, jeśli je łamie — zapisuje się tylko to, co realnie się zmieniło."
             >
-              Generator propozycji
+              Generator propozycji (AI)
               <span className="text-xs font-normal text-zinc-400">ⓘ</span>
             </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={handleRunDraft}
-                className="rounded-xl bg-zinc-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-50"
-              >
-                {busy ? "Generowanie…" : "Wygeneruj propozycję"}
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={handleRunAiDraft}
-                title="AI samo układa przydział (nie tylko doradza) — każda propozycja jest w pełni sprawdzona pod kątem twardych reguł (dostępność, 7 dni, dzień wolny) i odrzucona z powrotem do poprawy, jeśli je łamie. Wolniejsze niż zwykły generator."
-                className="flex cursor-help items-center gap-1.5 rounded-xl border-[1.5px] border-zinc-800 bg-white px-4 py-2.5 text-sm font-bold text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
-              >
-                {busy ? "Generowanie…" : "Wygeneruj z AI"} <span className="text-xs font-normal text-zinc-400">ⓘ</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={handleRunAiDraft}
+              className="rounded-xl bg-zinc-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-50"
+            >
+              {busy ? "Generowanie…" : "Wygeneruj propozycję"}
+            </button>
           </div>
         )}
 
@@ -412,7 +361,6 @@ export function ScheduleTable({
                 });
                 const wholeDayUnavailable = (unavailableWholeDay[day.date] ?? []).map((id) => employeeById.get(id)?.name).filter(Boolean);
                 const isExpanded = expanded.has(day.id);
-                const exceptionIds = sameDayExceptionByDate[day.date] ?? [];
 
                 return (
                   <Fragment key={day.id}>
@@ -442,25 +390,18 @@ export function ScheduleTable({
                         }
                         const unavailableIds = unavailableByDayAndSlot[day.date]?.[slotIndex] ?? [];
                         const unavailableNames = unavailableIds.map((id) => employeeById.get(id)?.name).filter(Boolean);
-                        // Jedna osoba = jedna zmiana dziennie, ale TYLKO pon-czw (stąd w
-                        // ogóle są tam 3 zmiany — żeby dzień rozkładał się na różne osoby,
-                        // a nie żeby ktoś siedział od rana do wieczora). W piątek/sobotę/
-                        // niedzielę dopuszczamy więcej niż 1 zmianę tej samej osoby (np.
-                        // Krzysztof 2x w niedzielę) — jedyne ograniczenie to dostępność.
-                        const blockDoubleShift = day.weekday >= 1 && day.weekday <= 4;
+                        // Jedna osoba = jedna zmiana dziennie pon-czw jest zasadą DOMYŚLNĄ
+                        // (generatory jej pilnują) — ale w ręcznej edycji admin czasem
+                        // świadomie chce wyjątek (np. ktoś dorabia drugą zmianę tego
+                        // samego dnia). Dlatego tu tylko OSTRZEGAMY (dopisek przy nazwisku
+                        // w liście), nie blokujemy wyboru — inaczej nie dałoby się tego
+                        // w ogóle ustawić ręcznie za pierwszym razem.
                         const workingElsewhereTodayIds = new Set(
                           day.shifts
                             .filter((s) => s.id !== shift.id && s.employee_id)
                             .map((s) => s.employee_id as string)
                         );
-                        const options = employees.filter(
-                          (e) =>
-                            (!unavailableIds.includes(e.id) || e.id === shift.employee_id) &&
-                            (!blockDoubleShift ||
-                              !workingElsewhereTodayIds.has(e.id) ||
-                              e.id === shift.employee_id ||
-                              exceptionIds.includes(e.id))
-                        );
+                        const options = employees.filter((e) => !unavailableIds.includes(e.id) || e.id === shift.employee_id);
                         const selectValue = shift.is_closed ? "__closed__" : shift.employee_id ?? "";
                         const currentEmployee = shift.employee_id ? employeeById.get(shift.employee_id) : null;
                         return (
@@ -484,6 +425,7 @@ export function ScheduleTable({
                                 {options.map((e) => (
                                   <option key={e.id} value={e.id} style={{ color: e.color_hex }}>
                                     {e.name}
+                                    {workingElsewhereTodayIds.has(e.id) && e.id !== shift.employee_id ? " (już dziś pracuje)" : ""}
                                   </option>
                                 ))}
                                 <option value="__closed__">NIECZYNNE</option>
@@ -674,32 +616,6 @@ export function ScheduleTable({
             })}
           </ul>
         </div>
-
-        {scheduleMonthStatus === "draft" && (
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="font-semibold text-zinc-900">Sugestie AI</h2>
-              <button
-                type="button"
-                disabled={aiLoading}
-                onClick={handleAiReview}
-                className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-              >
-                {aiLoading ? "Sprawdzam…" : aiReview ? "Sprawdź ponownie" : "Sprawdź przed publikacją"}
-              </button>
-            </div>
-            {aiError && <p className="text-xs font-semibold text-red-600">{aiError}</p>}
-            {aiReview && (
-              <div className="whitespace-pre-wrap rounded-xl bg-amber-50 p-3 text-xs text-amber-900">{aiReview}</div>
-            )}
-            {!aiReview && !aiError && (
-              <p className="text-xs text-zinc-400">
-                Opcjonalne — AI przejrzy draft i wskaże nietypowe wzorce (np. kilka zamknięć z rzędu u
-                tej samej osoby). Nic samo nie zmienia, to tylko podpowiedź.
-              </p>
-            )}
-          </div>
-        )}
 
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
           {scheduleMonthStatus === "draft" ? (
