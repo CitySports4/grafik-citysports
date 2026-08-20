@@ -82,9 +82,12 @@ type Employee = {
 
 type ClassEntry = { weekday: number; start_time: string; end_time: string };
 
-// Ile dni z rzędu PRZED danym dniem (bez przerwy, wyłącznie w obrębie tego
-// samego miesiąca — nie widzimy poprzedniego) dana osoba już przepracowała.
-// Używane, żeby nikt nie pracował więcej niż 7 dni pod rząd.
+// Ile dni z rzędu PRZED danym dniem (bez przerwy) dana osoba już
+// przepracowała — `workedDates` to zwykle wynik `workedDatesForStreak`
+// niżej, czyli decyzje z tego uruchomienia PLUS ogon opublikowanego grafiku
+// sprzed początku miesiąca, żeby seria licząca się od końca sierpnia nie
+// zerowała się sztucznie 1 września. Używane, żeby nikt nie pracował więcej
+// niż 7 dni pod rząd.
 function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>): number {
   let count = 0;
   const cursor = new Date(dateKey + "T00:00:00");
@@ -219,6 +222,41 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       .lte("start_date", monthDates[monthDates.length - 1])
       .gte("end_date", monthDates[0]);
     applyPlannedAbsences(unavailability, plannedAbsences ?? []);
+  }
+
+  // Limit "max 7 dni z rzędu bez przerwy" (patrz `consecutiveDaysBefore`
+  // niżej) liczony był WYŁĄCZNIE z decyzji podjętych w tym uruchomieniu — na
+  // 1. dniu miesiąca zawsze wychodziło 0, więc ktoś kto skończył sierpień
+  // serią 6 dni z rzędu mógł dostać kolejne 6+ na starcie września bez
+  // wykrycia. Dociągamy realny, OPUBLIKOWANY grafik z 7 dni przed początkiem
+  // tego miesiąca — tylko do wykrywania serii, nie do limitu "1 dzień wolny
+  // w tygodniu" (ten zostaje liczony jak dotąd, tylko z dni bieżącego
+  // miesiąca — patrz komentarz przy `daysInWeekBucket`).
+  const priorWorkedDates = new Map<string, Set<string>>();
+  if (monthDates.length > 0) {
+    const priorStart = toDateKey(new Date(new Date(monthDates[0] + "T00:00:00").getTime() - 7 * 86400000));
+    const priorEnd = toDateKey(new Date(new Date(monthDates[0] + "T00:00:00").getTime() - 86400000));
+    const { data: priorDays } = await supabase
+      .from("schedule_day")
+      .select("date, schedule_shift(employee_id, is_closed), schedule_month!inner(status)")
+      .gte("date", priorStart)
+      .lte("date", priorEnd)
+      .eq("schedule_month.status", "published");
+    for (const d of priorDays ?? []) {
+      for (const s of d.schedule_shift ?? []) {
+        if (!s.employee_id || s.is_closed) continue;
+        if (!priorWorkedDates.has(s.employee_id)) priorWorkedDates.set(s.employee_id, new Set());
+        priorWorkedDates.get(s.employee_id)!.add(d.date);
+      }
+    }
+  }
+  // Zbiór dni "przepracowanych" pod kątem WYŁĄCZNIE wykrywania serii z
+  // rzędu — bieżące decyzje tego uruchomienia plus ogon z poprzedniego
+  // miesiąca powyżej.
+  function workedDatesForStreak(employeeId: string): Set<string> {
+    const combined = new Set(daysAssigned.get(employeeId) ?? []);
+    for (const d of priorWorkedDates.get(employeeId) ?? []) combined.add(d);
+    return combined;
   }
 
   const hardUnavailableByEmployee = new Map<string, { weekday: number; start: string | null; end: string | null }[]>();
@@ -455,7 +493,7 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
       // Im dłuższa passa dni z rzędu bez przerwy, tym mniej chętnie
       // dokładamy kolejny dzień — nawet zanim trafi w twardy limit 7 dni
       // (patrz pętla niżej), niech ktoś świeższy ma pierwszeństwo.
-      score += consecutiveDaysBefore(day.date, daysAssigned.get(emp.id) ?? new Set()) * 5;
+      score += consecutiveDaysBefore(day.date, workedDatesForStreak(emp.id)) * 5;
       return score;
     };
 
@@ -480,7 +518,7 @@ export async function runDraftGenerator(scheduleMonthId: string): Promise<{ assi
         // ale to ma się zdarzać jak najrzadziej, nie blokować grafiku
         // całkowicie: jeśli po odrzuceniu takich osób nie zostaje NIKT
         // (naprawdę nie ma wyboru), cofamy się do pełnej listy.
-        const rested = eligible.filter((emp) => consecutiveDaysBefore(day.date, daysAssigned.get(emp.id) ?? new Set()) < 7);
+        const rested = eligible.filter((emp) => consecutiveDaysBefore(day.date, workedDatesForStreak(emp.id)) < 7);
         const candidates = (rested.length > 0 ? rested : eligible).slice().sort((a, b) => penalty(a, shift) - penalty(b, shift));
         if (candidates.length === 0) continue;
         const regret = candidates.length >= 2 ? penalty(candidates[1], shift) - penalty(candidates[0], shift) : Infinity;
