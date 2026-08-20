@@ -7,15 +7,18 @@
 
 delete from note where is_task = false;
 
-drop table if exists project_link;
-drop table if exists project;
-
+-- Kolejność ma znaczenie: note.project_id ma klucz obcy do project, więc
+-- musi zniknąć PRZED zrzuceniem tabeli project (inaczej "cannot drop table
+-- project because other objects depend on it").
 alter table note
   drop column if exists project_id,
   drop column if exists category,
   drop column if exists is_long_term,
   drop column if exists due_date,
   drop column if exists is_task;
+
+drop table if exists project_link;
+drop table if exists project;
 
 -- Rola "marketing" — nieużywana, redukujemy role funkcyjne do trzech
 -- (recepcja, sprzątanie, admin). Osoby, które ją miały, dostają recepcję
