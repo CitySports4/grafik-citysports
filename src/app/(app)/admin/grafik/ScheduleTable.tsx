@@ -61,7 +61,6 @@ export function ScheduleTable({
   classByEmployee,
   unavailableByDayAndSlot,
   unavailableWholeDay,
-  sameDayExceptionByDate,
 }: {
   scheduleMonthId: string;
   scheduleMonthStatus: "draft" | "published";
@@ -70,7 +69,6 @@ export function ScheduleTable({
   classByEmployee: Record<string, ClassEntry[]>;
   unavailableByDayAndSlot: Record<string, Record<number, string[]>>;
   unavailableWholeDay: Record<string, string[]>;
-  sameDayExceptionByDate: Record<string, string[]>;
 }) {
   const [days, setDays] = useState(initialDays);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -412,7 +410,6 @@ export function ScheduleTable({
                 });
                 const wholeDayUnavailable = (unavailableWholeDay[day.date] ?? []).map((id) => employeeById.get(id)?.name).filter(Boolean);
                 const isExpanded = expanded.has(day.id);
-                const exceptionIds = sameDayExceptionByDate[day.date] ?? [];
 
                 return (
                   <Fragment key={day.id}>
@@ -442,25 +439,18 @@ export function ScheduleTable({
                         }
                         const unavailableIds = unavailableByDayAndSlot[day.date]?.[slotIndex] ?? [];
                         const unavailableNames = unavailableIds.map((id) => employeeById.get(id)?.name).filter(Boolean);
-                        // Jedna osoba = jedna zmiana dziennie, ale TYLKO pon-czw (stąd w
-                        // ogóle są tam 3 zmiany — żeby dzień rozkładał się na różne osoby,
-                        // a nie żeby ktoś siedział od rana do wieczora). W piątek/sobotę/
-                        // niedzielę dopuszczamy więcej niż 1 zmianę tej samej osoby (np.
-                        // Krzysztof 2x w niedzielę) — jedyne ograniczenie to dostępność.
-                        const blockDoubleShift = day.weekday >= 1 && day.weekday <= 4;
+                        // Jedna osoba = jedna zmiana dziennie pon-czw jest zasadą DOMYŚLNĄ
+                        // (generatory jej pilnują) — ale w ręcznej edycji admin czasem
+                        // świadomie chce wyjątek (np. ktoś dorabia drugą zmianę tego
+                        // samego dnia). Dlatego tu tylko OSTRZEGAMY (dopisek przy nazwisku
+                        // w liście), nie blokujemy wyboru — inaczej nie dałoby się tego
+                        // w ogóle ustawić ręcznie za pierwszym razem.
                         const workingElsewhereTodayIds = new Set(
                           day.shifts
                             .filter((s) => s.id !== shift.id && s.employee_id)
                             .map((s) => s.employee_id as string)
                         );
-                        const options = employees.filter(
-                          (e) =>
-                            (!unavailableIds.includes(e.id) || e.id === shift.employee_id) &&
-                            (!blockDoubleShift ||
-                              !workingElsewhereTodayIds.has(e.id) ||
-                              e.id === shift.employee_id ||
-                              exceptionIds.includes(e.id))
-                        );
+                        const options = employees.filter((e) => !unavailableIds.includes(e.id) || e.id === shift.employee_id);
                         const selectValue = shift.is_closed ? "__closed__" : shift.employee_id ?? "";
                         const currentEmployee = shift.employee_id ? employeeById.get(shift.employee_id) : null;
                         return (
@@ -484,6 +474,7 @@ export function ScheduleTable({
                                 {options.map((e) => (
                                   <option key={e.id} value={e.id} style={{ color: e.color_hex }}>
                                     {e.name}
+                                    {workingElsewhereTodayIds.has(e.id) && e.id !== shift.employee_id ? " (już dziś pracuje)" : ""}
                                   </option>
                                 ))}
                                 <option value="__closed__">NIECZYNNE</option>

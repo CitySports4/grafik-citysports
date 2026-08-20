@@ -59,32 +59,12 @@ export default async function ScheduleBuilderPage({
 
   const unavailableByDayAndSlot: Record<string, Record<number, string[]>> = {};
   const unavailableWholeDay: Record<string, string[]> = {};
-  const sameDayExceptionByDate: Record<string, string[]> = {};
 
   if (hasStructure) {
     const { data: allConstraints } = await supabase
       .from("weekly_recurring_constraint")
       .select("employee_id, weekday, start_time, end_time, type");
     const constraints = (allConstraints ?? []).filter((c) => c.type === "unavailable");
-
-    // Reguła "1 osoba = 1 zmiana dziennie" w ScheduleTable obowiązuje tylko
-    // pon-czw — piątek/sobota/niedziela są tam zawsze wyjęte spod blokady.
-    // Ten wyjątek dotyczy więc tylko pon-czw: jeśli dany pracownik ma już
-    // przypisaną więcej niż jedną zmianę tego dnia (wygenerowany podział dnia
-    // przy tylko 2 dostępnych osobach — patrz schedule-generator.ts), pozwól
-    // mu pozostać wybieralnym na liście również dla innych jego zmian tego
-    // dnia, zamiast blokować to jako "już pracuje gdzie indziej".
-    for (const day of days ?? []) {
-      const shiftCountByEmployee = new Map<string, number>();
-      for (const shift of day.schedule_shift ?? []) {
-        if (!shift.employee_id) continue;
-        shiftCountByEmployee.set(shift.employee_id, (shiftCountByEmployee.get(shift.employee_id) ?? 0) + 1);
-      }
-      const doubledUpIds = [...shiftCountByEmployee.entries()].filter(([, count]) => count > 1).map(([id]) => id);
-      if (doubledUpIds.length > 0) {
-        sameDayExceptionByDate[day.date] = [...(sameDayExceptionByDate[day.date] ?? []), ...doubledUpIds];
-      }
-    }
 
     const hardConstraintsByEmployee = new Map<string, HardConstraint[]>();
     for (const c of constraints ?? []) {
@@ -222,7 +202,6 @@ export default async function ScheduleBuilderPage({
           classByEmployee={classByEmployee}
           unavailableByDayAndSlot={unavailableByDayAndSlot}
           unavailableWholeDay={unavailableWholeDay}
-          sameDayExceptionByDate={sameDayExceptionByDate}
         />
       )}
     </div>
