@@ -190,15 +190,15 @@ export default async function PrintGrafikPage({
             const isWeekend = day.weekday === 0 || day.weekday === 6;
             return (
               <tr key={day.id} className={`break-inside-avoid ${isWeekend ? "bg-zinc-300" : ""}`}>
-                <td className="border border-zinc-300 px-1.5 py-1 align-middle font-bold text-zinc-700">{dateLabel}</td>
-                <td className="border border-zinc-300 px-1.5 py-1 align-middle capitalize text-zinc-600">{weekdayLabel(day.weekday)}</td>
+                <td className="border border-zinc-400 px-1.5 py-1 align-middle font-bold text-zinc-700">{dateLabel}</td>
+                <td className="border border-zinc-400 px-1.5 py-1 align-middle capitalize text-zinc-600">{weekdayLabel(day.weekday)}</td>
                 {Array.from({ length: SLOT_COUNT }, (_, i) => {
                   const shift = shiftsBySlot.get(i);
                   const emp = shift?.employee_id ? employeeById.get(shift.employee_id) : null;
                   const actualLabel = shift ? timeRange(shift.start_time, shift.end_time) : null;
                   const headerMatches = actualLabel === slotHeaders[i];
                   return (
-                    <td key={i} className="border border-zinc-300 p-0.5 align-middle">
+                    <td key={i} className="border border-zinc-400 p-0.5 align-middle">
                       {!shift ? (
                         <span className="block px-1.5 text-center text-zinc-500">—</span>
                       ) : shift.is_closed ? (
@@ -218,7 +218,7 @@ export default async function PrintGrafikPage({
                     </td>
                   );
                 })}
-                <td className="border border-zinc-300 p-0.5 align-middle">
+                <td className="border border-zinc-400 p-0.5 align-middle">
                   <div className="flex flex-col gap-0.5">
                     {overflowShifts.map((shift) => {
                       const emp = shift.employee_id ? employeeById.get(shift.employee_id) : null;
