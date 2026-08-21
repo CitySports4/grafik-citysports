@@ -79,7 +79,7 @@ export default async function CleaningConfigPage({
     { data: mondayShiftTemplates },
   ] = await Promise.all([
     supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle(),
-    supabase.from("cleaning_zone").select("id, name, group_code").order("name"),
+    supabase.from("cleaning_zone").select("id, name, group_code, sort_order").order("sort_order").order("name"),
     supabase
       .from("cleaning_task")
       .select(
@@ -198,17 +198,25 @@ export default async function CleaningConfigPage({
               pełnych formularzy "dodaj zadanie" (9 pól każdy) widocznych
               jednocześnie. Bez JS, czysto po stronie serwera. */}
           <div className="flex flex-col gap-3">
-            {(zones ?? []).map((zone) => {
+            {(zones ?? []).map((zone, i) => {
               const zoneTasks = tasksByZone.get(zone.id) ?? [];
+              // Nagłówek klastra tylko przy pierwszej strefie nowej grupy —
+              // strefy są posortowane wg sort_order, więc te same group_code
+              // (fizycznie bliskie miejsca w klubie) są już obok siebie.
+              const prevGroup = i > 0 ? (zones ?? [])[i - 1].group_code : undefined;
+              const showGroupHeader = zone.group_code && zone.group_code !== prevGroup;
               return (
-                <Card key={zone.id} className="!p-0">
+                <div key={zone.id} className="flex flex-col gap-3">
+                  {showGroupHeader && (
+                    <h3 className="mt-1 text-xs font-bold uppercase tracking-wide text-zinc-400">{zone.group_code}</h3>
+                  )}
+                  <Card className="!p-0">
                   <details className="group">
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 marker:content-none">
                       <span className="font-semibold text-zinc-900">
                         {zone.name}{" "}
                         <span className="text-xs font-normal text-zinc-400">
-                          ({zoneTasks.length} {zoneTasks.length === 1 ? "zadanie" : "zadań"}
-                          {zone.group_code ? ` · grupa ${zone.group_code}` : ""})
+                          ({zoneTasks.length} {zoneTasks.length === 1 ? "zadanie" : "zadań"})
                         </span>
                       </span>
                       <span className="text-xs text-zinc-400 group-open:hidden">rozwiń ▸</span>
@@ -387,7 +395,8 @@ export default async function CleaningConfigPage({
                       </details>
                     </div>
                   </details>
-                </Card>
+                  </Card>
+                </div>
               );
             })}
             {(zones ?? []).length === 0 && (
