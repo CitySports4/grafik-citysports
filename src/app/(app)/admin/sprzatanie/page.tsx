@@ -5,6 +5,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { ColorDot } from "@/components/ColorDot";
 import { BackLink } from "@/components/BackLink";
+import { freeMinutesOutsideWeekdayBlackout, WEEKDAY_CLEANING_BLACKOUT } from "@/lib/cleaning";
 import {
   addZone,
   deleteZone,
@@ -75,6 +76,7 @@ export default async function CleaningConfigPage({
     { data: templates },
     { data: templateItems },
     { data: timeBudgets },
+    { data: mondayShiftTemplates },
   ] = await Promise.all([
     supabase.from("cleaning_settings").select("cycle_start").eq("id", true).maybeSingle(),
     supabase.from("cleaning_zone").select("id, name, group_code").order("name"),
@@ -90,6 +92,10 @@ export default async function CleaningConfigPage({
     supabase.from("cleaning_checklist_template").select("id, name").order("name"),
     supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
     supabase.from("cleaning_time_budget").select("employee_id, slot, budget_minutes"),
+    // Poniedziałek jako reprezentatywny dzień powszedni (ten sam uproszczony
+    // wzorzec co w /print/grafik) — do ostrzeżenia o blokadzie 16:30-21:10
+    // pon-pt w budżetach czasowych niżej.
+    supabase.from("shift_template").select("slot_index, default_start_time, default_end_time").eq("weekday", 1),
   ]);
 
   const tasksByZone = new Map<string, typeof tasks>();
@@ -114,6 +120,24 @@ export default async function CleaningConfigPage({
     templateItemsByTemplate.get(it.template_id)!.push(it);
   }
   const budgetByEmpSlot = new Map((timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}`, b.budget_minutes]));
+
+  // Realny wolny czas per slot pon-pt, poza blokadą 16:30-21:10 — liczony z
+  // poniedziałkowego szablonu zmian, posortowanego wg godziny startu (ta sama
+  // kolejność co resolveDaySlots: pierwsza = otwarcie, ostatnia = zamknięcie/
+  // po zamknięciu, środkowa = środek, jeśli jest).
+  const sortedMondayShifts = [...(mondayShiftTemplates ?? [])].sort((a, b) => a.default_start_time.localeCompare(b.default_start_time));
+  const freeMinutesBySlot: Partial<Record<string, number>> = {};
+  if (sortedMondayShifts.length > 0) {
+    const first = sortedMondayShifts[0];
+    const last = sortedMondayShifts[sortedMondayShifts.length - 1];
+    freeMinutesBySlot.otwarcie = freeMinutesOutsideWeekdayBlackout(first.default_start_time, first.default_end_time, 1);
+    freeMinutesBySlot.zamkniecie = freeMinutesOutsideWeekdayBlackout(last.default_start_time, last.default_end_time, 1);
+    freeMinutesBySlot.po_zamknieciu = freeMinutesBySlot.zamkniecie;
+    if (sortedMondayShifts.length >= 3) {
+      const middle = sortedMondayShifts[Math.floor(sortedMondayShifts.length / 2)];
+      freeMinutesBySlot.srodek = freeMinutesOutsideWeekdayBlackout(middle.default_start_time, middle.default_end_time, 1);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -471,9 +495,15 @@ export default async function CleaningConfigPage({
       {tab === "budzety" && (
         <Card>
           <h2 className="mb-1 font-semibold text-zinc-900">Budżety czasowe</h2>
-          <p className="mb-3 text-sm text-zinc-500">
-            Ile minut sprzątania na daną porę dnia jest "normą" dla danej osoby — używane do
+          <p className="mb-1.5 text-sm text-zinc-500">
+            Ile minut sprzątania na daną porę dnia jest &quot;normą&quot; dla danej osoby — używane do
             auto-wyrównywania obciążenia w dni, gdy w tym samym slocie pracuje więcej niż jedna osoba.
+          </p>
+          <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <span className="font-bold">Twarda zasada:</span> pon–pt sprzątanie nie może się odbywać między{" "}
+            {WEEKDAY_CLEANING_BLACKOUT.start} a {WEEKDAY_CLEANING_BLACKOUT.end} (klub zbyt zajęty). Budżet
+            wyższy niż realnie wolny czas zmiany tego dnia (patrz ostrzeżenia przy polach niżej) i tak nie
+            da się zrealizować.
           </p>
           <div className="flex flex-col gap-3">
             {(employees ?? []).map((emp) => (
@@ -483,22 +513,30 @@ export default async function CleaningConfigPage({
                   {emp.name}
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  {Object.entries(SLOT_LABELS).map(([slot, label]) => (
-                    <form key={slot} action={setTimeBudget} className="flex items-center gap-1.5">
-                      <input type="hidden" name="employee_id" value={emp.id} />
-                      <input type="hidden" name="slot" value={slot} />
-                      <label className="text-xs text-zinc-500">{label}</label>
-                      <input
-                        type="number"
-                        name="budget_minutes"
-                        defaultValue={budgetByEmpSlot.get(`${emp.id}|${slot}`) ?? 60}
-                        className="w-[64px] rounded-lg border border-zinc-300 px-2 py-1 text-xs"
-                      />
-                      <button type="submit" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold hover:bg-zinc-100">
-                        ✓
-                      </button>
-                    </form>
-                  ))}
+                  {Object.entries(SLOT_LABELS).map(([slot, label]) => {
+                    const value = budgetByEmpSlot.get(`${emp.id}|${slot}`) ?? 60;
+                    const freeMinutes = freeMinutesBySlot[slot];
+                    const exceeds = freeMinutes !== undefined && value > freeMinutes;
+                    return (
+                      <form key={slot} action={setTimeBudget} className="flex items-center gap-1.5">
+                        <input type="hidden" name="employee_id" value={emp.id} />
+                        <input type="hidden" name="slot" value={slot} />
+                        <label className="text-xs text-zinc-500" title={freeMinutes !== undefined ? `Realnie wolne (pon): ${freeMinutes} min` : undefined}>
+                          {label}
+                          {exceeds && <span className="ml-1 text-red-500">⚠ &gt;{freeMinutes} min wolnego</span>}
+                        </label>
+                        <input
+                          type="number"
+                          name="budget_minutes"
+                          defaultValue={value}
+                          className={`w-[64px] rounded-lg border px-2 py-1 text-xs ${exceeds ? "border-red-300" : "border-zinc-300"}`}
+                        />
+                        <button type="submit" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold hover:bg-zinc-100">
+                          ✓
+                        </button>
+                      </form>
+                    );
+                  })}
                 </div>
               </div>
             ))}

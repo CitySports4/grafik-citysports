@@ -1,4 +1,30 @@
 import { mondayOfWeek, toDateKey } from "./schedule-month";
+import { timeToMinutes } from "./time";
+
+// Twarda zasada biznesowa (pon-pt) — klub jest zbyt zajęty (zajęcia, ruch
+// klientów) między 16:30 a 21:10, żeby ktokolwiek odszedł od swoich
+// obowiązków i sprzątał. Sobota/niedziela — nie obowiązuje. To NIE zmienia
+// PRZYDZIAŁU (kto sprząta nadal wynika wyłącznie z grafiku — patrz
+// resolveDaySlots), tylko realny czas, jaki dana osoba ma na sprzątanie w
+// ciągu swojej zmiany tego dnia. Dziś używane tylko jako ostrzeżenie przy
+// ustawianiu budżetów czasowych (patrz admin/sprzatanie) — punkt wyjścia dla
+// każdej przyszłej "mądrzejszej" reguły balansowania/AI, która operuje na
+// realnych godzinach zmian, nie tylko na nazwie slotu.
+export const WEEKDAY_CLEANING_BLACKOUT = { start: "16:30", end: "21:10" } as const;
+
+// Ile minut zmiany (start-end, dany dzień tygodnia) realnie NIE wpada w
+// blokadę powyżej — cała długość zmiany w weekend (blokada nie obowiązuje),
+// zmiana pomniejszona o część nakładającą się z blokadą w dni robocze.
+export function freeMinutesOutsideWeekdayBlackout(startTime: string, endTime: string, weekday: number): number {
+  const shiftStart = timeToMinutes(startTime);
+  const shiftEnd = timeToMinutes(endTime);
+  const shiftLen = Math.max(0, shiftEnd - shiftStart);
+  if (weekday === 0 || weekday === 6) return shiftLen;
+  const blackoutStart = timeToMinutes(WEEKDAY_CLEANING_BLACKOUT.start);
+  const blackoutEnd = timeToMinutes(WEEKDAY_CLEANING_BLACKOUT.end);
+  const overlap = Math.max(0, Math.min(shiftEnd, blackoutEnd) - Math.max(shiftStart, blackoutStart));
+  return Math.max(0, shiftLen - overlap);
+}
 
 export type CleaningSlot = "otwarcie" | "srodek" | "zamkniecie" | "po_zamknieciu";
 export type CleaningFrequency = "daily" | "2xweek" | "3xweek" | "weekly" | "biweekly" | "monthly" | "quarterly";
@@ -364,7 +390,7 @@ export function balanceSlotAssignments(
       out.push(...items);
       continue;
     }
-    let working = items.map((i) => ({ ...i }));
+    const working = items.map((i) => ({ ...i }));
     for (let iter = 0; iter < 10; iter++) {
       const totals = new Map<string, number>();
       for (const p of persons) totals.set(p, 0);
