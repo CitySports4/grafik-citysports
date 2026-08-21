@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { toggleChecklistItem, toggleTaskDone } from "./actions";
+import { toggleChecklistItem, toggleTaskDone, setAllChecklistItems } from "./actions";
 import { ColorDot } from "@/components/ColorDot";
 
 type ChecklistItem = { id: string; label: string; done: boolean };
 type Item = {
   taskId: string;
   name: string;
+  zoneName: string;
   timeMinutes: number;
   slot: "otwarcie" | "srodek" | "zamkniecie" | "po_zamknieciu";
   note: string | null;
@@ -53,6 +54,21 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
     });
   }
 
+  function handleSetAllChecklist(taskId: string, done: boolean) {
+    setState((prev) =>
+      prev.map((it) => {
+        if (it.taskId !== taskId) return it;
+        const checklist = it.checklist.map((c) => ({ ...c, done }));
+        return { ...it, checklist, done: checklist.length > 0 && done };
+      })
+    );
+    const item = state.find((it) => it.taskId === taskId);
+    const allItemIds = (item?.checklist ?? []).map((c) => c.id);
+    startTransition(() => {
+      setAllChecklistItems(taskId, date, allItemIds, done);
+    });
+  }
+
   return (
     <div className="flex flex-col gap-5">
       {SLOT_ORDER.map((slot) => {
@@ -83,6 +99,7 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                         </button>
                       )}
                       <span className={`text-sm font-semibold ${it.done ? "text-emerald-700 line-through" : "text-zinc-900"}`}>{it.name}</span>
+                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">{it.zoneName}</span>
                       <span className="text-xs text-zinc-400">{it.timeMinutes} min</span>
                       {it.autoCovered && (
                         <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
@@ -115,26 +132,36 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                   </div>
                   {it.note && <p className="mt-1 text-xs italic text-zinc-500">{it.note}</p>}
                   {it.checklist.length > 0 && (
-                    <ul className="mt-2 flex flex-col gap-1 border-t border-zinc-100 pt-2">
-                      {it.checklist.map((c) => (
-                        <li key={c.id}>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleChecklist(it.taskId, c.id)}
-                            className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-xs hover:bg-zinc-50"
-                          >
-                            <span
-                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 ${
-                                c.done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
-                              }`}
+                    <div className="mt-2 flex flex-col gap-1 border-t border-zinc-100 pt-2">
+                      <div className="flex items-center justify-end gap-3 text-[11px] font-semibold">
+                        <button type="button" onClick={() => handleSetAllChecklist(it.taskId, true)} className="text-emerald-600 hover:text-emerald-800">
+                          Zaznacz wszystko
+                        </button>
+                        <button type="button" onClick={() => handleSetAllChecklist(it.taskId, false)} className="text-zinc-400 hover:text-zinc-600">
+                          Odznacz wszystko
+                        </button>
+                      </div>
+                      <ul className="flex flex-col gap-1">
+                        {it.checklist.map((c) => (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleChecklist(it.taskId, c.id)}
+                              className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-xs hover:bg-zinc-50"
                             >
-                              {c.done ? "✓" : ""}
-                            </span>
-                            <span className={c.done ? "text-zinc-400 line-through" : "text-zinc-700"}>{c.label}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                              <span
+                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 ${
+                                  c.done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
+                                }`}
+                              >
+                                {c.done ? "✓" : ""}
+                              </span>
+                              <span className={c.done ? "text-zinc-400 line-through" : "text-zinc-700"}>{c.label}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
               ))}

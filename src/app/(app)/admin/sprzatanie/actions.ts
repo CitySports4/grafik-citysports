@@ -38,7 +38,6 @@ export async function addTask(formData: FormData) {
   const time_minutes = parseNumber(formData.get("time_minutes"), 10);
   const frequency = String(formData.get("frequency") ?? "daily");
   const slot = String(formData.get("slot") ?? "otwarcie");
-  const requires_ladder = formData.get("requires_ladder") === "on";
   const day_constraint = String(formData.get("day_constraint") ?? "") || null;
   const note = String(formData.get("note") ?? "").trim() || null;
   const carry_pair_task_id = String(formData.get("carry_pair_task_id") ?? "") || null;
@@ -54,7 +53,6 @@ export async function addTask(formData: FormData) {
     time_minutes,
     frequency,
     slot,
-    requires_ladder,
     day_constraint,
     note,
     carry_pair_task_id,

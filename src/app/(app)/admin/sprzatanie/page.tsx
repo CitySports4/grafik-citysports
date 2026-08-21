@@ -81,11 +81,11 @@ export default async function CleaningConfigPage({
     supabase
       .from("cleaning_task")
       .select(
-        "id, zone_id, name, time_minutes, frequency, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+        "id, zone_id, name, time_minutes, frequency, slot, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
       )
       .order("sort_order"),
     supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
-    supabase.from("employee").select("id, name, color_hex, no_ladder").eq("active", true).order("name"),
+    supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
     supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
     supabase.from("cleaning_checklist_template").select("id, name").order("name"),
     supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
@@ -214,7 +214,6 @@ export default async function CleaningConfigPage({
                                   <span className="text-xs text-zinc-500">
                                     · {task.time_minutes} min · {FREQ_LABELS[task.frequency] ?? task.frequency} ·{" "}
                                     {SLOT_LABELS[task.slot]}
-                                    {task.requires_ladder ? " · drabina" : ""}
                                     {task.day_constraint ? ` · ${DAY_CONSTRAINT_LABELS[task.day_constraint]}` : ""}
                                   </span>
                                   {task.note && <div className="text-xs italic text-zinc-500">{task.note}</div>}
@@ -357,12 +356,6 @@ export default async function CleaningConfigPage({
                             <label className={LABEL}>Notatka (opcjonalnie)</label>
                             <input name="note" className={`${INPUT} min-w-[160px]`} placeholder="np. Przed pierwszymi zajęciami" />
                           </div>
-                          <div className="flex items-center gap-1.5 pb-1.5">
-                            <input type="checkbox" id={`ladder-${zone.id}`} name="requires_ladder" className="h-4 w-4" />
-                            <label htmlFor={`ladder-${zone.id}`} className="text-xs text-zinc-600">
-                              Drabina
-                            </label>
-                          </div>
                           <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
                             Dodaj zadanie
                           </SubmitButton>
@@ -451,7 +444,6 @@ export default async function CleaningConfigPage({
                 <span className="flex min-w-[110px] items-center gap-1.5 text-sm font-semibold text-zinc-900">
                   <ColorDot color={emp.color_hex} />
                   {emp.name}
-                  {emp.no_ladder && <span className="text-xs font-normal text-zinc-400">(bez drabiny)</span>}
                 </span>
                 <div className="flex flex-1 flex-wrap gap-2">
                   {(zones ?? []).map((zone) => (

@@ -10,7 +10,6 @@ export type CleaningTask = {
   time_minutes: number;
   frequency: CleaningFrequency;
   slot: CleaningSlot;
-  requires_ladder: boolean;
   active: boolean;
   day_constraint: "mon_fri" | "not_weekend" | null;
   note: string | null;
@@ -345,12 +344,10 @@ const DEFAULT_BUDGET_MINUTES = 60;
 // tyle samo minut co reszta, ale żeby nie przekraczać (albo nie schodzić
 // poniżej) tego, co dla niego ustawiono. Budżety są per pora dnia
 // (otwarcie/środek/zamknięcie/po zamknięciu), zgodnie z oryginalną
-// specyfikacją. Nie przenosi zadań na drabinie do osób z no_ladder, ani
-// zadań spoza kompetencji strefy danej osoby.
+// specyfikacją. Nie przenosi zadań spoza kompetencji strefy danej osoby.
 export function balanceSlotAssignments(
   resolved: ResolvedCleaningTask[],
   competencyByEmployee: Map<string, Set<string>>,
-  noLadderByEmployee: Set<string>,
   budgetBySlotAndEmployee: Map<string, number>
 ): ResolvedCleaningTask[] {
   const bySlot = new Map<CleaningSlot, ResolvedCleaningTask[]>();
@@ -391,7 +388,6 @@ export function balanceSlotAssignments(
           (w) =>
             w.employeeId === highPerson &&
             !w.autoCovered &&
-            !(w.task.requires_ladder && noLadderByEmployee.has(lowPerson)) &&
             (competencyByEmployee.get(lowPerson)?.has(w.task.zone_id) ?? false)
         )
         .sort(
