@@ -105,7 +105,7 @@ export async function getCleaningDayItems(
       .lt("date", dateKey)
       .not("completed_at", "is", null)
       .not("employee_id", "is", null),
-    supabase.from("cleaning_zone").select("id, name"),
+    supabase.from("cleaning_zone").select("id, name, sort_order"),
   ]);
 
   const budgetBySlotAndEmployee = new Map((timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}`, b.budget_minutes]));
@@ -139,6 +139,7 @@ export async function getCleaningDayItems(
 
   const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
   const zoneNameById = new Map((zones ?? []).map((z) => [z.id, z.name]));
+  const zoneSortById = new Map((zones ?? []).map((z) => [z.id, z.sort_order]));
   const competencyByEmployee = new Map<string, Set<string>>();
   for (const ez of employeeZones ?? []) {
     if (!competencyByEmployee.has(ez.employee_id)) competencyByEmployee.set(ez.employee_id, new Set());
@@ -249,6 +250,14 @@ export async function getCleaningDayItems(
     resolved.push({ task: g.task, employeeId: null, autoCovered: false });
   }
   const coverageGapIds = new Set(coverageGaps.map((g) => g.task.id));
+
+  // Kolejność w obrębie każdego slotu odzwierciedla fizyczną bliskość stref
+  // w klubie (patrz cleaning_zone.sort_order, migracja 0024) — osoba
+  // sprzątająca robi zadania w sąsiadujących miejscach po kolei, zamiast
+  // skakać między odległymi strefami. Sortowanie samego `resolved` (nie
+  // dopiero `items`), bo CleaningDayList grupuje po slocie zachowując
+  // kolejność z tej tablicy.
+  resolved.sort((a, b) => (zoneSortById.get(a.task.zone_id) ?? 0) - (zoneSortById.get(b.task.zone_id) ?? 0));
 
   const taskIds = resolved.map((r) => r.task.id);
   const { data: completions } =
