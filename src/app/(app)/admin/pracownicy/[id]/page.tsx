@@ -351,10 +351,6 @@ export default async function EmployeeDetailPage({
           {[...currentRoles].map((r) => (
             <input key={String(r)} type="hidden" name="role" value={String(r)} />
           ))}
-          <label className="flex items-center gap-2 text-sm text-zinc-900">
-            <input type="checkbox" name="no_ladder" defaultChecked={employee.no_ladder} className="h-4 w-4" />
-            Nie może pracować na drabinie (zadania z drabiną nigdy nie trafią do tej osoby)
-          </label>
           <SubmitButton className="mt-2 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50">
             Zapisz
           </SubmitButton>

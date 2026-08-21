@@ -42,6 +42,32 @@ export async function toggleChecklistItem(taskId: string, date: string, itemId: 
   revalidatePath("/zadania");
 }
 
+// Zaznacz/odznacz WSZYSTKIE punkty checklisty naraz — rozbudowane checklisty
+// (np. 13 punktów sanitariatów) klikane pojedynczo zajmowały więcej czasu niż
+// samo sprzątanie. `done=false` czyści całą checklistę (i cofa "zrobione").
+export async function setAllChecklistItems(taskId: string, date: string, allItemIds: string[], done: boolean) {
+  const employee = await requireEmployee();
+  const supabase = createServerSupabaseClient();
+
+  const next: ChecklistDoneEntry[] = done
+    ? allItemIds.map((item_id) => ({ item_id, employee_id: employee.id, done_at: new Date().toISOString() }))
+    : [];
+
+  const { error } = await supabase.from("cleaning_completion").upsert(
+    {
+      task_id: taskId,
+      date,
+      checklist_done: next,
+      employee_id: employee.id,
+      completed_at: done && allItemIds.length > 0 ? new Date().toISOString() : null,
+    },
+    { onConflict: "task_id,date" }
+  );
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/sprzatanie");
+  revalidatePath("/zadania");
+}
+
 export async function toggleTaskDone(taskId: string, date: string) {
   const employee = await requireEmployee();
   const supabase = createServerSupabaseClient();

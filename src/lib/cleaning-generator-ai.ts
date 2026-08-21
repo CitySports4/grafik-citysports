@@ -54,7 +54,7 @@ async function gatherDecisions(dateKeys: string[]): Promise<Decision[]> {
 
   const { data: tasks } = await supabase
     .from("cleaning_task")
-    .select("id, zone_id, name, time_minutes, frequency, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id")
+    .select("id, zone_id, name, time_minutes, frequency, slot, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id")
     .eq("active", true)
     .neq("frequency", "daily");
   const nonDailyTasks = (tasks ?? []) as CleaningTask[];

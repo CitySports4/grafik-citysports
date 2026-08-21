@@ -17,6 +17,7 @@ import {
 export type CleaningDayItem = {
   taskId: string;
   name: string;
+  zoneName: string;
   timeMinutes: number;
   slot: CleaningSlot;
   note: string | null;
@@ -78,22 +79,23 @@ export async function getCleaningDayItems(
     { data: employeeZones },
     { data: timeBudgets },
     { data: recentCompletions },
+    { data: zones },
   ] = await Promise.all([
     windowDaysQuery,
     supabase
       .from("cleaning_task")
       .select(
-        "id, zone_id, name, time_minutes, frequency, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+        "id, zone_id, name, time_minutes, frequency, slot, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
       )
       .eq("active", true),
     supabase
       .from("cleaning_task")
-      .select("id, zone_id, name, time_minutes, frequency, slot, requires_ladder, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id")
+      .select("id, zone_id, name, time_minutes, frequency, slot, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id")
       .eq("active", true)
       .neq("frequency", "daily"),
     supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
     supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
-    supabase.from("employee").select("id, name, color_hex, no_ladder"),
+    supabase.from("employee").select("id, name, color_hex"),
     supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
     supabase.from("cleaning_time_budget").select("employee_id, slot, budget_minutes"),
     supabase
@@ -103,6 +105,7 @@ export async function getCleaningDayItems(
       .lt("date", dateKey)
       .not("completed_at", "is", null)
       .not("employee_id", "is", null),
+    supabase.from("cleaning_zone").select("id, name"),
   ]);
 
   const budgetBySlotAndEmployee = new Map((timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}`, b.budget_minutes]));
@@ -135,7 +138,7 @@ export async function getCleaningDayItems(
   const todayPublished = (windowDays ?? []).some((wd) => wd.date === dateKey);
 
   const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
-  const noLadderByEmployee = new Set((employees ?? []).filter((e) => e.no_ladder).map((e) => e.id));
+  const zoneNameById = new Map((zones ?? []).map((z) => [z.id, z.name]));
   const competencyByEmployee = new Map<string, Set<string>>();
   for (const ez of employeeZones ?? []) {
     if (!competencyByEmployee.has(ez.employee_id)) competencyByEmployee.set(ez.employee_id, new Set());
@@ -199,7 +202,7 @@ export async function getCleaningDayItems(
     (carryCompletions ?? []).filter((c) => c.completed_at).map((c) => `${c.task_id}|${c.date}`)
   );
   resolved = resolveCarryOverrides(resolved, dateKey, completedTaskDateKeys);
-  resolved = balanceSlotAssignments(resolved, competencyByEmployee, noLadderByEmployee, budgetBySlotAndEmployee);
+  resolved = balanceSlotAssignments(resolved, competencyByEmployee, budgetBySlotAndEmployee);
 
   const nonDailyIds = (allActiveNonDaily ?? []).map((t) => t.id);
   const { data: historyCompletions } =
@@ -257,6 +260,7 @@ export async function getCleaningDayItems(
   const items: CleaningDayItem[] = resolved.map((r) => ({
     taskId: r.task.id,
     name: r.task.name,
+    zoneName: zoneNameById.get(r.task.zone_id) ?? "?",
     timeMinutes: r.task.time_minutes,
     slot: r.task.slot,
     note: r.task.note,
