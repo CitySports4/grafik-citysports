@@ -283,7 +283,16 @@ export function ScheduleTable({
     setBusy(true);
     setError(null);
     try {
-      await publishMonth(scheduleMonthId);
+      const result = await publishMonth(scheduleMonthId);
+      const message =
+        result.notified === 0 && result.notifyFailed === 0
+          ? "Grafik opublikowany."
+          : result.notifyFailed === 0
+            ? `Grafik opublikowany. Powiadomienie WhatsApp wysłane do ${result.notified} ${result.notified === 1 ? "osoby" : "osób"}.`
+            : `Grafik opublikowany. Powiadomienie WhatsApp: ${result.notified} wysłane, ${result.notifyFailed} nieudane` +
+              (result.notifyError ? ` (${result.notifyError})` : "") +
+              ".";
+      window.sessionStorage.setItem("grafik_generate_message", message);
       window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Coś poszło nie tak.");
