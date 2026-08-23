@@ -7,6 +7,8 @@ import { dbErrorMessage } from "@/lib/db-error";
 import { generateMonthStructure } from "@/lib/schedule-generator";
 import { runAiDraftGenerator } from "@/lib/schedule-generator-ai";
 import { buildAvailabilityMap, applyPlannedAbsences, isHardUnavailable, type HardConstraint } from "@/lib/unavailability";
+import { monthLabel } from "@/lib/schedule-month";
+import { broadcastWhatsAppTemplate, DEFAULT_GRAFIK_TEMPLATE_NAME } from "@/lib/whatsapp";
 
 // Poniższe akcje wywoływane są bezpośrednio z klienta (nie przez
 // `<form action={...}>`) i celowo NIE wołają revalidatePath: komponent
@@ -259,7 +261,16 @@ export async function deleteEvent(eventId: string) {
   if (error) throw new Error(dbErrorMessage(error));
 }
 
-export async function publishMonth(scheduleMonthId: string) {
+// Po publikacji rozsyła powiadomienie WhatsApp do wszystkich aktywnych
+// pracowników — patrz src/lib/whatsapp.ts po wymaganą konfigurację
+// (WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID i zatwierdzony w Meta
+// szablon). Brak konfiguracji albo błąd wysyłki NIE cofa publikacji —
+// grafik ma zostać opublikowany niezależnie od tego, czy powiadomienie
+// poszło; wynik wraca do admina, żeby wiedział, czy trzeba dopilnować
+// ręcznie.
+export async function publishMonth(
+  scheduleMonthId: string
+): Promise<{ notified: number; notifyFailed: number; notifyError?: string }> {
   await requireAdmin();
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
@@ -267,6 +278,28 @@ export async function publishMonth(scheduleMonthId: string) {
     .update({ status: "published", published_at: new Date().toISOString() })
     .eq("id", scheduleMonthId);
   if (error) throw new Error(dbErrorMessage(error));
+
+  const { data: monthRow } = await supabase.from("schedule_month").select("year, month").eq("id", scheduleMonthId).single();
+  const { data: employees } = await supabase.from("employee").select("phone").eq("active", true);
+  const phones = (employees ?? []).map((e) => e.phone).filter((p): p is string => Boolean(p));
+
+  if (phones.length === 0) {
+    return { notified: 0, notifyFailed: 0, notifyError: "Brak aktywnych pracowników z numerem telefonu." };
+  }
+
+  const monthText = monthRow ? `${monthLabel(monthRow.month)} ${monthRow.year}` : "";
+  const templateName = process.env.WHATSAPP_TEMPLATE_GRAFIK_OPUBLIKOWANY || DEFAULT_GRAFIK_TEMPLATE_NAME;
+
+  try {
+    const { sent, failed } = await broadcastWhatsAppTemplate(phones, templateName, monthText ? [monthText] : []);
+    return {
+      notified: sent,
+      notifyFailed: failed.length,
+      notifyError: failed[0]?.error,
+    };
+  } catch (err) {
+    return { notified: 0, notifyFailed: phones.length, notifyError: err instanceof Error ? err.message : "Nieznany błąd." };
+  }
 }
 
 export async function unpublishMonth(scheduleMonthId: string) {
