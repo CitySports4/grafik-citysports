@@ -40,6 +40,13 @@ export default async function MyGrafikPage({
   const month = Number(params.month) || fallback.month;
   const today = toDateKey(new Date());
 
+  // Wpisywanie godzin (i wszystko, co się z tym wiąże — przycinanie widoku
+  // do okna edycji, link do pełnej historii, podsumowanie wpisane/
+  // zaplanowane) dotyczy tylko roli Recepcja — patrz admin/wynagrodzenia,
+  // jedyne miejsce, które w ogóle rozlicza godziny godzinowo. Kto tej roli
+  // nie ma (np. szef na stałej pensji), widzi zwykły, pełny grafik.
+  const tracksHours = employee.roles.includes("recepcja");
+
   const scheduleMonth = await findScheduleMonth(year, month);
   const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
   const nextLink = month === 12 ? `?year=${year + 1}&month=1` : `?year=${year}&month=${month + 1}`;
@@ -50,9 +57,11 @@ export default async function MyGrafikPage({
         Grafik — {monthLabel(month)} {year}
       </h1>
       <div className="flex items-center gap-2 text-sm">
-        <Link href="/godziny" className="rounded-lg bg-zinc-100 px-2.5 py-1 font-semibold text-zinc-700 hover:bg-zinc-200">
-          Zobacz całość →
-        </Link>
+        {tracksHours && (
+          <Link href="/godziny" className="rounded-lg bg-zinc-100 px-2.5 py-1 font-semibold text-zinc-700 hover:bg-zinc-200">
+            Zobacz całość →
+          </Link>
+        )}
         <Link href={`/grafik${prevLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
           ← poprzedni
         </Link>
@@ -149,7 +158,7 @@ export default async function MyGrafikPage({
   // miesiąca (days), nie z tej przyciętej listy — to tylko kwestia tego, co
   // się renderuje, nie co się liczy do podsumowania.
   const cutoffKey = toDateKey(new Date(new Date().getTime() - EDIT_WINDOW_DAYS * 86400000));
-  const visibleDays = (days ?? []).filter((d) => d.date >= cutoffKey);
+  const visibleDays = tracksHours ? (days ?? []).filter((d) => d.date >= cutoffKey) : days ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -157,14 +166,18 @@ export default async function MyGrafikPage({
 
       <Card className="flex items-center justify-between">
         <span className="text-sm text-zinc-600">Twoje godziny w tym miesiącu</span>
-        <span className="text-lg font-bold text-zinc-900">
-          {myLoggedHours}h <span className="text-sm font-normal text-zinc-400">wpisanych</span>
-          {" / "}
-          {myHours}h <span className="text-sm font-normal text-zinc-400">zaplanowanych</span>
-        </span>
+        {tracksHours ? (
+          <span className="text-lg font-bold text-zinc-900">
+            {myLoggedHours}h <span className="text-sm font-normal text-zinc-400">wpisanych</span>
+            {" / "}
+            {myHours}h <span className="text-sm font-normal text-zinc-400">zaplanowanych</span>
+          </span>
+        ) : (
+          <span className="text-lg font-bold text-zinc-900">{myHours}h</span>
+        )}
       </Card>
 
-      {visibleDays.length === 0 && (
+      {tracksHours && visibleDays.length === 0 && (
         <p className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
           Dni z tego miesiąca są już starsze niż {EDIT_WINDOW_DAYS} dni — nic tu nie zmienisz. Pełną historię widać w{" "}
           <Link href="/godziny" className="font-semibold text-brand-orange hover:underline">
@@ -238,6 +251,7 @@ export default async function MyGrafikPage({
                 </div>
               )}
               {isMyDay &&
+                tracksHours &&
                 (() => {
                   const dayEntries = timeEntriesByDate.get(day.date) ?? [];
                   const entriesLabel = dayEntries.map((e) => `${e.actualStart}–${e.actualEnd}`).join(", ");

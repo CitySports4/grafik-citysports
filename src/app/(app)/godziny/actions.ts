@@ -38,6 +38,13 @@ async function assertDiscrepancyExplained(employeeId: string, date: string, actu
 export async function addTimeEntry(date: string, actualStart: string, actualEnd: string, note: string): Promise<{ id: string }> {
   const employee = await requireEmployee();
 
+  // Wpisywanie godzin dotyczy rozliczenia godzinowego recepcji — kto tej
+  // roli nie ma (np. szef na stałej pensji), nie powinien tego w ogóle
+  // zaczynać, nawet gdyby ominął ukrycie tego w UI.
+  if (!employee.roles.includes("recepcja")) {
+    throw new Error("Wpisywanie godzin dotyczy tylko roli Recepcja.");
+  }
+
   if (!isWithinEditWindow(date)) {
     throw new Error("Można wpisywać/edytować godziny tylko do 7 dni po danym dniu.");
   }
