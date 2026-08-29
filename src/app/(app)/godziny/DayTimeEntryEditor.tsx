@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { requiresDiscrepancyNote, DISCREPANCY_TOLERANCE_MIN } from "@/lib/time-entry-window";
 
 export type TimeEntryRow = { id: string; actualStart: string; actualEnd: string; note: string };
 
@@ -13,15 +14,28 @@ const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2 py-1.5 text
 // dostaje prawdziwe id z bazy i od tej pory zapisy idą przez updateAction.
 // Współdzielone przez /godziny (lista miesiąca), /admin/godziny (dowolny
 // pracownik, bez okna edycji) i /grafik (wpis "przy okazji" swojej zmiany).
+//
+// `scheduled` — godziny zaplanowanej zmiany tego dnia (do porównania z
+// wpisanymi) — gdy różnica przekracza DISCREPANCY_TOLERANCE_MIN (albo w
+// ogóle nie ma tu zmiany w grafiku), notatka staje się WYMAGANA — to samo
+// sprawdza serwer (godziny/actions.ts), tu tylko dla natychmiastowej
+// informacji zamiast dowiadywania się dopiero po nieudanym zapisie.
+// Zostaw `undefined` (panel admina), żeby CAŁKOWICIE wyłączyć tę walidację —
+// wymóg notatki dotyczy pracownika tłumaczącego SIEBIE, nie admina
+// poprawiającego cudzy wpis (dlatego to undefined, nie pusta tablica: pusta
+// tablica oznacza realny "brak zmiany tego dnia", co SAMO w sobie wymaga
+// wyjaśnienia).
 export function DayTimeEntryEditor({
   dateKey,
   initialEntries,
+  scheduled,
   addAction,
   updateAction,
   deleteAction,
 }: {
   dateKey: string;
   initialEntries: TimeEntryRow[];
+  scheduled?: { start_time: string; end_time: string }[];
   addAction: (date: string, actualStart: string, actualEnd: string, note: string) => Promise<{ id: string }>;
   updateAction: (id: string, actualStart: string, actualEnd: string, note: string) => Promise<void>;
   deleteAction: (id: string) => Promise<void>;
@@ -40,7 +54,20 @@ export function DayTimeEntryEditor({
     setSavedFlash((prev) => ({ ...prev, [id]: false }));
   }
 
+  function noteRequiredFor(row: TimeEntryRow): boolean {
+    if (scheduled === undefined) return false;
+    if (!row.actualStart || !row.actualEnd) return false;
+    return requiresDiscrepancyNote(row.actualStart, row.actualEnd, scheduled);
+  }
+
   async function handleSave(row: TimeEntryRow) {
+    if (noteRequiredFor(row) && !row.note.trim()) {
+      setError((prev) => ({
+        ...prev,
+        [row.id]: `Godziny odbiegają od grafiku o więcej niż ${DISCREPANCY_TOLERANCE_MIN} min — dodaj notatkę z wyjaśnieniem.`,
+      }));
+      return;
+    }
     setPending(row.id);
     setError((prev) => ({ ...prev, [row.id]: "" }));
     try {
@@ -78,50 +105,59 @@ export function DayTimeEntryEditor({
 
   return (
     <div className="flex flex-col gap-2">
-      {rows.map((row) => (
-        <div key={row.id} className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-zinc-600">Od</label>
-            <input
-              type="time"
-              value={row.actualStart}
-              onChange={(e) => updateField(row.id, "actualStart", e.target.value)}
-              className={`${INPUT} w-[110px]`}
-            />
+      {rows.map((row) => {
+        const noteRequired = noteRequiredFor(row);
+        return (
+          <div key={row.id} className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-zinc-600">Od</label>
+              <input
+                type="time"
+                value={row.actualStart}
+                onChange={(e) => updateField(row.id, "actualStart", e.target.value)}
+                className={`${INPUT} w-[110px]`}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-zinc-600">Do</label>
+              <input
+                type="time"
+                value={row.actualEnd}
+                onChange={(e) => updateField(row.id, "actualEnd", e.target.value)}
+                className={`${INPUT} w-[110px]`}
+              />
+            </div>
+            <div className="flex min-w-[160px] flex-1 flex-col gap-1">
+              <label className={`text-xs font-semibold ${noteRequired && !row.note.trim() ? "text-red-600" : "text-zinc-600"}`}>
+                Notatka {noteRequired ? "(wymagana — odbiega od grafiku)" : "(opcjonalnie)"}
+              </label>
+              <input
+                value={row.note}
+                onChange={(e) => updateField(row.id, "note", e.target.value)}
+                className={`${INPUT} ${noteRequired && !row.note.trim() ? "border-red-400" : ""}`}
+              />
+            </div>
+            <button
+              type="button"
+              disabled={pending === row.id}
+              onClick={() => handleSave(row)}
+              className="rounded-lg bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+            >
+              {pending === row.id ? "Zapisywanie…" : "Zapisz"}
+            </button>
+            <button
+              type="button"
+              disabled={pending === row.id}
+              onClick={() => handleDelete(row)}
+              className="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              Usuń
+            </button>
+            {savedFlash[row.id] && <span className="text-xs font-semibold text-emerald-600">✓ Zapisano</span>}
+            {error[row.id] && <span className="text-xs font-semibold text-red-600">{error[row.id]}</span>}
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-zinc-600">Do</label>
-            <input
-              type="time"
-              value={row.actualEnd}
-              onChange={(e) => updateField(row.id, "actualEnd", e.target.value)}
-              className={`${INPUT} w-[110px]`}
-            />
-          </div>
-          <div className="flex min-w-[120px] flex-1 flex-col gap-1">
-            <label className="text-xs font-semibold text-zinc-600">Notatka (opcjonalnie)</label>
-            <input value={row.note} onChange={(e) => updateField(row.id, "note", e.target.value)} className={INPUT} />
-          </div>
-          <button
-            type="button"
-            disabled={pending === row.id}
-            onClick={() => handleSave(row)}
-            className="rounded-lg bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
-          >
-            {pending === row.id ? "Zapisywanie…" : "Zapisz"}
-          </button>
-          <button
-            type="button"
-            disabled={pending === row.id}
-            onClick={() => handleDelete(row)}
-            className="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            Usuń
-          </button>
-          {savedFlash[row.id] && <span className="text-xs font-semibold text-emerald-600">✓ Zapisano</span>}
-          {error[row.id] && <span className="text-xs font-semibold text-red-600">{error[row.id]}</span>}
-        </div>
-      ))}
+        );
+      })}
       <button type="button" onClick={addBlankRow} className="self-start text-xs font-semibold text-brand-orange hover:underline">
         + Dodaj zmianę{rows.length > 0 ? " (np. po przerwie)" : ""}
       </button>

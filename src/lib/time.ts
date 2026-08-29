@@ -20,6 +20,22 @@ export function overlapMinutes(aStart: string, aEnd: string, bStart: string, bEn
   return Math.max(0, end - start);
 }
 
+// Godziny wydarzenia (liga, sprzątanie, spotkanie, warsztaty...) w części
+// NIENAKŁADAJĄCEJ się z żadną zmianą tej osoby tego dnia — np. sobotnie
+// sprzątanie 8–9 gdy ktoś nie ma tego dnia zmiany liczy się w całości jako
+// dodatkowe godziny, ale niedzielna liga 9–12 gdy dana osoba i tak ma zmianę
+// 9–14:30 nie powinna liczyć się DRUGI raz (te godziny już są w jej zmianie).
+export function extraEventHours(
+  eventStart: string,
+  eventEnd: string,
+  shiftsToday: { start_time: string; end_time: string }[]
+): number {
+  const totalMinutes = Math.max(0, timeToMinutes(eventEnd) - timeToMinutes(eventStart));
+  const overlapMin = shiftsToday.reduce((sum, s) => sum + overlapMinutes(eventStart, eventEnd, s.start_time, s.end_time), 0);
+  const extraMinutes = Math.max(0, totalMinutes - overlapMin);
+  return Math.round((extraMinutes / 60) * 100) / 100;
+}
+
 // Godziny jednego pracownika w jednym dniu, liczone z sumy przedziałów
 // czasowych PO POŁĄCZENIU nakładających się zmian (żeby np. zmiana 14–21 i
 // 17–22 przypisane tej samej osobie nie liczyły się podwójnie za 17–21), a

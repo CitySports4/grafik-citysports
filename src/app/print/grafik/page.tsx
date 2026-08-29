@@ -37,6 +37,7 @@ const EVENT_FALLBACK_COLORS: Record<string, string> = {
   liga_deblowa: "#b91c1c",
   sprzatanie: "#7c3aed",
   warsztaty: "#0891b2",
+  spotkanie: "#2563eb",
   custom: "#db2777",
 };
 

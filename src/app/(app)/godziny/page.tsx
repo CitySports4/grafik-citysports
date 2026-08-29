@@ -91,6 +91,7 @@ export default async function GodzinyPage({
               scheduled: (scheduledByDate.get(dateKey) ?? [])
                 .map((s) => `${formatHm(s.start_time)}–${formatHm(s.end_time)}`)
                 .join(", "),
+              scheduledRaw: scheduledByDate.get(dateKey) ?? [],
               editable: isWithinEditWindow(dateKey),
               entries: (entriesByDate.get(dateKey) ?? []).map((e) => ({
                 id: e.id,

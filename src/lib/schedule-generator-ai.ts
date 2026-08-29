@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { getAnthropicClient } from "@/lib/ai";
-import { hoursBetween, timeToMinutes } from "@/lib/time";
+import { hoursBetween, timeToMinutes, extraEventHours } from "@/lib/time";
 import { mondayOfWeek, toDateKey } from "@/lib/schedule-month";
 import { buildAvailabilityMap, applyPlannedAbsences, isHardUnavailable, type AvailabilityMap, type HardConstraint } from "@/lib/unavailability";
 import { consecutiveDaysBefore, tooCloseForDoubleShift, type Employee } from "@/lib/schedule-generator";
@@ -121,14 +121,26 @@ async function gatherContext(scheduleMonthId: string) {
     classByEmployee.get(c.employee_id)!.push({ weekday: c.weekday, start_time: c.start_time, end_time: c.end_time });
   }
 
-  // Godziny już "na koncie" z wydarzeń (zajęcia grupowe itd.) — ta sama
-  // logika co w deterministycznym generatorze.
+  // Godziny już "na koncie" z wydarzeń (zajęcia grupowe itd.) — pomijając
+  // część, która i tak pokrywa się z już istniejącą zmianą tej osoby tego
+  // dnia (np. liga w godzinach jej zmiany), żeby nie liczyć jej podwójnie i
+  // nie zawyżać sztucznie, ile jeszcze brakuje jej do celu.
   const hoursAssigned = new Map<string, number>((employees ?? []).map((e) => [e.id, 0]));
+  const existingShiftsByEmployeeDay = new Map<string, { start_time: string; end_time: string }[]>();
+  for (const day of days ?? []) {
+    for (const s of day.schedule_shift ?? []) {
+      if (!s.employee_id) continue;
+      const key = `${s.employee_id}|${day.date}`;
+      if (!existingShiftsByEmployeeDay.has(key)) existingShiftsByEmployeeDay.set(key, []);
+      existingShiftsByEmployeeDay.get(key)!.push({ start_time: s.start_time, end_time: s.end_time });
+    }
+  }
   for (const day of days ?? []) {
     for (const ev of day.schedule_event ?? []) {
       if (ev.end_time) {
         for (const empId of ev.participant_employee_ids ?? []) {
-          hoursAssigned.set(empId, (hoursAssigned.get(empId) ?? 0) + hoursBetween(ev.start_time ?? "00:00", ev.end_time));
+          const shiftsToday = existingShiftsByEmployeeDay.get(`${empId}|${day.date}`) ?? [];
+          hoursAssigned.set(empId, (hoursAssigned.get(empId) ?? 0) + extraEventHours(ev.start_time ?? "00:00", ev.end_time, shiftsToday));
         }
       }
     }

@@ -2,13 +2,12 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { hoursBetween, timeToMinutes, formatHm } from "@/lib/time";
+import { DISCREPANCY_TOLERANCE_MIN } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
 import { BackLink } from "@/components/BackLink";
 import { InstructorCalculator } from "./InstructorCalculator";
-
-const DISCREPANCY_TOLERANCE_MIN = 30;
 
 export default async function WynagrodzeniaPage({
   searchParams,
