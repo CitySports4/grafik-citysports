@@ -217,6 +217,10 @@ export async function assignEventParticipantsToShifts(
     .gte("end_date", day.date);
   applyPlannedAbsences(availabilityMap, plannedAbsences ?? []);
 
+  // Wybór, kto idzie na którą zmianę, zależy od poprzednich wyborów (pula
+  // `remaining` się kurczy) — to musi zostać zwykłą, synchroniczną pętlą. Ale
+  // sam zapis do bazy dla różnych zmian jest już od siebie niezależny, więc
+  // zbieramy wszystkie decyzje najpierw, a zapisujemy je równolegle.
   const remaining = [...participantIds];
   const assignments: { shiftId: string; employeeId: string }[] = [];
   for (const shift of shifts ?? []) {
@@ -226,9 +230,14 @@ export async function assignEventParticipantsToShifts(
     );
     if (pickIndex === -1) continue;
     const employeeId = remaining.splice(pickIndex, 1)[0];
-    await supabase.from("schedule_shift").update({ employee_id: employeeId, is_closed: false, manually_locked: true }).eq("id", shift.id);
     assignments.push({ shiftId: shift.id, employeeId });
   }
+
+  await Promise.all(
+    assignments.map((a) =>
+      supabase.from("schedule_shift").update({ employee_id: a.employeeId, is_closed: false, manually_locked: true }).eq("id", a.shiftId)
+    )
+  );
 
   return assignments;
 }
