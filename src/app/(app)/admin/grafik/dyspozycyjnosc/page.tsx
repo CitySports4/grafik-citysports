@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { getOrCreateScheduleMonth, nextMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { buildAvailabilityMap, applyPlannedAbsences, isHardUnavailable, type AvailabilityMap, type HardConstraint } from "@/lib/unavailability";
+import { formatHm } from "@/lib/time";
 import { Card } from "@/components/Card";
 import { BackLink } from "@/components/BackLink";
 import { ColorDot } from "@/components/ColorDot";
@@ -18,6 +19,14 @@ type DayLevel = "whole" | "partial" | "available" | "none";
 // żeby grafik na dany miesiąc był już wygenerowany — liczy się z domyślnego
 // szablonu zmian (shift_template), więc admin może to sprawdzić, zanim
 // jeszcze zacznie układać grafik.
+//
+// Pierwsza wersja pokazywała gęstą siatkę (pracownik × każdy dzień miesiąca,
+// kolorowy kwadracik na komórkę) — zbyt dużo naraz, trudne do ogarnięcia.
+// Skoro większość dni to i tak "dostępny" (dyspozycyjność zaznacza się
+// WYJĄTKI, patrz komentarz w AvailabilityCalendar), sensowniejsze jest
+// pokazanie tylko tych wyjątków jako czytelnego tekstu — kolejne dni "cały
+// dzień niedostępny" zwinięte w jeden zakres dat, zamiast osobnej komórki na
+// każdy z nich.
 function dayStatus(
   employeeId: string,
   dateKey: string,
@@ -41,12 +50,16 @@ function dayStatus(
   return { level: "partial", unavailableSlots };
 }
 
-const LEVEL_CLASSES: Record<DayLevel, string> = {
-  whole: "bg-red-500 text-white",
-  partial: "bg-amber-400 text-white",
-  available: "border border-zinc-200 bg-white text-zinc-300",
-  none: "bg-zinc-100 text-zinc-300",
-};
+function fmtDate(dateKey: string): string {
+  return new Date(dateKey + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+}
+
+// "1–8 wrz" dla zakresu kilku dni z rzędu, albo samo "17 wrz" dla jednego dnia.
+function formatRange(startKey: string, endKey: string): string {
+  if (startKey === endKey) return fmtDate(startKey);
+  const startDay = new Date(startKey + "T00:00:00").getDate();
+  return `${startDay}–${fmtDate(endKey)}`;
+}
 
 export default async function AdminAvailabilityOverviewPage({
   searchParams,
@@ -104,6 +117,43 @@ export default async function AdminAvailabilityOverviewPage({
     .gte("end_date", dateKeys[0]);
   applyPlannedAbsences(availabilityMap, plannedAbsences ?? []);
 
+  // Dla każdego pracownika: dni "cały dzień niedostępny" zwinięte w zakresy
+  // kolejnych dat, dni "częściowo niedostępny" osobno (z konkretną zmianą,
+  // której dotyczą) — to jedyne dwie rzeczy warte pokazania, reszta miesiąca
+  // to milcząco "dostępny", więc nie ma po co jej wymieniać.
+  const rows = (employees ?? []).map((emp) => {
+    const submission = submissionByEmployee.get(emp.id);
+    const submitted = submission?.status === "submitted" || submission?.status === "locked";
+    const wholeRanges: { start: string; end: string }[] = [];
+    const partialDays: { date: string; slots: ShiftSlot[] }[] = [];
+    let runStart: string | null = null;
+    let runEnd: string | null = null;
+
+    for (const d of dates) {
+      const dateKey = toDateKey(d);
+      const weekday = d.getDay();
+      const slots = shiftsByWeekday.get(weekday) ?? [];
+      const { level, unavailableSlots } = dayStatus(emp.id, dateKey, weekday, slots, availabilityMap, hardConstraintsByEmployee);
+
+      if (level === "whole") {
+        if (runStart === null) runStart = dateKey;
+        runEnd = dateKey;
+        continue;
+      }
+      if (runStart !== null) {
+        wholeRanges.push({ start: runStart, end: runEnd! });
+        runStart = null;
+        runEnd = null;
+      }
+      if (level === "partial") {
+        partialDays.push({ date: dateKey, slots: slots.filter((s) => unavailableSlots.includes(s.slot_index)) });
+      }
+    }
+    if (runStart !== null) wholeRanges.push({ start: runStart, end: runEnd! });
+
+    return { emp, submitted, wholeRanges, partialDays };
+  });
+
   const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
   const nextLink = month === 12 ? `?year=${year + 1}&month=1` : `?year=${year}&month=${month + 1}`;
 
@@ -136,92 +186,56 @@ export default async function AdminAvailabilityOverviewPage({
       </div>
 
       <Card>
-        {(employees?.length ?? 0) === 0 ? (
+        {rows.length === 0 ? (
           <p className="text-sm text-zinc-400">Brak aktywnych pracowników.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="border-separate border-spacing-1">
-              <thead>
-                <tr>
-                  <th className="sticky left-0 z-10 bg-white px-2 text-left text-xs font-semibold text-zinc-500">Pracownik</th>
-                  {dates.map((d) => (
-                    <th key={toDateKey(d)} className="w-8 px-0 text-center text-[10px] font-semibold text-zinc-400">
-                      {d.getDate()}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(employees ?? []).map((emp) => {
-                  const submission = submissionByEmployee.get(emp.id);
-                  const submitted = submission?.status === "submitted" || submission?.status === "locked";
-                  return (
-                    <tr key={emp.id}>
-                      <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-2 py-1">
-                        <div className="flex items-center gap-1.5">
-                          <ColorDot color={emp.color_hex} />
-                          <span className="text-sm font-semibold text-zinc-800">{emp.name}</span>
-                          {submitted ? (
-                            <span className="text-xs text-emerald-600" title="Zgłoszono dyspozycyjność na ten miesiąc">
-                              ✓
-                            </span>
-                          ) : (
-                            <span
-                              className="cursor-help rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700"
-                              title="Nie zgłosił(a) jeszcze dyspozycyjności na ten miesiąc"
-                            >
-                              brak zgłoszenia
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      {dates.map((d) => {
-                        const dateKey = toDateKey(d);
-                        const weekday = d.getDay();
-                        const slots = shiftsByWeekday.get(weekday) ?? [];
-                        const { level, unavailableSlots } = dayStatus(emp.id, dateKey, weekday, slots, availabilityMap, hardConstraintsByEmployee);
-                        const title =
-                          level === "whole"
-                            ? "Cały dzień niedostępny/a"
-                            : level === "partial"
-                              ? `Niedostępny/a na ${unavailableSlots.length}/${slots.length} zmian tego dnia`
-                              : level === "available"
-                                ? "Dostępny/a"
-                                : "Brak zmian tego dnia w szablonie";
-                        return (
-                          <td key={dateKey} className="p-0 text-center">
-                            <div
-                              title={title}
-                              className={`mx-auto flex h-7 w-7 cursor-help items-center justify-center rounded-md text-[10px] font-bold ${LEVEL_CLASSES[level]}`}
-                            >
-                              {level === "whole" ? "✕" : level === "partial" ? "½" : ""}
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-3">
+            {rows.map(({ emp, submitted, wholeRanges, partialDays }) => (
+              <div key={emp.id} className="rounded-xl border border-zinc-200 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <ColorDot color={emp.color_hex} />
+                  <span className="font-semibold text-zinc-900">{emp.name}</span>
+                  {submitted ? (
+                    <span className="text-xs text-emerald-600">✓ zgłoszono</span>
+                  ) : (
+                    <span
+                      className="cursor-help rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700"
+                      title="Nie zgłosił(a) jeszcze dyspozycyjności na ten miesiąc"
+                    >
+                      brak zgłoszenia
+                    </span>
+                  )}
+                </div>
+                {wholeRanges.length === 0 && partialDays.length === 0 ? (
+                  <p className="mt-1.5 text-xs text-emerald-600">Bez zgłoszonych niedostępności w tym miesiącu.</p>
+                ) : (
+                  <div className="mt-1.5 flex flex-col gap-1 text-xs">
+                    {wholeRanges.length > 0 && (
+                      <p>
+                        <span className="font-semibold text-red-600">Cały dzień niedostępny/a:</span>{" "}
+                        <span className="text-zinc-600">{wholeRanges.map((r) => formatRange(r.start, r.end)).join(", ")}</span>
+                      </p>
+                    )}
+                    {partialDays.length > 0 && (
+                      <p>
+                        <span className="font-semibold text-amber-600">Częściowo niedostępny/a:</span>{" "}
+                        <span className="text-zinc-600">
+                          {partialDays
+                            .map(
+                              (p) =>
+                                `${fmtDate(p.date)} (${p.slots.map((s) => `${formatHm(s.default_start_time)}–${formatHm(s.default_end_time)}`).join(", ")})`
+                            )
+                            .join("; ")}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </Card>
-
-      <div className="flex flex-wrap items-center gap-4 text-xs text-zinc-500">
-        <span className="flex items-center gap-1.5">
-          <span className="h-4 w-4 rounded-md bg-red-500" /> cały dzień niedostępny/a
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-4 w-4 rounded-md bg-amber-400" /> częściowo niedostępny/a
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-4 w-4 rounded-md border border-zinc-200 bg-white" /> dostępny/a
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-4 w-4 rounded-md bg-zinc-100" /> brak zmian tego dnia
-        </span>
-      </div>
     </div>
   );
 }
