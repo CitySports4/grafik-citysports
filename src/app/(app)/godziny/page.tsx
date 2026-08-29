@@ -6,7 +6,7 @@ import { weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 import { isWithinEditWindow } from "@/lib/time-entry-window";
 import { Card } from "@/components/Card";
-import { TimeEntryList } from "./TimeEntryList";
+import { TimeEntryCalendar } from "./TimeEntryCalendar";
 
 export default async function GodzinyPage({
   searchParams,
@@ -65,8 +65,8 @@ export default async function GodzinyPage({
     scheduledByDate.get(date)!.push({ start_time: s.start_time, end_time: s.end_time });
   }
 
-  // Tylko dni, które mają zaplanowaną zmianę lub już wpisane godziny —
-  // puste dni w kalendarzu (bez pracy) nie zaśmiecają widoku historii.
+  // Tylko do komunikatu "brak niczego w tym miesiącu" — sam kalendarz
+  // pokazuje WSZYSTKIE dni miesiąca (puste dni to po prostu tło siatki).
   const relevantDates = dates.filter((d) => scheduledByDate.has(d) || entriesByDate.has(d));
 
   const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
@@ -96,12 +96,15 @@ export default async function GodzinyPage({
       </div>
 
       <Card>
-        <TimeEntryList
-          days={relevantDates.map((dateKey) => {
-            const weekday = new Date(dateKey + "T00:00:00").getDay();
+        <TimeEntryCalendar
+          days={dates.map((dateKey) => {
+            const dateObj = new Date(dateKey + "T00:00:00");
+            const weekday = dateObj.getDay();
             return {
               dateKey,
-              label: `${weekdayLabel(weekday)}, ${new Date(dateKey + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}`,
+              day: dateObj.getDate(),
+              weekday,
+              label: `${weekdayLabel(weekday)}, ${dateObj.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}`,
               scheduled: (scheduledByDate.get(dateKey) ?? [])
                 .map((s) => `${formatHm(s.start_time)}–${formatHm(s.end_time)}`)
                 .join(", "),

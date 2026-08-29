@@ -58,8 +58,8 @@ export default async function MyGrafikPage({
       </h1>
       <div className="flex items-center gap-2 text-sm">
         {tracksHours && (
-          <Link href="/godziny" className="rounded-lg bg-zinc-100 px-2.5 py-1 font-semibold text-zinc-700 hover:bg-zinc-200">
-            Zobacz całość →
+          <Link href="/godziny" className="rounded-lg bg-brand-orange px-3 py-1.5 font-semibold text-white hover:bg-brand-orange-dark">
+            Godziny pracy
           </Link>
         )}
         <Link href={`/grafik${prevLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
