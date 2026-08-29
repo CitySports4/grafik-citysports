@@ -3,7 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee } from "@/lib/session";
 import { findScheduleMonth, currentMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
 import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
-import { isWithinEditWindow } from "@/lib/time-entry-window";
+import { isWithinEditWindow, EDIT_WINDOW_DAYS } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
@@ -137,6 +137,14 @@ export default async function MyGrafikPage({
   }
   myHours = Math.round(myHours * 100) / 100;
 
+  // Dni starsze niż okno edycji godzin (patrz EDIT_WINDOW_DAYS) znikają z
+  // widoku — i tak nie da się już dla nich nic wpisać ani zmienić, więc same
+  // tylko zaśmiecały listę. Suma godzin wyżej liczy się dalej z CAŁEGO
+  // miesiąca (days), nie z tej przyciętej listy — to tylko kwestia tego, co
+  // się renderuje, nie co się liczy do podsumowania.
+  const cutoffKey = toDateKey(new Date(new Date().getTime() - EDIT_WINDOW_DAYS * 86400000));
+  const visibleDays = (days ?? []).filter((d) => d.date >= cutoffKey);
+
   return (
     <div className="flex flex-col gap-6">
       {header}
@@ -150,19 +158,37 @@ export default async function MyGrafikPage({
         </span>
       </Card>
 
+      {visibleDays.length === 0 && (
+        <p className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
+          Dni z tego miesiąca są już starsze niż {EDIT_WINDOW_DAYS} dni — nic tu nie zmienisz. Pełną historię widać w{" "}
+          <Link href="/godziny" className="font-semibold text-brand-orange hover:underline">
+            Godzinach pracy
+          </Link>
+          .
+        </p>
+      )}
       <div className="flex flex-col gap-3">
-        {days?.map((day) => {
+        {visibleDays.map((day) => {
           const shifts = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
           const events = day.schedule_event ?? [];
           const isMyDay = shifts.some((s) => s.employee_id === employee.id);
+          const isToday = day.date === today;
           const dateLabelStr = new Date(day.date + "T00:00:00").toLocaleDateString("pl-PL", {
             day: "numeric",
             month: "short",
           });
           return (
-            <Card key={day.id} className={`!p-3 ${isMyDay ? "border-brand-orange bg-brand-orange/5" : ""}`}>
-              <div className="mb-1.5 text-sm font-semibold capitalize text-zinc-900">
+            <Card
+              key={day.id}
+              className={`!p-3 ${isMyDay ? "border-brand-orange bg-brand-orange/5" : ""} ${isToday ? "ring-2 ring-brand-blue" : ""}`}
+            >
+              <div className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold capitalize text-zinc-900">
                 {dateLabelStr} — {weekdayLabel(day.weekday)}
+                {isToday && (
+                  <span className="rounded-full bg-brand-blue px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    Dziś
+                  </span>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {shifts.map((shift) => {
