@@ -12,9 +12,11 @@ function parseNumber(value: FormDataEntryValue | null, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// UWAGA: brak defaultu na "puste" tutaj — pusta lista jest poprawnym,
+// zamierzonym stanem przy EDYCJI (np. szef na stałej pensji bez żadnej
+// roli, patrz createEmployee poniżej gdzie default ma sens przy TWORZENIU).
 function parseRoles(formData: FormData): string[] {
-  const roles = formData.getAll("role").map(String);
-  return roles.length > 0 ? roles : ["recepcja"];
+  return formData.getAll("role").map(String);
 }
 
 // Zastępuje cały zestaw ról pracownika (delete+insert), analogicznie do
@@ -38,7 +40,11 @@ export async function createEmployee(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim();
   const phone = normalizePhone(String(formData.get("phone") ?? ""));
+  // Przy TWORZENIU nowego pracownika brak zaznaczonej roli to niemal na
+  // pewno przeoczenie w formularzu (nie ma tu jeszcze żadnego kontekstu,
+  // który by to uzasadniał) — stąd bezpieczny domyślny "recepcja".
   const roles = parseRoles(formData);
+  const rolesOrDefault = roles.length > 0 ? roles : ["recepcja"];
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
   const is_instructor = formData.get("is_instructor") === "on";
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
@@ -72,7 +78,7 @@ export async function createEmployee(formData: FormData) {
     throw new Error(dbErrorMessage(error));
   }
 
-  await setEmployeeRoles(supabase, data.id, roles);
+  await setEmployeeRoles(supabase, data.id, rolesOrDefault);
 
   revalidatePath("/admin/pracownicy");
 }
