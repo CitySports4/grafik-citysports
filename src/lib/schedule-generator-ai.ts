@@ -554,9 +554,10 @@ export async function runAiDraftGenerator(scheduleMonthId: string): Promise<{ as
     if (!employeeId || employeeId === meta.originalEmployeeId) continue;
     changedUpdates.push({ id: meta.shiftId, employee_id: employeeId });
   }
-  for (const u of changedUpdates) {
-    await supabase.from("schedule_shift").update({ employee_id: u.employee_id }).eq("id", u.id);
-  }
+  // Zapisy niezależne od siebie (różne wiersze) — równolegle zamiast jeden
+  // po drugim, bo przy pełnym przełożeniu miesiąca to bywa kilkadziesiąt
+  // zmian naraz, a admin czeka na to na żywo po kliknięciu przycisku.
+  await Promise.all(changedUpdates.map((u) => supabase.from("schedule_shift").update({ employee_id: u.employee_id }).eq("id", u.id)));
 
   const skippedCount = [...ctx.shiftMetaById.values()].filter((m) => !m.originalEmployeeId && !proposedByShiftId.get(m.shiftId)).length;
 

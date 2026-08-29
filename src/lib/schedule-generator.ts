@@ -105,13 +105,11 @@ export function consecutiveDaysBefore(dateKey: string, workedDates: Set<string>)
 // niej lub z przerwą krótszą niż realny odpoczynek.
 export const MIN_BREAK_MINUTES = 360; // 6h
 
-// Odpoczynek MIĘDZY dniami — kto zamykał wczoraj, nie powinien dziś otwierać
-// bez realnej przerwy. 11h to punkt odniesienia z Kodeksu pracy; jesteśmy na
-// umowach zlecenie więc to nie twardy prawny wymóg. Eksportowane, żeby był
-// jeden punkt prawdy dla tej liczby — obecnie NIE jest jeszcze egzekwowane
-// przez generator AI (schedule-generator-ai.ts), tylko przez ten sam moduł
-// dokumentowane jako reguła do doszlifowania.
-export const MIN_DAILY_REST_MINUTES = 660; // 11h
+// UWAGA: świadomie NIE wymuszamy odpoczynku 11h MIĘDZY dniami (kto zamykał
+// wczoraj wieczorem, może dostać otwarcie następnego dnia) — przy naszej
+// obsadzie taka przerwa bywa po prostu niemożliwa do zapewnienia, więc
+// twarda ani nawet miękka blokada by nie pomogła, tylko zostawiała puste
+// zmiany. Decyzja świadoma, nie luka do naprawienia.
 
 export function tooCloseForDoubleShift(
   a: { start_time: string; end_time: string },

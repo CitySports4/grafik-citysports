@@ -22,35 +22,56 @@ export default async function ScheduleBuilderPage({
   const scheduleMonth = await getOrCreateScheduleMonth(year, month);
   const supabase = createServerSupabaseClient();
 
-  const [{ data: rawEmployees }, { data: cleaningZoneRows }] = await Promise.all([
+  // Ta strona przeładowuje się po KAŻDEJ akcji admina (przypisanie zmiany,
+  // dodanie wydarzenia, publikacja...), więc liczba rund do bazy przy każdym
+  // wejściu ma tu wyjątkowo duże znaczenie dla odczuwalnej szybkości. Zamiast
+  // 6-7 zapytań jedno-po-drugim, wszystko niezależne od siebie leci w jednej
+  // turze — submissions/allConstraints/plannedAbsences pobieramy też, gdy
+  // hasStructure jeszcze nieznane (bo zależy od `days` z tej samej tury);
+  // koszt to kilka zbędnych zapytań w rzadkim przypadku "miesiąc bez jeszcze
+  // wygenerowanej struktury", w zamian za pełną równoległość w normalnym.
+  const monthDates = daysInMonth(year, month).map(toDateKey);
+  const [
+    { data: rawEmployees },
+    { data: cleaningZoneRows },
+    { data: classSchedules },
+    { data: days },
+    { data: allConstraints },
+    { data: submissions },
+    { data: plannedAbsences },
+  ] = await Promise.all([
     supabase
       .from("employee")
       .select("id, name, color_hex, min_hours_month, target_hours_month")
       .eq("active", true)
       .order("name"),
     supabase.from("employee_cleaning_zone").select("employee_id"),
+    supabase.from("employee_class_schedule").select("employee_id, weekday, start_time, end_time"),
+    supabase
+      .from("schedule_day")
+      .select(
+        "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, end_time, label, note, participant_employee_ids)"
+      )
+      .eq("schedule_month_id", scheduleMonth.id)
+      .order("date"),
+    supabase.from("weekly_recurring_constraint").select("employee_id, weekday, start_time, end_time, type"),
+    supabase.from("availability_submission").select("id, employee_id").eq("schedule_month_id", scheduleMonth.id),
+    supabase
+      .from("planned_absence")
+      .select("employee_id, start_date, end_date")
+      .lte("start_date", monthDates[monthDates.length - 1])
+      .gte("end_date", monthDates[0]),
   ]);
   // Może sprzątać = ma przypisaną choć jedną strefę sprzątania (zjednocone
   // ze starym przełącznikiem can_clean, patrz migracja 0009).
   const canCleanIds = new Set((cleaningZoneRows ?? []).map((r) => r.employee_id));
   const employees = (rawEmployees ?? []).map((e) => ({ ...e, can_clean: canCleanIds.has(e.id) }));
 
-  const { data: classSchedules } = await supabase
-    .from("employee_class_schedule")
-    .select("employee_id, weekday, start_time, end_time");
   const classByEmployee: Record<string, { weekday: number; start_time: string; end_time: string }[]> = {};
   for (const c of classSchedules ?? []) {
     if (!classByEmployee[c.employee_id]) classByEmployee[c.employee_id] = [];
     classByEmployee[c.employee_id].push({ weekday: c.weekday, start_time: c.start_time, end_time: c.end_time });
   }
-
-  const { data: days } = await supabase
-    .from("schedule_day")
-    .select(
-      "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, end_time, label, note, participant_employee_ids)"
-    )
-    .eq("schedule_month_id", scheduleMonth.id)
-    .order("date");
 
   const hasStructure = (days?.length ?? 0) > 0;
 
@@ -61,9 +82,6 @@ export default async function ScheduleBuilderPage({
   const unavailableWholeDay: Record<string, string[]> = {};
 
   if (hasStructure) {
-    const { data: allConstraints } = await supabase
-      .from("weekly_recurring_constraint")
-      .select("employee_id, weekday, start_time, end_time, type");
     const constraints = (allConstraints ?? []).filter((c) => c.type === "unavailable");
 
     const hardConstraintsByEmployee = new Map<string, HardConstraint[]>();
@@ -72,10 +90,6 @@ export default async function ScheduleBuilderPage({
       hardConstraintsByEmployee.get(c.employee_id)!.push({ weekday: c.weekday, start_time: c.start_time, end_time: c.end_time });
     }
 
-    const { data: submissions } = await supabase
-      .from("availability_submission")
-      .select("id, employee_id")
-      .eq("schedule_month_id", scheduleMonth.id);
     const submissionIds = (submissions ?? []).map((s) => s.id);
     const employeeIdBySubmission = new Map((submissions ?? []).map((s) => [s.id, s.employee_id]));
 
@@ -88,13 +102,6 @@ export default async function ScheduleBuilderPage({
       availabilityEntries = data ?? [];
     }
     const availabilityMap = buildAvailabilityMap(availabilityEntries, employeeIdBySubmission);
-
-    const monthDates = daysInMonth(year, month).map(toDateKey);
-    const { data: plannedAbsences } = await supabase
-      .from("planned_absence")
-      .select("employee_id, start_date, end_date")
-      .lte("start_date", monthDates[monthDates.length - 1])
-      .gte("end_date", monthDates[0]);
     applyPlannedAbsences(availabilityMap, plannedAbsences ?? []);
 
     for (const day of days ?? []) {

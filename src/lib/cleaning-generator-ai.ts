@@ -223,21 +223,27 @@ export async function runAiCleaningPlan(dateKeys: string[]): Promise<{ decidedCo
 
   const decisionByKey = new Map(decisions.map((d) => [`${d.taskId}|${d.windowStart}`, d]));
   const supabase = createServerSupabaseClient();
-  let decidedCount = 0;
 
-  for (const choice of choices) {
-    const decision = decisionByKey.get(`${choice.taskId}|${choice.windowStart}`);
-    if (!decision) continue; // nieznana decyzja — ignorujemy, nie zgadujemy
-    const qualifyingDates = new Set(decision.qualifyingDates.map((q) => q.date));
-    const validDates = [...new Set(choice.chosenDates)].filter((d) => qualifyingDates.has(d));
-    if (validDates.length !== decision.needed) continue; // niepełna/nieprawidłowa odpowiedź — pomijamy, zostaje zwykła logika
+  // Każda decyzja (task+okno) pisze do zupełnie innych wierszy niż każda
+  // inna, więc różne decyzje mogą lecieć do bazy równolegle — WEWNĄTRZ
+  // jednej decyzji delete musi skończyć się przed insertem (żeby nie
+  // zduplikować wierszy), ale to jedyna wymagana kolejność.
+  const writes = await Promise.all(
+    choices.map(async (choice): Promise<boolean> => {
+      const decision = decisionByKey.get(`${choice.taskId}|${choice.windowStart}`);
+      if (!decision) return false; // nieznana decyzja — ignorujemy, nie zgadujemy
+      const qualifyingDates = new Set(decision.qualifyingDates.map((q) => q.date));
+      const validDates = [...new Set(choice.chosenDates)].filter((d) => qualifyingDates.has(d));
+      if (validDates.length !== decision.needed) return false; // niepełna/nieprawidłowa odpowiedź — pomijamy, zostaje zwykła logika
 
-    await supabase.from("cleaning_ai_day_choice").delete().eq("task_id", decision.taskId).eq("window_start", decision.windowStart);
-    await supabase
-      .from("cleaning_ai_day_choice")
-      .insert(validDates.map((chosen_date) => ({ task_id: decision.taskId, window_start: decision.windowStart, chosen_date })));
-    decidedCount++;
-  }
+      await supabase.from("cleaning_ai_day_choice").delete().eq("task_id", decision.taskId).eq("window_start", decision.windowStart);
+      await supabase
+        .from("cleaning_ai_day_choice")
+        .insert(validDates.map((chosen_date) => ({ task_id: decision.taskId, window_start: decision.windowStart, chosen_date })));
+      return true;
+    })
+  );
+  const decidedCount = writes.filter(Boolean).length;
 
   return { decidedCount, consideredCount: decisions.length };
 }
