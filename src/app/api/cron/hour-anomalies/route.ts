@@ -3,14 +3,15 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { assertCronSecret, getAiNoteAuthorId } from "@/lib/cron-auth";
 import { toDateKey } from "@/lib/schedule-month";
 import { timeToMinutes, formatHm } from "@/lib/time";
+import { DISCREPANCY_TOLERANCE_MIN as TOLERANCE_MIN } from "@/lib/time-entry-window";
 import { askWithContext } from "@/lib/ai";
 
 // Uruchamiane co noc przez Vercel Cron — sprawdza WCZORAJSZY dzień:
 // rzeczywiste godziny (z /godziny) vs grafik, tolerancja ±30 min (ta sama
-// zasada co w kalkulatorze wynagrodzeń recepcji). Decyzja "czy to anomalia"
-// jest w 100% deterministyczna (kod) — AI tylko formułuje czytelną notatkę,
-// nie podejmuje decyzji.
-const TOLERANCE_MIN = 30;
+// zasada co w kalkulatorze wynagrodzeń recepcji i przy samym wpisywaniu
+// godzin — patrz requiresDiscrepancyNote w time-entry-window.ts). Decyzja
+// "czy to anomalia" jest w 100% deterministyczna (kod) — AI tylko formułuje
+// czytelną notatkę, nie podejmuje decyzji.
 
 export async function GET(request: Request) {
   try {

@@ -16,7 +16,7 @@ import {
   publishMonth,
   unpublishMonth,
 } from "./actions";
-import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
+import { formatHm, dailyEffectiveHours, extraEventHours } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
 import { ColorDot } from "@/components/ColorDot";
 import { EVENT_TYPE_LABELS } from "@/lib/event-types";
@@ -114,8 +114,12 @@ export function ScheduleTable({
     for (const day of days) {
       for (const ev of day.events) {
         if (!ev.end_time) continue;
-        const h = hoursBetween(ev.start_time ?? "00:00", ev.end_time);
         for (const empId of ev.participant_employee_ids) {
+          // Nie licz drugi raz czasu wydarzenia, który już pokrywa się ze
+          // zmianą tej osoby tego dnia (np. liga w godzinach jej zmiany) —
+          // tylko nadwyżkę ponad zmianę (np. sobotnie sprzątanie poza zmianą).
+          const shiftsToday = shiftsByEmployeeDay.get(`${empId}|${day.date}`) ?? [];
+          const h = extraEventHours(ev.start_time ?? "00:00", ev.end_time, shiftsToday);
           map.set(empId, (map.get(empId) ?? 0) + h);
         }
       }

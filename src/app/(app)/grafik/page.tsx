@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee } from "@/lib/session";
 import { findScheduleMonth, currentMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
-import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
+import { hoursBetween, formatHm, dailyEffectiveHours, extraEventHours } from "@/lib/time";
 import { isWithinEditWindow, EDIT_WINDOW_DAYS } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
@@ -50,6 +50,9 @@ export default async function MyGrafikPage({
         Grafik — {monthLabel(month)} {year}
       </h1>
       <div className="flex items-center gap-2 text-sm">
+        <Link href="/godziny" className="rounded-lg bg-zinc-100 px-2.5 py-1 font-semibold text-zinc-700 hover:bg-zinc-200">
+          Zobacz całość →
+        </Link>
         <Link href={`/grafik${prevLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
           ← poprzedni
         </Link>
@@ -131,7 +134,10 @@ export default async function MyGrafikPage({
     myHours += dailyEffectiveHours(myShiftsToday, day.weekday, myClasses ?? []);
     for (const ev of day.schedule_event ?? []) {
       if (ev.end_time && ev.participant_employee_ids?.includes(employee.id)) {
-        myHours += hoursBetween(ev.start_time ?? "00:00", ev.end_time);
+        // Nie licz drugi raz czasu wydarzenia, który już pokrywa się z moją
+        // zmianą tego dnia (np. liga w godzinach mojej zmiany) — tylko
+        // nadwyżkę ponad zmianę (np. sobotnie sprzątanie poza zmianą).
+        myHours += extraEventHours(ev.start_time ?? "00:00", ev.end_time, myShiftsToday);
       }
     }
   }
@@ -172,6 +178,7 @@ export default async function MyGrafikPage({
           const shifts = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
           const events = day.schedule_event ?? [];
           const isMyDay = shifts.some((s) => s.employee_id === employee.id);
+          const myShiftsRaw = shifts.filter((s) => s.employee_id === employee.id).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
           const isToday = day.date === today;
           const dateLabelStr = new Date(day.date + "T00:00:00").toLocaleDateString("pl-PL", {
             day: "numeric",
@@ -250,6 +257,7 @@ export default async function MyGrafikPage({
                         <DayTimeEntryEditor
                           dateKey={day.date}
                           initialEntries={dayEntries}
+                          scheduled={myShiftsRaw}
                           addAction={addTimeEntry}
                           updateAction={updateTimeEntry}
                           deleteAction={deleteTimeEntry}

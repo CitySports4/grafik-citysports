@@ -5,6 +5,9 @@ type DayEntry = {
   dateKey: string;
   label: string;
   scheduled: string;
+  // Zostaw undefined (panel admina), żeby wyłączyć wymóg notatki przy
+  // rozbieżności — patrz komentarz w DayTimeEntryEditor.
+  scheduledRaw?: { start_time: string; end_time: string }[];
   editable: boolean;
   entries: TimeEntryRow[];
 };
@@ -58,6 +61,7 @@ export function TimeEntryList({
               <DayTimeEntryEditor
                 dateKey={day.dateKey}
                 initialEntries={day.entries}
+                scheduled={day.scheduledRaw}
                 addAction={addAction}
                 updateAction={updateAction}
                 deleteAction={deleteAction}

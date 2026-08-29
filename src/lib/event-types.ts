@@ -3,5 +3,6 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   liga_deblowa: "Liga deblowa",
   sprzatanie: "Sprzątanie",
   warsztaty: "Warsztaty",
+  spotkanie: "Spotkanie",
   custom: "Inne",
 };
