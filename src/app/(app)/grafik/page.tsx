@@ -218,14 +218,15 @@ export default async function MyGrafikPage({
                   return (
                     <div
                       key={shift.id}
+                      style={isMe && emp ? { backgroundColor: `${emp.color_hex}2e`, borderLeft: `3px solid ${emp.color_hex}` } : undefined}
                       className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs ${
-                        isMe ? "bg-brand-orange text-white" : "bg-zinc-50 text-zinc-600"
+                        isMe ? "text-zinc-900" : "bg-zinc-50 text-zinc-600"
                       } ${shift.is_closed ? "opacity-50" : ""}`}
                     >
                       <span className="font-semibold">
                         {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
                       </span>
-                      {!isMe && emp && <ColorDot color={emp.color_hex} />}
+                      {emp && <ColorDot color={emp.color_hex} />}
                       <span>
                         {shift.is_closed ? "NIECZYNNE" : emp ? emp.name : "— nieprzypisane —"}
                       </span>

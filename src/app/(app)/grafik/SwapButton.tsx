@@ -52,7 +52,7 @@ export function SwapButton({ shiftId }: { shiftId: string }) {
       <button
         type="button"
         onClick={handleOpen}
-        className="rounded-lg bg-white/20 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-white/30"
+        className="rounded-lg bg-zinc-900/10 px-1.5 py-0.5 text-[10px] font-bold text-zinc-700 hover:bg-zinc-900/20"
         title="Zamień się"
       >
         🔄
