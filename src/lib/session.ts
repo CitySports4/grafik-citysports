@@ -57,6 +57,12 @@ export type SessionEmployee = {
   name: string;
   roles: EmployeeRole[];
   colorHex: string;
+  // Rozliczenie godzinowe (wpisywanie godzin, wynagrodzenia) dotyczy tego,
+  // kto ma ustawioną stawkę — nie roli "Recepcja" samej w sobie. Dzięki
+  // temu ktoś może mieć rolę Recepcja (bo faktycznie tam pracuje i ma tam
+  // swoje miejsce w grafiku), ale bez stawki jest na stałej pensji: nie
+  // wpisuje godzin i nie ma tu wypłaty. Patrz tracksHours poniżej.
+  hourlyRate: number;
 };
 
 export async function getSessionEmployee(): Promise<SessionEmployee | null> {
@@ -66,7 +72,7 @@ export async function getSessionEmployee(): Promise<SessionEmployee | null> {
   const supabase = createServerSupabaseClient();
   const { data } = await supabase
     .from("employee")
-    .select("id, name, color_hex, active, employee_role(role)")
+    .select("id, name, color_hex, active, hourly_rate, employee_role(role)")
     .eq("id", employeeId)
     .single();
 
@@ -76,7 +82,13 @@ export async function getSessionEmployee(): Promise<SessionEmployee | null> {
     name: data.name,
     roles: (data.employee_role ?? []).map((r: { role: string }) => r.role as EmployeeRole),
     colorHex: data.color_hex,
+    hourlyRate: data.hourly_rate ?? 0,
   };
+}
+
+// Czy pracownik rozlicza się godzinowo — patrz komentarz przy hourlyRate.
+export function tracksHours(employee: SessionEmployee): boolean {
+  return employee.hourlyRate > 0;
 }
 
 export async function requireEmployee(): Promise<SessionEmployee> {

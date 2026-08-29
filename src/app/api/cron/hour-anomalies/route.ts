@@ -26,11 +26,10 @@ export async function GET(request: Request) {
   const dateKey = toDateKey(yesterday);
 
   const [{ data: employees }, { data: entries }, { data: shiftRows }] = await Promise.all([
-    supabase
-      .from("employee")
-      .select("id, name, hourly_rate, employee_role!inner(role)")
-      .eq("active", true)
-      .eq("employee_role.role", "recepcja"),
+    // Rozliczenie godzinowe (a więc i sprawdzanie anomalii) dotyczy tego,
+    // kto ma ustawioną stawkę godzinową — nie roli "Recepcja" samej w sobie,
+    // patrz komentarz w admin/wynagrodzenia/page.tsx.
+    supabase.from("employee").select("id, name, hourly_rate").eq("active", true).gt("hourly_rate", 0),
     supabase.from("time_entry").select("employee_id, actual_start, actual_end").eq("date", dateKey),
     supabase
       .from("schedule_shift")

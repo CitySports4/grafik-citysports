@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { requireEmployee } from "@/lib/session";
+import { requireEmployee, tracksHours } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { isWithinEditWindow, requiresDiscrepancyNote, DISCREPANCY_TOLERANCE_MIN } from "@/lib/time-entry-window";
 
@@ -38,11 +38,11 @@ async function assertDiscrepancyExplained(employeeId: string, date: string, actu
 export async function addTimeEntry(date: string, actualStart: string, actualEnd: string, note: string): Promise<{ id: string }> {
   const employee = await requireEmployee();
 
-  // Wpisywanie godzin dotyczy rozliczenia godzinowego recepcji — kto tej
-  // roli nie ma (np. szef na stałej pensji), nie powinien tego w ogóle
+  // Wpisywanie godzin dotyczy tego, kto ma ustawioną stawkę godzinową — kto
+  // jej nie ma (np. szef na stałej pensji), nie powinien tego w ogóle
   // zaczynać, nawet gdyby ominął ukrycie tego w UI.
-  if (!employee.roles.includes("recepcja")) {
-    throw new Error("Wpisywanie godzin dotyczy tylko roli Recepcja.");
+  if (!tracksHours(employee)) {
+    throw new Error("Wpisywanie godzin dotyczy tylko osób z ustawioną stawką godzinową.");
   }
 
   if (!isWithinEditWindow(date)) {

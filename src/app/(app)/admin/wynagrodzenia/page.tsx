@@ -19,12 +19,17 @@ export default async function WynagrodzeniaPage({
   const year = Number(params.year) || fallback.year;
   const month = Number(params.month) || fallback.month;
 
+  // Rozliczenie godzinowe dotyczy tego, kto ma ustawioną stawkę godzinową —
+  // nie roli "Recepcja" samej w sobie. Dzięki temu np. szef może mieć
+  // zaznaczoną rolę Recepcja (bo faktycznie tam pracuje i ma tam swoje
+  // miejsce w grafiku), ale bez stawki nie wpisuje godzin i nie ma tu
+  // wypłaty — jest po prostu na stałej pensji.
   const supabase = createServerSupabaseClient();
   const { data: employees } = await supabase
     .from("employee")
-    .select("id, name, color_hex, hourly_rate, employee_role!inner(role)")
+    .select("id, name, color_hex, hourly_rate")
     .eq("active", true)
-    .eq("employee_role.role", "recepcja")
+    .gt("hourly_rate", 0)
     .order("name");
 
   const dates = daysInMonth(year, month).map(toDateKey);
@@ -143,7 +148,7 @@ export default async function WynagrodzeniaPage({
       <Card>
         <h2 className="mb-3 font-semibold text-zinc-900">Recepcja</h2>
         {rows.length === 0 && (
-          <p className="text-sm text-zinc-400">Brak aktywnych osób z rolą &quot;Recepcja&quot;.</p>
+          <p className="text-sm text-zinc-400">Brak aktywnych osób z ustawioną stawką godzinową.</p>
         )}
         <div className="flex flex-col gap-4">
           {rows.map(({ emp, totalHours, wage, flaggedDays }) => (
@@ -158,11 +163,6 @@ export default async function WynagrodzeniaPage({
                   <strong className="text-zinc-900">{wage.toFixed(2)} PLN</strong>
                 </span>
               </div>
-              {emp.hourly_rate === 0 && (
-                <p className="mt-1 text-xs text-amber-600">
-                  Uwaga: stawka godzinowa nie jest ustawiona (0 PLN/h) — uzupełnij w Pracownicy.
-                </p>
-              )}
               {flaggedDays.length === 0 ? (
                 <p className="mt-2 text-xs text-emerald-600">Zgodne z grafikiem, bez braków.</p>
               ) : (
