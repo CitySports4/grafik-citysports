@@ -25,7 +25,7 @@ export default async function GodzinyPage({
   const [{ data: entries }, { data: shiftRows }] = await Promise.all([
     supabase
       .from("time_entry")
-      .select("date, actual_start, actual_end, note")
+      .select("id, date, actual_start, actual_end, note")
       .eq("employee_id", employee.id)
       .in("date", dates),
     supabase
@@ -36,7 +36,13 @@ export default async function GodzinyPage({
       .in("schedule_day.date", dates),
   ]);
 
-  const entryByDate = new Map((entries ?? []).map((e) => [e.date, e]));
+  // Jeden dzień może mieć kilka wpisów (podzielona zmiana z przerwą) — stąd
+  // mapa na LISTĘ, nie na pojedynczy wiersz.
+  const entriesByDate = new Map<string, { id: string; actual_start: string | null; actual_end: string | null; note: string | null }[]>();
+  for (const e of entries ?? []) {
+    if (!entriesByDate.has(e.date)) entriesByDate.set(e.date, []);
+    entriesByDate.get(e.date)!.push(e);
+  }
   type ShiftRow = { start_time: string; end_time: string; schedule_day: { date: string } };
   const scheduledByDate = new Map<string, { start_time: string; end_time: string }[]>();
   for (const s of (shiftRows ?? []) as unknown as ShiftRow[]) {
@@ -47,7 +53,7 @@ export default async function GodzinyPage({
 
   // Tylko dni, które mają zaplanowaną zmianę lub już wpisane godziny —
   // puste dni w kalendarzu (bez pracy) nie zaśmiecają widoku historii.
-  const relevantDates = dates.filter((d) => scheduledByDate.has(d) || entryByDate.has(d));
+  const relevantDates = dates.filter((d) => scheduledByDate.has(d) || entriesByDate.has(d));
 
   const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
   const nextLink = month === 12 ? `?year=${year + 1}&month=1` : `?year=${year}&month=${month + 1}`;
@@ -79,7 +85,6 @@ export default async function GodzinyPage({
         <TimeEntryList
           days={relevantDates.map((dateKey) => {
             const weekday = new Date(dateKey + "T00:00:00").getDay();
-            const entry = entryByDate.get(dateKey);
             return {
               dateKey,
               label: `${weekdayLabel(weekday)}, ${new Date(dateKey + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}`,
@@ -87,9 +92,12 @@ export default async function GodzinyPage({
                 .map((s) => `${formatHm(s.start_time)}–${formatHm(s.end_time)}`)
                 .join(", "),
               editable: isWithinEditWindow(dateKey),
-              entry: entry
-                ? { actualStart: entry.actual_start ?? "", actualEnd: entry.actual_end ?? "", note: entry.note ?? "" }
-                : { actualStart: "", actualEnd: "", note: "" },
+              entries: (entriesByDate.get(dateKey) ?? []).map((e) => ({
+                id: e.id,
+                actualStart: e.actual_start ?? "",
+                actualEnd: e.actual_end ?? "",
+                note: e.note ?? "",
+              })),
             };
           })}
         />

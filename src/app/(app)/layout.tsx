@@ -13,15 +13,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Grupy nawigacji jako prawdziwe rozwijane menu (nie tylko wizualny
   // podział) — Zamiany teraz żyją wewnątrz "Mój grafik", Asystent zdjęty.
-  // Godziny pracy to część grafiku (nie osobne zadanie), więc żyje w tej
-  // grupie; Zadania to teraz jedna strona (sprzątanie + inne), nie grupa.
+  // Godziny pracy wpisuje się teraz bezpośrednio przy swojej zmianie w "Mój
+  // grafik" (mniej klikania niż osobna strona) — /godziny zostaje jako
+  // działający adres, ale bez własnej pozycji w menu, żeby nie dublować.
+  // Zadania to teraz jedna strona (sprzątanie + inne), nie grupa.
   const navGroups: { label: string; links: { href: string; label: string }[] }[] = [
     {
       label: "Grafik",
       links: [
         { href: "/grafik", label: "Mój grafik" },
         { href: "/dyspozycyjnosc", label: "Dyspozycyjność" },
-        { href: "/godziny", label: "Godziny pracy" },
       ],
     },
   ];
@@ -35,7 +36,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <header className="bg-brand-navy">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <Image src="/logo.png" alt="City Sports" width={146} height={32} className="h-8 w-auto" priority />
+            <Link href="/grafik">
+              <Image src="/logo.png" alt="City Sports" width={146} height={32} className="h-8 w-auto" priority />
+            </Link>
             <span className="hidden h-6 w-px bg-white/20 sm:block" />
             <div className="flex items-center gap-2">
               <span

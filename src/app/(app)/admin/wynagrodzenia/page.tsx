@@ -64,7 +64,15 @@ export default async function WynagrodzeniaPage({
       existing.end_time = timeToMinutes(s.end_time) > timeToMinutes(existing.end_time) ? s.end_time : existing.end_time;
     }
   }
-  const entryByEmpDate = new Map((entries ?? []).map((e) => [`${e.employee_id}|${e.date}`, e]));
+  // Jeden dzień może mieć kilka niezależnych wpisów (podzielona zmiana z
+  // przerwą, np. 08:00–10:00 i 15:00–22:00) — stąd mapa na LISTĘ wpisów, a
+  // przepracowane godziny to suma wszystkich, nie jedna para start/koniec.
+  const entriesByEmpDate = new Map<string, { actual_start: string | null; actual_end: string | null }[]>();
+  for (const e of entries ?? []) {
+    const key = `${e.employee_id}|${e.date}`;
+    if (!entriesByEmpDate.has(key)) entriesByEmpDate.set(key, []);
+    entriesByEmpDate.get(key)!.push(e);
+  }
   const todayKey = toDateKey(new Date());
 
   const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
@@ -73,10 +81,15 @@ export default async function WynagrodzeniaPage({
   const rows = (employees ?? []).map((emp) => {
     const days = dates.map((date) => {
       const scheduled = scheduledByEmpDate.get(`${emp.id}|${date}`) ?? null;
-      const entry = entryByEmpDate.get(`${emp.id}|${date}`) ?? null;
-      const actualStart = entry?.actual_start ?? null;
-      const actualEnd = entry?.actual_end ?? null;
-      const workedHours = actualStart && actualEnd ? hoursBetween(actualStart, actualEnd) : 0;
+      const dayEntries = (entriesByEmpDate.get(`${emp.id}|${date}`) ?? []).filter(
+        (e): e is { actual_start: string; actual_end: string } => Boolean(e.actual_start && e.actual_end)
+      );
+      const workedHours = dayEntries.reduce((sum, e) => sum + hoursBetween(e.actual_start, e.actual_end), 0);
+      // Do porównania z grafikiem bierzemy najwcześniejszy start i najpóźniejszy
+      // koniec spośród wszystkich wpisów tego dnia — ta sama zasada co przy
+      // scalaniu kilku zmian w grafiku (scheduledByEmpDate wyżej).
+      const minStart = dayEntries.length > 0 ? dayEntries.reduce((a, b) => (timeToMinutes(b.actual_start) < timeToMinutes(a) ? b.actual_start : a), dayEntries[0].actual_start) : null;
+      const maxEnd = dayEntries.length > 0 ? dayEntries.reduce((a, b) => (timeToMinutes(b.actual_end) > timeToMinutes(a) ? b.actual_end : a), dayEntries[0].actual_end) : null;
 
       // "Brak wpisu godzin" ma sens tylko dla dnia, który już się odbył — dla
       // przyszłych zmian (cały nadchodzący miesiąc na starcie) nikt jeszcze
@@ -84,19 +97,19 @@ export default async function WynagrodzeniaPage({
       // tylko naturalny stan rzeczy. Bez tego warunku widok zapełniał się
       // dziesiątkami identycznych, przedwczesnych ostrzeżeń na cały miesiąc.
       let flag: string | null = null;
-      if (scheduled && (!actualStart || !actualEnd) && date < todayKey) {
+      if (scheduled && dayEntries.length === 0 && date < todayKey) {
         flag = "brak wpisu godzin";
-      } else if (!scheduled && actualStart && actualEnd) {
+      } else if (!scheduled && dayEntries.length > 0) {
         flag = "brak w grafiku";
-      } else if (scheduled && actualStart && actualEnd) {
-        const startDiff = Math.abs(timeToMinutes(actualStart) - timeToMinutes(scheduled.start_time));
-        const endDiff = Math.abs(timeToMinutes(actualEnd) - timeToMinutes(scheduled.end_time));
+      } else if (scheduled && minStart && maxEnd) {
+        const startDiff = Math.abs(timeToMinutes(minStart) - timeToMinutes(scheduled.start_time));
+        const endDiff = Math.abs(timeToMinutes(maxEnd) - timeToMinutes(scheduled.end_time));
         if (startDiff > DISCREPANCY_TOLERANCE_MIN || endDiff > DISCREPANCY_TOLERANCE_MIN) {
           flag = `różnica >±${DISCREPANCY_TOLERANCE_MIN} min`;
         }
       }
 
-      return { date, scheduled, actualStart, actualEnd, workedHours, flag };
+      return { date, scheduled, dayEntries, workedHours, flag };
     });
 
     const totalHours = Math.round(days.reduce((sum, d) => sum + d.workedHours, 0) * 100) / 100;
@@ -175,7 +188,9 @@ export default async function WynagrodzeniaPage({
                         </span>{" "}
                         — grafik:{" "}
                         {d.scheduled ? `${formatHm(d.scheduled.start_time)}–${formatHm(d.scheduled.end_time)}` : "—"}, rzeczywiste:{" "}
-                        {d.actualStart && d.actualEnd ? `${d.actualStart.slice(0, 5)}–${d.actualEnd.slice(0, 5)}` : "—"}{" "}
+                        {d.dayEntries.length > 0
+                          ? d.dayEntries.map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}`).join(", ")
+                          : "—"}{" "}
                         <span className="font-bold text-red-600">⚠ {d.flag}</span>
                       </li>
                     ))}

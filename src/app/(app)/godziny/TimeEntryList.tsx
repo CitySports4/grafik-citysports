@@ -1,58 +1,31 @@
-"use client";
-
-import { useState } from "react";
-import { saveTimeEntry } from "./actions";
+import { DayTimeEntryEditor, type TimeEntryRow } from "./DayTimeEntryEditor";
+import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "./actions";
 
 type DayEntry = {
   dateKey: string;
   label: string;
   scheduled: string;
   editable: boolean;
-  entry: { actualStart: string; actualEnd: string; note: string };
+  entries: TimeEntryRow[];
 };
 
-const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2 py-1.5 text-sm";
-
-// saveAction: domyślnie zapisuje dla zalogowanego pracownika (godziny/actions.ts).
-// Panel admina wstrzykuje własną akcję, która zapisuje dla dowolnego pracownika
-// i pomija okno 7 dni.
+// addAction/updateAction/deleteAction: domyślnie zapisują dla zalogowanego
+// pracownika (godziny/actions.ts). Panel admina wstrzykuje własne akcje,
+// które zapisują dla dowolnego pracownika i pomijają okno 7 dni.
 export function TimeEntryList({
   days,
-  saveAction = saveTimeEntry,
+  addAction = addTimeEntry,
+  updateAction = updateTimeEntry,
+  deleteAction = deleteTimeEntry,
 }: {
   days: DayEntry[];
-  saveAction?: (date: string, actualStart: string, actualEnd: string, note: string) => Promise<void>;
+  addAction?: (date: string, actualStart: string, actualEnd: string, note: string) => Promise<{ id: string }>;
+  updateAction?: (id: string, actualStart: string, actualEnd: string, note: string) => Promise<void>;
+  deleteAction?: (id: string) => Promise<void>;
 }) {
-  const [state, setState] = useState<Record<string, { actualStart: string; actualEnd: string; note: string }>>(
-    Object.fromEntries(days.map((d) => [d.dateKey, d.entry]))
-  );
-  const [saving, setSaving] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<Record<string, boolean>>({});
-  const [error, setError] = useState<Record<string, string>>({});
-
-  function updateField(dateKey: string, field: "actualStart" | "actualEnd" | "note", value: string) {
-    setState((prev) => ({ ...prev, [dateKey]: { ...prev[dateKey], [field]: value } }));
-    setSavedAt((prev) => ({ ...prev, [dateKey]: false }));
-  }
-
-  async function handleSave(dateKey: string) {
-    setSaving(dateKey);
-    setError((prev) => ({ ...prev, [dateKey]: "" }));
-    try {
-      const { actualStart, actualEnd, note } = state[dateKey];
-      await saveAction(dateKey, actualStart, actualEnd, note);
-      setSavedAt((prev) => ({ ...prev, [dateKey]: true }));
-    } catch (err) {
-      setError((prev) => ({ ...prev, [dateKey]: err instanceof Error ? err.message : "Nie udało się zapisać." }));
-    } finally {
-      setSaving(null);
-    }
-  }
-
   return (
     <div className="flex flex-col divide-y divide-zinc-100">
       {days.map((day) => {
-        const row = state[day.dateKey];
         if (!day.editable) {
           return (
             <div key={day.dateKey} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -61,11 +34,13 @@ export function TimeEntryList({
                 {day.scheduled && <div className="text-xs text-zinc-500">Grafik: {day.scheduled}</div>}
               </div>
               <div className="text-sm text-zinc-600">
-                {row.actualStart && row.actualEnd ? (
-                  <>
-                    {row.actualStart}–{row.actualEnd}
-                    {row.note && <span className="text-zinc-400"> · {row.note}</span>}
-                  </>
+                {day.entries.length > 0 ? (
+                  day.entries.map((e) => (
+                    <div key={e.id}>
+                      {e.actualStart}–{e.actualEnd}
+                      {e.note && <span className="text-zinc-400"> · {e.note}</span>}
+                    </div>
+                  ))
                 ) : (
                   <span className="text-zinc-400">brak wpisu — okno edycji minęło</span>
                 )}
@@ -74,48 +49,19 @@ export function TimeEntryList({
           );
         }
         return (
-          <div key={day.dateKey} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-end sm:gap-3">
+          <div key={day.dateKey} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:gap-3">
             <div className="min-w-[120px]">
               <div className="text-sm font-semibold capitalize text-zinc-900">{day.label}</div>
               {day.scheduled && <div className="text-xs text-zinc-500">Grafik: {day.scheduled}</div>}
             </div>
-            <div className="flex flex-1 flex-wrap items-end gap-2">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-zinc-600">Od</label>
-                <input
-                  type="time"
-                  value={row.actualStart}
-                  onChange={(e) => updateField(day.dateKey, "actualStart", e.target.value)}
-                  className={`${INPUT} w-[110px]`}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-zinc-600">Do</label>
-                <input
-                  type="time"
-                  value={row.actualEnd}
-                  onChange={(e) => updateField(day.dateKey, "actualEnd", e.target.value)}
-                  className={`${INPUT} w-[110px]`}
-                />
-              </div>
-              <div className="flex flex-1 flex-col gap-1">
-                <label className="text-xs font-semibold text-zinc-600">Notatka (opcjonalnie)</label>
-                <input
-                  value={row.note}
-                  onChange={(e) => updateField(day.dateKey, "note", e.target.value)}
-                  className={INPUT}
-                />
-              </div>
-              <button
-                type="button"
-                disabled={saving === day.dateKey}
-                onClick={() => handleSave(day.dateKey)}
-                className="rounded-lg bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
-              >
-                {saving === day.dateKey ? "Zapisywanie…" : "Zapisz"}
-              </button>
-              {savedAt[day.dateKey] && <span className="text-xs font-semibold text-emerald-600">✓ Zapisano</span>}
-              {error[day.dateKey] && <span className="text-xs font-semibold text-red-600">{error[day.dateKey]}</span>}
+            <div className="flex-1">
+              <DayTimeEntryEditor
+                dateKey={day.dateKey}
+                initialEntries={day.entries}
+                addAction={addAction}
+                updateAction={updateAction}
+                deleteAction={deleteAction}
+              />
             </div>
           </div>
         );
