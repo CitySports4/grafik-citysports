@@ -19,6 +19,20 @@ export default async function GodzinyPage({
   const year = Number(params.year) || fallback.year;
   const month = Number(params.month) || fallback.month;
 
+  // Wpisywanie godzin dotyczy rozliczenia godzinowego recepcji (patrz
+  // admin/wynagrodzenia) — kto nie ma tej roli (np. szef na stałej pensji),
+  // nie musi (i nie powinien) niczego tu wpisywać.
+  if (!employee.roles.includes("recepcja")) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div>
+          <h1 className="text-lg font-bold text-zinc-900">Godziny pracy</h1>
+          <p className="text-sm text-zinc-500">Ta funkcja dotyczy rozliczenia godzinowego recepcji — nie masz tej roli.</p>
+        </div>
+      </div>
+    );
+  }
+
   const supabase = createServerSupabaseClient();
   const dates = daysInMonth(year, month).map(toDateKey);
 
