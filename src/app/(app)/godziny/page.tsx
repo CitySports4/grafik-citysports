@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { requireEmployee } from "@/lib/session";
+import { requireEmployee, tracksHours } from "@/lib/session";
 import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
@@ -19,15 +19,16 @@ export default async function GodzinyPage({
   const year = Number(params.year) || fallback.year;
   const month = Number(params.month) || fallback.month;
 
-  // Wpisywanie godzin dotyczy rozliczenia godzinowego recepcji (patrz
-  // admin/wynagrodzenia) — kto nie ma tej roli (np. szef na stałej pensji),
-  // nie musi (i nie powinien) niczego tu wpisywać.
-  if (!employee.roles.includes("recepcja")) {
+  // Wpisywanie godzin dotyczy tego, kto ma ustawioną stawkę godzinową
+  // (patrz admin/wynagrodzenia i lib/session.ts) — kto jej nie ma (np. szef
+  // na stałej pensji), nie musi (i nie powinien) niczego tu wpisywać, choć
+  // może normalnie mieć rolę Recepcja i miejsce w grafiku.
+  if (!tracksHours(employee)) {
     return (
       <div className="flex flex-col gap-6">
         <div>
           <h1 className="text-lg font-bold text-zinc-900">Godziny pracy</h1>
-          <p className="text-sm text-zinc-500">Ta funkcja dotyczy rozliczenia godzinowego recepcji — nie masz tej roli.</p>
+          <p className="text-sm text-zinc-500">Nie masz ustawionej stawki godzinowej — ta funkcja Cię nie dotyczy.</p>
         </div>
       </div>
     );

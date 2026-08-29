@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { requireEmployee } from "@/lib/session";
+import { requireEmployee, tracksHours as employeeTracksHours } from "@/lib/session";
 import { findScheduleMonth, currentMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
 import { hoursBetween, formatHm, dailyEffectiveHours, extraEventHours } from "@/lib/time";
 import { isWithinEditWindow, EDIT_WINDOW_DAYS } from "@/lib/time-entry-window";
@@ -45,7 +45,7 @@ export default async function MyGrafikPage({
   // zaplanowane) dotyczy tylko roli Recepcja — patrz admin/wynagrodzenia,
   // jedyne miejsce, które w ogóle rozlicza godziny godzinowo. Kto tej roli
   // nie ma (np. szef na stałej pensji), widzi zwykły, pełny grafik.
-  const tracksHours = employee.roles.includes("recepcja");
+  const tracksHours = employeeTracksHours(employee);
 
   const scheduleMonth = await findScheduleMonth(year, month);
   const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
