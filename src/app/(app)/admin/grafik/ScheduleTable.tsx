@@ -389,7 +389,14 @@ export function ScheduleTable({
                           );
                         }
                         const unavailableIds = unavailableByDayAndSlot[day.date]?.[slotIndex] ?? [];
-                        const unavailableNames = unavailableIds.map((id) => employeeById.get(id)?.name).filter(Boolean);
+                        // Ostrzeżenie ma sens tylko dla PRZYPISANEJ osoby — reszta
+                        // niedostępnych już i tak znika z listy wyboru niżej (patrz
+                        // `options`), więc pokazywanie ich tu drugi raz nie niesie żadnej
+                        // nowej informacji, a przy małym zespole "ktoś ZAWSZE jest akurat
+                        // niedostępny" świeciło się to na prawie każdej zmianie — admin
+                        // uczył się to ignorować, więc realny konflikt (przypisano kogoś,
+                        // kto sam zgłosił niedostępność) ginął w tle.
+                        const assignedIsUnavailable = shift.employee_id ? unavailableIds.includes(shift.employee_id) : false;
                         // Jedna osoba = jedna zmiana dziennie pon-czw jest zasadą DOMYŚLNĄ
                         // (generatory jej pilnują) — ale w ręcznej edycji admin czasem
                         // świadomie chce wyjątek (np. ktoś dorabia drugą zmianę tego
@@ -408,8 +415,11 @@ export function ScheduleTable({
                           <td key={shift.id} className="px-2 py-2">
                             <div className="flex items-center gap-1 text-[11px] font-semibold text-zinc-500">
                               {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
-                              {unavailableNames.length > 0 && (
-                                <span className="cursor-help text-red-500" title={`Niedostępni: ${unavailableNames.join(", ")}`}>
+                              {assignedIsUnavailable && currentEmployee && (
+                                <span
+                                  className="cursor-help text-red-500"
+                                  title={`${currentEmployee.name} zgłosił(a) niedostępność na tę zmianę`}
+                                >
                                   ⚠
                                 </span>
                               )}
