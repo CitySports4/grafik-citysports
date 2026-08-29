@@ -134,7 +134,7 @@ export default async function WynagrodzeniaPage({
           <p className="text-sm text-zinc-400">Brak aktywnych osób z rolą &quot;Recepcja&quot;.</p>
         )}
         <div className="flex flex-col gap-4">
-          {rows.map(({ emp, days, totalHours, wage, flaggedDays }) => (
+          {rows.map(({ emp, totalHours, wage, flaggedDays }) => (
             <div key={emp.id} className="rounded-xl border border-zinc-200 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 font-semibold text-zinc-900">
@@ -151,24 +151,36 @@ export default async function WynagrodzeniaPage({
                   Uwaga: stawka godzinowa nie jest ustawiona (0 PLN/h) — uzupełnij w Pracownicy.
                 </p>
               )}
-              {flaggedDays.length > 0 ? (
-                <ul className="mt-2 flex flex-col gap-1">
-                  {flaggedDays.map((d) => (
-                    <li key={d.date} className="text-xs">
-                      <span className="font-semibold text-zinc-700">
-                        {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
-                        {" "}
-                        ({weekdayLabel(d.scheduled?.weekday ?? new Date(d.date + "T00:00:00").getDay()).slice(0, 3)})
-                      </span>{" "}
-                      — grafik:{" "}
-                      {d.scheduled ? `${formatHm(d.scheduled.start_time)}–${formatHm(d.scheduled.end_time)}` : "—"}, rzeczywiste:{" "}
-                      {d.actualStart && d.actualEnd ? `${d.actualStart.slice(0, 5)}–${d.actualEnd.slice(0, 5)}` : "—"}{" "}
-                      <span className="font-bold text-red-600">⚠ {d.flag}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
+              {flaggedDays.length === 0 ? (
                 <p className="mt-2 text-xs text-emerald-600">Zgodne z grafikiem, bez braków.</p>
+              ) : (
+                // Zwinięte domyślnie — przy kilkunastu dniach do sprawdzenia
+                // pełna lista każdego wcześniej zamieniała całą stronę w ścianę
+                // tekstu; teraz widać od razu tylko liczbę, a szczegóły na życzenie.
+                <details className="group mt-2">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-bold text-red-600 marker:content-none">
+                    <span>
+                      ⚠ {flaggedDays.length} {flaggedDays.length === 1 ? "dzień wymaga uwagi" : "dni wymagają uwagi"}
+                    </span>
+                    <span className="font-normal text-zinc-400 group-open:hidden">— pokaż ▸</span>
+                    <span className="hidden font-normal text-zinc-400 group-open:inline">— ukryj ▾</span>
+                  </summary>
+                  <ul className="mt-2 flex flex-col gap-1 border-t border-zinc-100 pt-2">
+                    {flaggedDays.map((d) => (
+                      <li key={d.date} className="text-xs">
+                        <span className="font-semibold text-zinc-700">
+                          {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
+                          {" "}
+                          ({weekdayLabel(d.scheduled?.weekday ?? new Date(d.date + "T00:00:00").getDay()).slice(0, 3)})
+                        </span>{" "}
+                        — grafik:{" "}
+                        {d.scheduled ? `${formatHm(d.scheduled.start_time)}–${formatHm(d.scheduled.end_time)}` : "—"}, rzeczywiste:{" "}
+                        {d.actualStart && d.actualEnd ? `${d.actualStart.slice(0, 5)}–${d.actualEnd.slice(0, 5)}` : "—"}{" "}
+                        <span className="font-bold text-red-600">⚠ {d.flag}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
             </div>
           ))}
