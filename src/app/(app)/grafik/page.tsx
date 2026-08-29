@@ -11,8 +11,8 @@ import { EVENT_TYPE_LABELS } from "@/lib/event-types";
 import { SwapButton } from "./SwapButton";
 import { respondSwapRequest, cancelSwapRequest } from "../zamiany/actions";
 import { countAcceptedSwapsThisMonth, SOFT_SWAP_LIMIT_PER_MONTH } from "@/lib/swap-limits";
+import { BTN_GHOST_DANGER } from "@/components/button-styles";
 
-const DANGER_BTN = "rounded-lg px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50";
 const STATUS_LABELS: Record<string, string> = {
   pending: "Oczekuje",
   accepted: "Zaakceptowana",
@@ -243,7 +243,7 @@ export default async function MyGrafikPage({
                           <form action={respondSwapRequest}>
                             <input type="hidden" name="id" value={r.id} />
                             <input type="hidden" name="decision" value="reject" />
-                            <button type="submit" className={DANGER_BTN}>
+                            <button type="submit" className={BTN_GHOST_DANGER}>
                               Odrzuć
                             </button>
                           </form>
@@ -252,7 +252,7 @@ export default async function MyGrafikPage({
                       {iAmRequester && (
                         <form action={cancelSwapRequest}>
                           <input type="hidden" name="id" value={r.id} />
-                          <ConfirmButton confirmText="Anulować tę prośbę?" className={DANGER_BTN}>
+                          <ConfirmButton confirmText="Anulować tę prośbę?" className={BTN_GHOST_DANGER}>
                             Anuluj
                           </ConfirmButton>
                         </form>
