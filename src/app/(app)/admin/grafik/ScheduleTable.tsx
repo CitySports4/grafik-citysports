@@ -20,6 +20,7 @@ import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
 import { ColorDot } from "@/components/ColorDot";
 import { EVENT_TYPE_LABELS } from "@/lib/event-types";
+import { Banner } from "@/components/Banner";
 
 type ShiftRow = {
   id: string;
@@ -308,15 +309,14 @@ export function ScheduleTable({
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
       <div className="flex flex-col gap-3">
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</div>
+          <Banner variant="error" className="font-semibold">
+            {error}
+          </Banner>
         )}
         {generateMessage && (
-          <div className="flex items-start justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700">
-            <span>{generateMessage}</span>
-            <button type="button" onClick={() => setGenerateMessage(null)} className="text-blue-400 hover:text-blue-600">
-              ✕
-            </button>
-          </div>
+          <Banner variant="info" className="font-semibold" onDismiss={() => setGenerateMessage(null)}>
+            {generateMessage}
+          </Banner>
         )}
 
         {scheduleMonthStatus === "draft" && (
