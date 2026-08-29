@@ -100,7 +100,7 @@ export function AvailabilityCalendar({
                         className={`rounded-lg px-2 py-1.5 text-left text-[12px] font-medium transition-colors sm:px-1.5 sm:py-0.5 sm:text-[10.5px] ${
                           active
                             ? "bg-amber-500 text-white"
-                            : "bg-zinc-50 text-zinc-500 hover:bg-zinc-100"
+                            : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
                         }`}
                       >
                         {s.label || `${formatHm(s.default_start_time)}–${formatHm(s.default_end_time)}`}
@@ -113,8 +113,7 @@ export function AvailabilityCalendar({
         })}
       </div>
       <p className="mt-3 text-xs text-zinc-500">
-        Zaznacz tylko dni/zmiany, w których <strong>nie będziesz</strong> dostępny. Jeśli nie
-        będzie Cię cały dzień, zaznacz &quot;Cały dzień&quot; zamiast każdej zmiany osobno.
+        Jeśli nie będzie Cię cały dzień, zaznacz &quot;Cały dzień&quot; zamiast każdej zmiany osobno.
       </p>
     </div>
   );

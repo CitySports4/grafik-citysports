@@ -88,7 +88,7 @@ export default async function AvailabilityPage({
           href="/dyspozycyjnosc?tab=absences"
           className={`px-3 py-2 text-sm font-semibold ${tab === "absences" ? "border-b-2 border-brand-orange text-zinc-900" : "text-zinc-500 hover:text-zinc-700"}`}
         >
-          Nieobecności
+          Urlopy i nieobecności
         </Link>
       </div>
 
@@ -96,9 +96,13 @@ export default async function AvailabilityPage({
         <PlannedAbsencesSection employeeId={employee.id} />
       ) : (
         <>
-          <p className="text-sm text-zinc-500 capitalize">
-            {monthLabel(month)} {year} — zaznacz dni i zmiany, w których na pewno Cię nie będzie.
+          <p className="text-sm text-zinc-500">
+            <span className="capitalize">{monthLabel(month)}</span> {year}
           </p>
+          <Banner variant="info" className="font-semibold">
+            Zaznacz tylko dni i zmiany, w których na pewno Cię <u>nie będzie</u> — nie zaznaczaj tych, w
+            których możesz pracować.
+          </Banner>
 
           {submission?.status === "submitted" && (
             <Banner variant="success">
