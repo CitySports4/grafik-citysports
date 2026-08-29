@@ -155,6 +155,12 @@ export default async function ScheduleBuilderPage({
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
+          <Link
+            href={`/admin/grafik/dyspozycyjnosc?year=${year}&month=${month}`}
+            className="rounded-lg bg-zinc-100 px-3 py-1.5 font-semibold text-zinc-700 hover:bg-zinc-200"
+          >
+            Dyspozycyjność zespołu
+          </Link>
           {hasStructure && (
             <Link
               href={`/print/grafik?year=${year}&month=${month}`}

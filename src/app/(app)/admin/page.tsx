@@ -20,10 +20,6 @@ export default function AdminHomePage() {
             <h2 className="font-semibold text-zinc-900">Zamiany zmian</h2>
             <p className="mt-1 text-sm text-zinc-500">Akceptacja/odrzucanie próśb o zamianę.</p>
           </CardLink>
-          <CardLink href="/admin/dyspozycyjnosc">
-            <h2 className="font-semibold text-zinc-900">Dyspozycyjność zespołu</h2>
-            <p className="mt-1 text-sm text-zinc-500">Kto i kiedy jest niedostępny — cały zespół na jednym widoku.</p>
-          </CardLink>
         </div>
       </div>
 

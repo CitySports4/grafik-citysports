@@ -109,7 +109,7 @@ export default async function AdminAvailabilityOverviewPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <BackLink href="/admin" label="Panel admina" />
+      <BackLink href={`/admin/grafik?year=${year}&month=${month}`} label="Grafik" />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -126,10 +126,10 @@ export default async function AdminAvailabilityOverviewPage({
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <Link href={`/admin/dyspozycyjnosc${prevLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+          <Link href={`/admin/grafik/dyspozycyjnosc${prevLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
             ← poprzedni
           </Link>
-          <Link href={`/admin/dyspozycyjnosc${nextLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+          <Link href={`/admin/grafik/dyspozycyjnosc${nextLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
             następny →
           </Link>
         </div>
