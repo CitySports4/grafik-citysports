@@ -493,8 +493,32 @@ export function ScheduleTable({
                               </button>
                             </div>
 
-                            {day.events.length > 0 && (
+                            <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-2.5">
+                              <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">Zmiany</p>
+                              <div className="flex flex-col gap-1.5">
+                                {day.shifts.length === 0 && <span className="text-zinc-300">Brak zmian tego dnia.</span>}
+                                {day.shifts.map((shift) => (
+                                  <div key={shift.id} className="flex items-center gap-2">
+                                    <span className="text-zinc-500">
+                                      {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteShift(day, shift.id)}
+                                      className="font-semibold text-red-500 hover:underline"
+                                    >
+                                      Usuń zmianę
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              <AddShiftForm onAdd={(start, end) => handleAddCustomShift(day, start, end)} busy={busy} />
+                            </div>
+
+                            <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-2.5">
+                              <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">Wydarzenia</p>
                               <div className="flex flex-col gap-2">
+                                {day.events.length === 0 && <span className="text-zinc-300">Brak wydarzeń tego dnia.</span>}
                                 {day.events.map((ev) => {
                                   const candidateEmployees =
                                     ev.type === "sprzatanie" ? employees.filter((e) => e.can_clean) : employees;
@@ -552,27 +576,8 @@ export function ScheduleTable({
                                   );
                                 })}
                               </div>
-                            )}
-
-                            <div className="flex flex-col gap-1.5">
-                              {day.shifts.map((shift) => (
-                                <div key={shift.id} className="flex items-center gap-2">
-                                  <span className="text-zinc-500">
-                                    {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteShift(day, shift.id)}
-                                    className="font-semibold text-red-500 hover:underline"
-                                  >
-                                    Usuń zmianę
-                                  </button>
-                                </div>
-                              ))}
+                              <AddEventForm employees={employees} onAdd={(data) => handleAddEvent(day, data)} busy={busy} />
                             </div>
-
-                            <AddShiftForm onAdd={(start, end) => handleAddCustomShift(day, start, end)} busy={busy} />
-                            <AddEventForm employees={employees} onAdd={(data) => handleAddEvent(day, data)} busy={busy} />
                           </div>
                         </td>
                       </tr>
