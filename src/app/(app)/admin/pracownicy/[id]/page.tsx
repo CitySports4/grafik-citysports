@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -325,34 +324,6 @@ export default async function EmployeeDetailPage({
           </div>
           <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
             Dodaj regułę
-          </SubmitButton>
-        </form>
-      </Card>
-
-      <Card>
-        <h2 className="mb-1 font-semibold text-zinc-900">Sprzątanie</h2>
-        <p className="mb-3 text-sm text-zinc-500">
-          Którymi strefami sprzątania może się zajmować — ustawiane w{" "}
-          <Link href="/admin/sprzatanie" className="font-semibold text-brand-orange hover:underline">
-            Konfiguracja sprzątania → Kompetencje
-          </Link>
-          , nie tutaj.
-        </p>
-        <form action={updateEmployee}>
-          <input type="hidden" name="id" value={employee.id} />
-          <input type="hidden" name="name" value={employee.name} />
-          <input type="hidden" name="phone" value={employee.phone} />
-          <input type="hidden" name="color_hex" value={employee.color_hex} />
-          {employee.is_instructor && <input type="hidden" name="is_instructor" value="on" />}
-          {employee.active && <input type="hidden" name="active" value="on" />}
-          <input type="hidden" name="min_hours_month" value={employee.min_hours_month} />
-          <input type="hidden" name="target_hours_month" value={employee.target_hours_month} />
-          <input type="hidden" name="hourly_rate" value={employee.hourly_rate} />
-          {[...currentRoles].map((r) => (
-            <input key={String(r)} type="hidden" name="role" value={String(r)} />
-          ))}
-          <SubmitButton className="mt-2 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50">
-            Zapisz
           </SubmitButton>
         </form>
       </Card>
