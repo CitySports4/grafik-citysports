@@ -6,7 +6,7 @@ import { formatHm } from "@/lib/time";
 import { Card } from "@/components/Card";
 import { BackLink } from "@/components/BackLink";
 import { TimeEntryList } from "../../godziny/TimeEntryList";
-import { saveTimeEntryAsAdmin } from "./actions";
+import { addTimeEntryAsAdmin, updateTimeEntryAsAdmin, deleteTimeEntryAsAdmin } from "./actions";
 
 const INPUT =
   "rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -35,7 +35,7 @@ export default async function AdminGodzinyPage({
     ? await Promise.all([
         supabase
           .from("time_entry")
-          .select("date, actual_start, actual_end, note")
+          .select("id, date, actual_start, actual_end, note")
           .eq("employee_id", employeeId)
           .in("date", dates),
         supabase
@@ -47,7 +47,13 @@ export default async function AdminGodzinyPage({
       ])
     : [{ data: [] }, { data: [] }];
 
-  const entryByDate = new Map((entries ?? []).map((e) => [e.date, e]));
+  // Jeden dzień może mieć kilka wpisów (podzielona zmiana z przerwą) — stąd
+  // mapa na LISTĘ, nie na pojedynczy wiersz.
+  const entriesByDate = new Map<string, { id: string; actual_start: string | null; actual_end: string | null; note: string | null }[]>();
+  for (const e of entries ?? []) {
+    if (!entriesByDate.has(e.date)) entriesByDate.set(e.date, []);
+    entriesByDate.get(e.date)!.push(e);
+  }
   type ShiftRow = { start_time: string; end_time: string; schedule_day: { date: string } };
   const scheduledByDate = new Map<string, { start_time: string; end_time: string }[]>();
   for (const s of (shiftRows ?? []) as unknown as ShiftRow[]) {
@@ -56,7 +62,7 @@ export default async function AdminGodzinyPage({
     scheduledByDate.get(date)!.push({ start_time: s.start_time, end_time: s.end_time });
   }
 
-  const relevantDates = dates.filter((d) => scheduledByDate.has(d) || entryByDate.has(d));
+  const relevantDates = dates.filter((d) => scheduledByDate.has(d) || entriesByDate.has(d));
 
   const qs = (overrides: Record<string, string | number>) => {
     const p = new URLSearchParams({ year: String(year), month: String(month), employee: employeeId, ...Object.fromEntries(Object.entries(overrides).map(([k, v]) => [k, String(v)])) });
@@ -65,7 +71,7 @@ export default async function AdminGodzinyPage({
   const prevLink = month === 1 ? qs({ year: year - 1, month: 12 }) : qs({ month: month - 1 });
   const nextLink = month === 12 ? qs({ year: year + 1, month: 1 }) : qs({ month: month + 1 });
 
-  const boundSave = employeeId ? saveTimeEntryAsAdmin.bind(null, employeeId) : undefined;
+  const boundAdd = employeeId ? addTimeEntryAsAdmin.bind(null, employeeId) : undefined;
 
   return (
     <div className="flex flex-col gap-6">
@@ -108,12 +114,13 @@ export default async function AdminGodzinyPage({
       </div>
 
       <Card>
-        {boundSave ? (
+        {boundAdd ? (
           <TimeEntryList
-            saveAction={boundSave}
+            addAction={boundAdd}
+            updateAction={updateTimeEntryAsAdmin}
+            deleteAction={deleteTimeEntryAsAdmin}
             days={relevantDates.map((dateKey) => {
               const weekday = new Date(dateKey + "T00:00:00").getDay();
-              const entry = entryByDate.get(dateKey);
               return {
                 dateKey,
                 label: `${weekdayLabel(weekday)}, ${new Date(dateKey + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}`,
@@ -121,16 +128,19 @@ export default async function AdminGodzinyPage({
                   .map((s) => `${formatHm(s.start_time)}–${formatHm(s.end_time)}`)
                   .join(", "),
                 editable: true,
-                entry: entry
-                  ? { actualStart: entry.actual_start ?? "", actualEnd: entry.actual_end ?? "", note: entry.note ?? "" }
-                  : { actualStart: "", actualEnd: "", note: "" },
+                entries: (entriesByDate.get(dateKey) ?? []).map((e) => ({
+                  id: e.id,
+                  actualStart: e.actual_start ?? "",
+                  actualEnd: e.actual_end ?? "",
+                  note: e.note ?? "",
+                })),
               };
             })}
           />
         ) : (
           <p className="py-6 text-center text-sm text-zinc-400">Brak aktywnych pracowników.</p>
         )}
-        {boundSave && relevantDates.length === 0 && (
+        {boundAdd && relevantDates.length === 0 && (
           <p className="py-6 text-center text-sm text-zinc-400">Brak zmian ani wpisów w tym miesiącu.</p>
         )}
       </Card>

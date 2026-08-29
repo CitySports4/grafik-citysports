@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee } from "@/lib/session";
-import { findScheduleMonth, currentMonth, monthLabel, toDateKey } from "@/lib/schedule-month";
+import { findScheduleMonth, currentMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
 import { hoursBetween, formatHm, dailyEffectiveHours } from "@/lib/time";
+import { isWithinEditWindow, EDIT_WINDOW_DAYS } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
@@ -12,6 +13,8 @@ import { SwapButton } from "./SwapButton";
 import { respondSwapRequest, cancelSwapRequest } from "../zamiany/actions";
 import { countAcceptedSwapsThisMonth, SOFT_SWAP_LIMIT_PER_MONTH } from "@/lib/swap-limits";
 import { BTN_GHOST_DANGER } from "@/components/button-styles";
+import { DayTimeEntryEditor } from "../godziny/DayTimeEntryEditor";
+import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "../godziny/actions";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Oczekuje",
@@ -69,7 +72,8 @@ export default async function MyGrafikPage({
   }
 
   const supabase = createServerSupabaseClient();
-  const [{ data: days }, { data: myClasses }] = await Promise.all([
+  const monthDateKeys = daysInMonth(year, month).map(toDateKey);
+  const [{ data: days }, { data: myClasses }, { data: myTimeEntries }] = await Promise.all([
     supabase
       .from("schedule_day")
       .select(
@@ -78,7 +82,24 @@ export default async function MyGrafikPage({
       .eq("schedule_month_id", scheduleMonth.id)
       .order("date"),
     supabase.from("employee_class_schedule").select("weekday, start_time, end_time").eq("employee_id", employee.id),
+    supabase
+      .from("time_entry")
+      .select("id, date, actual_start, actual_end, note")
+      .eq("employee_id", employee.id)
+      .in("date", monthDateKeys),
   ]);
+
+  // Wpisane "przy okazji" swojej zmiany, na tej samej stronie co grafik —
+  // jeden dzień może mieć kilka wpisów (podzielona zmiana z przerwą).
+  const timeEntriesByDate = new Map<string, { id: string; actualStart: string; actualEnd: string; note: string }[]>();
+  for (const e of myTimeEntries ?? []) {
+    if (!timeEntriesByDate.has(e.date)) timeEntriesByDate.set(e.date, []);
+    timeEntriesByDate.get(e.date)!.push({ id: e.id, actualStart: e.actual_start ?? "", actualEnd: e.actual_end ?? "", note: e.note ?? "" });
+  }
+  const myLoggedHours =
+    Math.round(
+      (myTimeEntries ?? []).reduce((sum, e) => sum + (e.actual_start && e.actual_end ? hoursBetween(e.actual_start, e.actual_end) : 0), 0) * 100
+    ) / 100;
 
   const { data: employees } = await supabase.from("employee").select("id, name, color_hex");
   const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
@@ -116,28 +137,58 @@ export default async function MyGrafikPage({
   }
   myHours = Math.round(myHours * 100) / 100;
 
+  // Dni starsze niż okno edycji godzin (patrz EDIT_WINDOW_DAYS) znikają z
+  // widoku — i tak nie da się już dla nich nic wpisać ani zmienić, więc same
+  // tylko zaśmiecały listę. Suma godzin wyżej liczy się dalej z CAŁEGO
+  // miesiąca (days), nie z tej przyciętej listy — to tylko kwestia tego, co
+  // się renderuje, nie co się liczy do podsumowania.
+  const cutoffKey = toDateKey(new Date(new Date().getTime() - EDIT_WINDOW_DAYS * 86400000));
+  const visibleDays = (days ?? []).filter((d) => d.date >= cutoffKey);
+
   return (
     <div className="flex flex-col gap-6">
       {header}
 
       <Card className="flex items-center justify-between">
         <span className="text-sm text-zinc-600">Twoje godziny w tym miesiącu</span>
-        <span className="text-lg font-bold text-zinc-900">{myHours}h</span>
+        <span className="text-lg font-bold text-zinc-900">
+          {myLoggedHours}h <span className="text-sm font-normal text-zinc-400">wpisanych</span>
+          {" / "}
+          {myHours}h <span className="text-sm font-normal text-zinc-400">zaplanowanych</span>
+        </span>
       </Card>
 
+      {visibleDays.length === 0 && (
+        <p className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
+          Dni z tego miesiąca są już starsze niż {EDIT_WINDOW_DAYS} dni — nic tu nie zmienisz. Pełną historię widać w{" "}
+          <Link href="/godziny" className="font-semibold text-brand-orange hover:underline">
+            Godzinach pracy
+          </Link>
+          .
+        </p>
+      )}
       <div className="flex flex-col gap-3">
-        {days?.map((day) => {
+        {visibleDays.map((day) => {
           const shifts = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
           const events = day.schedule_event ?? [];
           const isMyDay = shifts.some((s) => s.employee_id === employee.id);
+          const isToday = day.date === today;
           const dateLabelStr = new Date(day.date + "T00:00:00").toLocaleDateString("pl-PL", {
             day: "numeric",
             month: "short",
           });
           return (
-            <Card key={day.id} className={`!p-3 ${isMyDay ? "border-brand-orange bg-brand-orange/5" : ""}`}>
-              <div className="mb-1.5 text-sm font-semibold capitalize text-zinc-900">
+            <Card
+              key={day.id}
+              className={`!p-3 ${isMyDay ? "border-brand-orange bg-brand-orange/5" : ""} ${isToday ? "ring-2 ring-brand-blue" : ""}`}
+            >
+              <div className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold capitalize text-zinc-900">
                 {dateLabelStr} — {weekdayLabel(day.weekday)}
+                {isToday && (
+                  <span className="rounded-full bg-brand-blue px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    Dziś
+                  </span>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {shifts.map((shift) => {
@@ -179,6 +230,34 @@ export default async function MyGrafikPage({
                   ))}
                 </div>
               )}
+              {isMyDay &&
+                (() => {
+                  const dayEntries = timeEntriesByDate.get(day.date) ?? [];
+                  const entriesLabel = dayEntries.map((e) => `${e.actualStart}–${e.actualEnd}`).join(", ");
+                  if (!isWithinEditWindow(day.date)) {
+                    return dayEntries.length > 0 ? (
+                      <p className="mt-2 border-t border-zinc-200 pt-2 text-xs text-zinc-500">Godziny: {entriesLabel}</p>
+                    ) : null;
+                  }
+                  return (
+                    <details className="group mt-2 border-t border-zinc-200 pt-2">
+                      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange marker:content-none">
+                        <span>{dayEntries.length > 0 ? `Godziny: ${entriesLabel}` : "Wpisz godziny"}</span>
+                        <span className="font-normal text-zinc-400 group-open:hidden">{dayEntries.length > 0 ? "— edytuj ▸" : "▸"}</span>
+                        <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
+                      </summary>
+                      <div className="mt-2">
+                        <DayTimeEntryEditor
+                          dateKey={day.date}
+                          initialEntries={dayEntries}
+                          addAction={addTimeEntry}
+                          updateAction={updateTimeEntry}
+                          deleteAction={deleteTimeEntry}
+                        />
+                      </div>
+                    </details>
+                  );
+                })()}
             </Card>
           );
         })}

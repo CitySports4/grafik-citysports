@@ -39,7 +39,13 @@ export async function GET(request: Request) {
       .eq("schedule_day.date", dateKey),
   ]);
 
-  const entryByEmp = new Map((entries ?? []).map((e) => [e.employee_id, e]));
+  // Jeden dzień może mieć kilka wpisów (podzielona zmiana z przerwą) — stąd
+  // lista wpisów per osoba, nie jeden wiersz.
+  const entriesByEmp = new Map<string, { actual_start: string | null; actual_end: string | null }[]>();
+  for (const e of entries ?? []) {
+    if (!entriesByEmp.has(e.employee_id)) entriesByEmp.set(e.employee_id, []);
+    entriesByEmp.get(e.employee_id)!.push(e);
+  }
   type ShiftRow = { employee_id: string; start_time: string; end_time: string };
   const scheduledByEmp = new Map<string, { start_time: string; end_time: string }>();
   for (const s of (shiftRows ?? []) as unknown as ShiftRow[]) {
@@ -49,17 +55,23 @@ export async function GET(request: Request) {
   const anomalies: string[] = [];
   for (const emp of employees ?? []) {
     const scheduled = scheduledByEmp.get(emp.id);
-    const entry = entryByEmp.get(emp.id);
-    if (scheduled && !entry) {
+    const dayEntries = (entriesByEmp.get(emp.id) ?? []).filter(
+      (e): e is { actual_start: string; actual_end: string } => Boolean(e.actual_start && e.actual_end)
+    );
+    const entriesLabel = dayEntries.map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}`).join(", ");
+    const minStart = dayEntries.length > 0 ? dayEntries.reduce((a, b) => (timeToMinutes(b.actual_start) < timeToMinutes(a) ? b.actual_start : a), dayEntries[0].actual_start) : null;
+    const maxEnd = dayEntries.length > 0 ? dayEntries.reduce((a, b) => (timeToMinutes(b.actual_end) > timeToMinutes(a) ? b.actual_end : a), dayEntries[0].actual_end) : null;
+
+    if (scheduled && dayEntries.length === 0) {
       anomalies.push(`${emp.name}: zaplanowana zmiana ${formatHm(scheduled.start_time)}–${formatHm(scheduled.end_time)}, brak wpisu godzin.`);
-    } else if (!scheduled && entry?.actual_start && entry?.actual_end) {
-      anomalies.push(`${emp.name}: wpisane godziny ${entry.actual_start.slice(0, 5)}–${entry.actual_end.slice(0, 5)}, brak w grafiku tego dnia.`);
-    } else if (scheduled && entry?.actual_start && entry?.actual_end) {
-      const startDiff = Math.abs(timeToMinutes(entry.actual_start) - timeToMinutes(scheduled.start_time));
-      const endDiff = Math.abs(timeToMinutes(entry.actual_end) - timeToMinutes(scheduled.end_time));
+    } else if (!scheduled && dayEntries.length > 0) {
+      anomalies.push(`${emp.name}: wpisane godziny ${entriesLabel}, brak w grafiku tego dnia.`);
+    } else if (scheduled && minStart && maxEnd) {
+      const startDiff = Math.abs(timeToMinutes(minStart) - timeToMinutes(scheduled.start_time));
+      const endDiff = Math.abs(timeToMinutes(maxEnd) - timeToMinutes(scheduled.end_time));
       if (startDiff > TOLERANCE_MIN || endDiff > TOLERANCE_MIN) {
         anomalies.push(
-          `${emp.name}: grafik ${formatHm(scheduled.start_time)}–${formatHm(scheduled.end_time)}, rzeczywiste ${entry.actual_start.slice(0, 5)}–${entry.actual_end.slice(0, 5)} (różnica >±${TOLERANCE_MIN} min).`
+          `${emp.name}: grafik ${formatHm(scheduled.start_time)}–${formatHm(scheduled.end_time)}, rzeczywiste ${entriesLabel} (różnica >±${TOLERANCE_MIN} min).`
         );
       }
     }
