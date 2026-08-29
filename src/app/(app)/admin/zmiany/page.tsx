@@ -6,10 +6,10 @@ import { BackLink } from "@/components/BackLink";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 import { addShiftSlot, deleteShiftSlot, toggleShiftSlotActive, seedDefaultShiftTemplate } from "./actions";
+import { BTN_GHOST_DANGER } from "@/components/button-styles";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3 py-1.5 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
-const DANGER_BTN = "rounded-lg px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50";
 
 export default async function ShiftTemplatePage() {
   const supabase = createServerSupabaseClient();
@@ -69,7 +69,7 @@ export default async function ShiftTemplatePage() {
                       </form>
                       <form action={deleteShiftSlot}>
                         <input type="hidden" name="id" value={s.id} />
-                        <ConfirmButton confirmText="Usunąć tę zmianę z szablonu?" className={DANGER_BTN}>
+                        <ConfirmButton confirmText="Usunąć tę zmianę z szablonu?" className={BTN_GHOST_DANGER}>
                           Usuń
                         </ConfirmButton>
                       </form>

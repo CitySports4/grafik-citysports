@@ -50,10 +50,11 @@ export async function resetMonthStructure(scheduleMonthId: string, year: number,
 // Jedyny generator w UI — AI ma tu pełne zaufanie do UKŁADU (nie tylko
 // doradza). Patrz komentarz na górze schedule-generator-ai.ts po dlaczego to
 // świadomy wyjątek od zasady w ai.ts i jak jest zabezpieczony (pełna
-// rewalidacja + odrzucenie i poprawka, nie ślepe zaufanie). Zwykły,
-// deterministyczny `runDraftGenerator` (schedule-generator.ts) zostaje w
-// kodzie nietknięty — to on dostarcza reguły, względem których rewalidowana
-// jest KAŻDA propozycja AI — ale nie jest już wpięty w żaden przycisk.
+// rewalidacja + odrzucenie i poprawka, nie ślepe zaufanie). Stary,
+// deterministyczny generator (dawny `runDraftGenerator`) został usunięty ze
+// schedule-generator.ts jako martwy kod — nie był wpięty w żaden przycisk, a
+// reguły, względem których rewalidowana jest propozycja AI, żyją teraz
+// bezpośrednio w schedule-generator-ai.ts.
 export async function runAiDraft(scheduleMonthId: string): Promise<{ assignedCount: number; skippedCount: number; aiRounds: number }> {
   await requireAdmin();
   return runAiDraftGenerator(scheduleMonthId);
