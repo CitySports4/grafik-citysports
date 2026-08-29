@@ -65,6 +65,7 @@ export default async function WynagrodzeniaPage({
     }
   }
   const entryByEmpDate = new Map((entries ?? []).map((e) => [`${e.employee_id}|${e.date}`, e]));
+  const todayKey = toDateKey(new Date());
 
   const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
   const nextLink = month === 12 ? `?year=${year + 1}&month=1` : `?year=${year}&month=${month + 1}`;
@@ -77,8 +78,13 @@ export default async function WynagrodzeniaPage({
       const actualEnd = entry?.actual_end ?? null;
       const workedHours = actualStart && actualEnd ? hoursBetween(actualStart, actualEnd) : 0;
 
+      // "Brak wpisu godzin" ma sens tylko dla dnia, który już się odbył — dla
+      // przyszłych zmian (cały nadchodzący miesiąc na starcie) nikt jeszcze
+      // fizycznie nie mógł wpisać rzeczywistych godzin, więc to nie jest brak,
+      // tylko naturalny stan rzeczy. Bez tego warunku widok zapełniał się
+      // dziesiątkami identycznych, przedwczesnych ostrzeżeń na cały miesiąc.
       let flag: string | null = null;
-      if (scheduled && (!actualStart || !actualEnd)) {
+      if (scheduled && (!actualStart || !actualEnd) && date < todayKey) {
         flag = "brak wpisu godzin";
       } else if (!scheduled && actualStart && actualEnd) {
         flag = "brak w grafiku";
