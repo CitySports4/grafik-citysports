@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -472,29 +473,48 @@ export default async function CleaningConfigPage({
           </p>
           <div className="flex flex-col gap-3">
             {(employees ?? []).map((emp) => (
-              <form key={emp.id} action={setEmployeeZones} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 p-2.5">
+              <form key={emp.id} action={setEmployeeZones} className="flex flex-col gap-2 rounded-lg border border-zinc-200 p-2.5">
                 <input type="hidden" name="employee_id" value={emp.id} />
-                <span className="flex min-w-[110px] items-center gap-1.5 text-sm font-semibold text-zinc-900">
-                  <ColorDot color={emp.color_hex} />
-                  {emp.name}
-                </span>
-                <div className="flex flex-1 flex-wrap gap-2">
-                  {(zones ?? []).map((zone) => (
-                    <label key={zone.id} className="flex items-center gap-1 text-xs text-zinc-600">
-                      <input
-                        type="checkbox"
-                        name="zone_ids"
-                        value={zone.id}
-                        defaultChecked={zoneIdsByEmployee.get(emp.id)?.has(zone.id) ?? false}
-                        className="h-3.5 w-3.5"
-                      />
-                      {zone.name}
-                    </label>
-                  ))}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900">
+                    <ColorDot color={emp.color_hex} />
+                    {emp.name}
+                  </span>
+                  <SubmitButton className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50">
+                    Zapisz
+                  </SubmitButton>
                 </div>
-                <SubmitButton className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50">
-                  Zapisz
-                </SubmitButton>
+                {/* Siatka zamiast płaskiej listy zawijanej flex-wrap — 14 stref
+                    naraz w jednym ciągu było za dużo do ogarnięcia jednym
+                    spojrzeniem. Grupowanie po piętrze (te same group_code co w
+                    zakładce "Strefy i zadania") dzieli to na mniejsze, sensowne
+                    kawałki, a stałe kolumny siatki wyrównują checkboxy zamiast
+                    dowolnego zawijania zależnego od długości nazwy. */}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
+                  {(zones ?? []).map((zone, i) => {
+                    const prevGroup = i > 0 ? (zones ?? [])[i - 1].group_code : undefined;
+                    const showGroupHeader = zone.group_code && zone.group_code !== prevGroup;
+                    return (
+                      <Fragment key={zone.id}>
+                        {showGroupHeader && (
+                          <h4 className="col-span-full mt-1.5 text-[10px] font-bold uppercase tracking-wide text-zinc-400 first:mt-0">
+                            {zone.group_code}
+                          </h4>
+                        )}
+                        <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                          <input
+                            type="checkbox"
+                            name="zone_ids"
+                            value={zone.id}
+                            defaultChecked={zoneIdsByEmployee.get(emp.id)?.has(zone.id) ?? false}
+                            className="h-3.5 w-3.5 shrink-0"
+                          />
+                          <span className="truncate">{zone.name}</span>
+                        </label>
+                      </Fragment>
+                    );
+                  })}
+                </div>
               </form>
             ))}
           </div>
