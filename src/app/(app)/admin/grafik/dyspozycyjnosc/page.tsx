@@ -237,31 +237,51 @@ export default async function AdminAvailabilityOverviewPage({
                 {patternLines.length === 0 && wholeRanges.length === 0 && partialDays.length === 0 ? (
                   <p className="mt-1.5 text-xs text-emerald-600">Bez zgłoszonych niedostępności w tym miesiącu.</p>
                 ) : (
-                  <div className="mt-1.5 flex flex-col gap-1 text-xs">
+                  // Osobne, podpisane rzędy "chipów" zamiast jednej długiej,
+                  // rozdzielanej przecinkami linijki tekstu — każdy zakres/dzień
+                  // jest własną, wizualnie odseparowaną plakietką, więc łatwiej
+                  // wyłapać wzrokiem pojedynczą datę zamiast czytać zdanie.
+                  <div className="mt-2 flex flex-col gap-2">
                     {patternLines.length > 0 && (
-                      <p>
-                        <span className="font-semibold text-zinc-500">Cyklicznie (zajęcia/reguła):</span>{" "}
-                        <span className="text-zinc-600">{patternLines.join("; ")}</span>
-                      </p>
+                      <div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                          Cyklicznie (zajęcia/reguła)
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {patternLines.map((line) => (
+                            <span key={line} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
+                              {line}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
                     {wholeRanges.length > 0 && (
-                      <p>
-                        <span className="font-semibold text-red-600">Cały dzień niedostępny/a:</span>{" "}
-                        <span className="text-zinc-600">{wholeRanges.map((r) => formatRange(r.start, r.end)).join(", ")}</span>
-                      </p>
+                      <div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-red-500">Cały dzień niedostępny/a</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {wholeRanges.map((r) => (
+                            <span
+                              key={`${r.start}-${r.end}`}
+                              className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700"
+                            >
+                              {formatRange(r.start, r.end)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
                     {partialDays.length > 0 && (
-                      <p>
-                        <span className="font-semibold text-amber-600">Częściowo niedostępny/a:</span>{" "}
-                        <span className="text-zinc-600">
-                          {partialDays
-                            .map(
-                              (p) =>
-                                `${fmtDate(p.date)} (${p.slots.map((s) => `${formatHm(s.default_start_time)}–${formatHm(s.default_end_time)}`).join(", ")})`
-                            )
-                            .join("; ")}
-                        </span>
-                      </p>
+                      <div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-500">Częściowo niedostępny/a</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {partialDays.map((p) => (
+                            <span key={p.date} className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                              {fmtDate(p.date)} · {p.slots.map((s) => `${formatHm(s.default_start_time)}–${formatHm(s.default_end_time)}`).join(", ")}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
