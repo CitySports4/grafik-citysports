@@ -23,7 +23,9 @@ export default async function AvailabilityPage({
 
   const supabase = createServerSupabaseClient();
 
-  const [{ data: submission }, { data: shiftTemplate }, { data: preferredDaysOff }] = await Promise.all([
+  const dates = daysInMonth(year, month).map(toDateKey);
+
+  const [{ data: submission }, { data: shiftTemplate }, { data: preferredDaysOff }, { data: plannedAbsences }] = await Promise.all([
     supabase
       .from("availability_submission")
       .select("id, status, submitted_at")
@@ -36,7 +38,24 @@ export default async function AvailabilityPage({
       .eq("active", true)
       .order("slot_index"),
     supabase.from("preferred_day_off").select("weekday, note").eq("employee_id", employee.id),
+    supabase
+      .from("planned_absence")
+      .select("start_date, end_date")
+      .eq("employee_id", employee.id)
+      .lte("start_date", dates[dates.length - 1])
+      .gte("end_date", dates[0]),
   ]);
+
+  // Dni pokryte zgłoszonym urlopem są niedostępne "z automatu" — nie ma
+  // sensu dawać ich jeszcze raz do ręcznego zaznaczenia w kalendarzu
+  // dyspozycyjności, to samo policzyłoby się dwa razy i myliło. Kalendarz
+  // pokazuje je jako zablokowane, patrz absenceDates w AvailabilityCalendar.
+  const absenceDates = new Set<string>();
+  for (const a of plannedAbsences ?? []) {
+    for (const dateKey of dates) {
+      if (dateKey >= a.start_date && dateKey <= a.end_date) absenceDates.add(dateKey);
+    }
+  }
 
   let entries: { date: string; whole_day: boolean; slot_index: number | null }[] = [];
   if (submission) {
@@ -117,6 +136,7 @@ export default async function AvailabilityPage({
               days={days}
               entriesByDate={entriesByDate}
               shiftsByWeekday={shiftsByWeekday as Record<number, { slot_index: number; default_start_time: string; default_end_time: string; label: string | null }[]>}
+              absenceDates={Array.from(absenceDates)}
             />
             <form action={submitAvailability} className="mt-4">
               <input type="hidden" name="schedule_month_id" value={scheduleMonth.id} />
