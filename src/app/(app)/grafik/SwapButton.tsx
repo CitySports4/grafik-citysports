@@ -52,10 +52,15 @@ export function SwapButton({ shiftId }: { shiftId: string }) {
       <button
         type="button"
         onClick={handleOpen}
-        className="rounded-lg bg-zinc-900/10 px-1.5 py-0.5 text-[10px] font-bold text-zinc-700 hover:bg-zinc-900/20"
+        // Widoczny rozmiar zostaje mały (pasuje do reszty pigułki zmiany),
+        // ale obszar reagujący na dotyk jest większy — sam tekst byłby za
+        // mały, żeby wygodnie trafić palcem na telefonie.
+        className="-m-1.5 rounded-lg p-1.5"
         title="Zamień się"
       >
-        🔄
+        <span className="flex items-center justify-center rounded-lg bg-zinc-900/10 px-1.5 py-0.5 text-[10px] font-bold text-zinc-700 hover:bg-zinc-900/20">
+          🔄
+        </span>
       </button>
       {open && (
         <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-xl border border-zinc-200 bg-white p-2.5 text-left shadow-lg">

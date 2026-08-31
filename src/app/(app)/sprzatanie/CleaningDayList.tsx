@@ -88,14 +88,22 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       {it.checklist.length === 0 && !it.autoCovered && (
+                        // Widoczny kwadracik zostaje mały (h-5 w-5), ale
+                        // obszar reagujący na dotyk jest większy (ujemny margines
+                        // + padding) — na telefonie 20×20px to za mało, żeby
+                        // wygodnie trafić palcem.
                         <button
                           type="button"
                           onClick={() => handleToggleDone(it.taskId)}
-                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${
-                            it.done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
-                          }`}
+                          className="-m-2 flex shrink-0 items-center justify-center rounded p-2"
                         >
-                          {it.done ? "✓" : ""}
+                          <span
+                            className={`flex h-5 w-5 items-center justify-center rounded border-2 ${
+                              it.done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
+                            }`}
+                          >
+                            {it.done ? "✓" : ""}
+                          </span>
                         </button>
                       )}
                       <span className={`text-sm font-semibold ${it.done ? "text-emerald-700 line-through" : "text-zinc-900"}`}>{it.name}</span>
@@ -147,10 +155,10 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                             <button
                               type="button"
                               onClick={() => handleToggleChecklist(it.taskId, c.id)}
-                              className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-xs hover:bg-zinc-50"
+                              className="flex w-full items-center gap-2 rounded-lg px-1 py-2 text-left text-xs hover:bg-zinc-50"
                             >
                               <span
-                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 ${
+                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${
                                   c.done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
                                 }`}
                               >

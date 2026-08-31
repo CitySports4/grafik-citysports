@@ -30,3 +30,18 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+/* Pola formularzy w całej appce używają text-sm (14px) — na iOS Safari
+   każdy input z font-size < 16px powoduje automatyczny zoom całej strony
+   przy dotknięciu (klasyczny, bardzo denerwujący bug na telefonie, którego
+   w ogóle nie widać przy testowaniu na komputerze). Wymuszamy 16px tylko
+   poniżej breakpointu "sm" (czyli tam, gdzie realnie liczy się dotyk) — od
+   "sm" wzwyż wraca gęstsze 14px z klas Tailwinda, bez zmiany wyglądu na
+   desktopie. */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
