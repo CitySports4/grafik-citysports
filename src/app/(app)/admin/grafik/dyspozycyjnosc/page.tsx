@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { getOrCreateScheduleMonth, nextMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
-import { buildAvailabilityMap, applyPlannedAbsences, isHardUnavailable, type AvailabilityMap, type HardConstraint } from "@/lib/unavailability";
+import { buildAvailabilityMap, applyPlannedAbsences, type AvailabilityMap, type HardConstraint } from "@/lib/unavailability";
 import { formatHm } from "@/lib/time";
+import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { BackLink } from "@/components/BackLink";
 import { ColorDot } from "@/components/ColorDot";
@@ -27,27 +28,52 @@ type DayLevel = "whole" | "partial" | "available" | "none";
 // pokazanie tylko tych wyjątków jako czytelnego tekstu — kolejne dni "cały
 // dzień niedostępny" zwinięte w jeden zakres dat, zamiast osobnej komórki na
 // każdy z nich.
+//
+// UWAGA: w odróżnieniu od isHardUnavailable() (który liczy się przy
+// przypisywaniu zmian i musi brać pod uwagę WSZYSTKO naraz), tu celowo
+// liczymy tylko na podstawie zgłoszonej dyspozycyjności/urlopów
+// (availabilityMap) — reguły cykliczne (zajęcia, stałe "nie pracuję w
+// weekendy" itd.) pokazujemy OSOBNO, jako jedną linijkę wzoru na cały
+// miesiąc (patrz recurringPatternLines), zamiast rozbijać je na dziesiątki
+// niemal identycznych wpisów dzień po dniu — to właśnie robiło ten widok
+// nieczytelnym.
 function dayStatus(
   employeeId: string,
   dateKey: string,
-  weekday: number,
   slots: ShiftSlot[],
-  availabilityMap: AvailabilityMap,
-  hardConstraintsByEmployee: Map<string, HardConstraint[]>
+  availabilityMap: AvailabilityMap
 ): { level: DayLevel; unavailableSlots: number[] } {
   const entry = availabilityMap.get(employeeId)?.get(dateKey);
   if (entry?.wholeDay) return { level: "whole", unavailableSlots: slots.map((s) => s.slot_index) };
   if (slots.length === 0) return { level: "none", unavailableSlots: [] };
 
-  const unavailableSlots = slots
-    .filter((s) =>
-      isHardUnavailable(employeeId, dateKey, weekday, s.slot_index, s.default_start_time, s.default_end_time, availabilityMap, hardConstraintsByEmployee)
-    )
-    .map((s) => s.slot_index);
+  const unavailableSlots = slots.filter((s) => entry?.slots.has(s.slot_index)).map((s) => s.slot_index);
 
   if (unavailableSlots.length === 0) return { level: "available", unavailableSlots: [] };
   if (unavailableSlots.length === slots.length) return { level: "whole", unavailableSlots };
   return { level: "partial", unavailableSlots };
+}
+
+// Reguły cykliczne pogrupowane po identycznym oknie czasowym (i dniu
+// tygodnia) w jedną czytelną linijkę, np. "sob, niedz: cały dzień" albo
+// "pon–pt: 08:00–14:00", zamiast osobnego wpisu na każdą datę w miesiącu,
+// w której ta sama reguła akurat wypada.
+function recurringPatternLines(rules: HardConstraint[]): string[] {
+  const groups = new Map<string, number[]>();
+  for (const r of rules) {
+    const key = r.start_time && r.end_time ? `${r.start_time}|${r.end_time}` : "all";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(r.weekday);
+  }
+  return Array.from(groups.entries()).map(([key, weekdays]) => {
+    const sorted = [...new Set(weekdays)].sort(
+      (a, b) => WEEK_DISPLAY_ORDER.indexOf(a as (typeof WEEK_DISPLAY_ORDER)[number]) - WEEK_DISPLAY_ORDER.indexOf(b as (typeof WEEK_DISPLAY_ORDER)[number])
+    );
+    const dayLabels = sorted.map((w) => weekdayLabel(w).slice(0, 3)).join(", ");
+    if (key === "all") return `${dayLabels}: cały dzień`;
+    const [start, end] = key.split("|");
+    return `${dayLabels}: ${formatHm(start)}–${formatHm(end)}`;
+  });
 }
 
 function fmtDate(dateKey: string): string {
@@ -117,13 +143,15 @@ export default async function AdminAvailabilityOverviewPage({
     .gte("end_date", dateKeys[0]);
   applyPlannedAbsences(availabilityMap, plannedAbsences ?? []);
 
-  // Dla każdego pracownika: dni "cały dzień niedostępny" zwinięte w zakresy
+  // Dla każdego pracownika: reguły cykliczne jako jedna linijka wzoru,
+  // dni "cały dzień niedostępny" (zgłoszone/urlop) zwinięte w zakresy
   // kolejnych dat, dni "częściowo niedostępny" osobno (z konkretną zmianą,
-  // której dotyczą) — to jedyne dwie rzeczy warte pokazania, reszta miesiąca
-  // to milcząco "dostępny", więc nie ma po co jej wymieniać.
+  // której dotyczą) — reszta miesiąca to milcząco "dostępny", więc nie ma po
+  // co jej wymieniać.
   const rows = (employees ?? []).map((emp) => {
     const submission = submissionByEmployee.get(emp.id);
     const submitted = submission?.status === "submitted" || submission?.status === "locked";
+    const patternLines = recurringPatternLines(hardConstraintsByEmployee.get(emp.id) ?? []);
     const wholeRanges: { start: string; end: string }[] = [];
     const partialDays: { date: string; slots: ShiftSlot[] }[] = [];
     let runStart: string | null = null;
@@ -133,7 +161,7 @@ export default async function AdminAvailabilityOverviewPage({
       const dateKey = toDateKey(d);
       const weekday = d.getDay();
       const slots = shiftsByWeekday.get(weekday) ?? [];
-      const { level, unavailableSlots } = dayStatus(emp.id, dateKey, weekday, slots, availabilityMap, hardConstraintsByEmployee);
+      const { level, unavailableSlots } = dayStatus(emp.id, dateKey, slots, availabilityMap);
 
       if (level === "whole") {
         if (runStart === null) runStart = dateKey;
@@ -151,7 +179,7 @@ export default async function AdminAvailabilityOverviewPage({
     }
     if (runStart !== null) wholeRanges.push({ start: runStart, end: runEnd! });
 
-    return { emp, submitted, wholeRanges, partialDays };
+    return { emp, submitted, patternLines, wholeRanges, partialDays };
   });
 
   const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
@@ -190,7 +218,7 @@ export default async function AdminAvailabilityOverviewPage({
           <p className="text-sm text-zinc-400">Brak aktywnych pracowników.</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {rows.map(({ emp, submitted, wholeRanges, partialDays }) => (
+            {rows.map(({ emp, submitted, patternLines, wholeRanges, partialDays }) => (
               <div key={emp.id} className="rounded-xl border border-zinc-200 p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <ColorDot color={emp.color_hex} />
@@ -206,10 +234,16 @@ export default async function AdminAvailabilityOverviewPage({
                     </span>
                   )}
                 </div>
-                {wholeRanges.length === 0 && partialDays.length === 0 ? (
+                {patternLines.length === 0 && wholeRanges.length === 0 && partialDays.length === 0 ? (
                   <p className="mt-1.5 text-xs text-emerald-600">Bez zgłoszonych niedostępności w tym miesiącu.</p>
                 ) : (
                   <div className="mt-1.5 flex flex-col gap-1 text-xs">
+                    {patternLines.length > 0 && (
+                      <p>
+                        <span className="font-semibold text-zinc-500">Cyklicznie (zajęcia/reguła):</span>{" "}
+                        <span className="text-zinc-600">{patternLines.join("; ")}</span>
+                      </p>
+                    )}
                     {wholeRanges.length > 0 && (
                       <p>
                         <span className="font-semibold text-red-600">Cały dzień niedostępny/a:</span>{" "}

@@ -13,14 +13,21 @@ export function AvailabilityCalendar({
   days,
   entriesByDate,
   shiftsByWeekday,
+  absenceDates = [],
 }: {
   scheduleMonthId: string;
   days: { dateKey: string; day: number; weekday: number }[];
   entriesByDate: Record<string, DayEntry>;
   shiftsByWeekday: Record<number, ShiftSlot[]>;
+  // Dni pokryte zgłoszonym urlopem (patrz Urlopy i nieobecności) — te dni są
+  // niedostępne "z automatu", więc pokazujemy je jako zablokowane zamiast
+  // dawać do ręcznego zaznaczenia (i tak liczą się jak "cały dzień" przy
+  // układaniu grafiku, patrz applyPlannedAbsences w lib/unavailability.ts).
+  absenceDates?: string[];
 }) {
   const [state, setState] = useState(entriesByDate);
   const [, startTransition] = useTransition();
+  const absenceSet = new Set(absenceDates);
 
   function handleWholeDay(dateKey: string) {
     setState((prev) => {
@@ -66,6 +73,24 @@ export function AvailabilityCalendar({
         {days.map(({ dateKey, day, weekday }) => {
           const entry = state[dateKey];
           const slots = shiftsByWeekday[weekday] ?? [];
+
+          if (absenceSet.has(dateKey)) {
+            return (
+              <div
+                key={dateKey}
+                className="flex flex-col gap-1.5 rounded-xl border border-sky-200 bg-sky-50 p-2 text-xs sm:min-h-[92px] sm:gap-1 sm:p-1.5"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-zinc-700">{day}</span>
+                  <span className="text-[11px] capitalize text-zinc-400 sm:hidden">{weekdayLabel(weekday)}</span>
+                </div>
+                <span className="rounded-lg bg-sky-100 px-2 py-1.5 text-[12px] font-semibold text-sky-700 sm:px-1.5 sm:py-1 sm:text-[11px]">
+                  🏖 Urlop — niedostępny/a
+                </span>
+              </div>
+            );
+          }
+
           return (
             <div
               key={dateKey}
@@ -113,7 +138,9 @@ export function AvailabilityCalendar({
         })}
       </div>
       <p className="mt-3 text-xs text-zinc-500">
-        Jeśli nie będzie Cię cały dzień, zaznacz &quot;Cały dzień&quot; zamiast każdej zmiany osobno.
+        Jeśli nie będzie Cię cały dzień, zaznacz &quot;Cały dzień&quot; zamiast każdej zmiany osobno. Dni
+        zgłoszonego urlopu (zakładka &quot;Urlopy i nieobecności&quot;) oznaczają się tu same — nie trzeba ich
+        dodatkowo zaznaczać.
       </p>
     </div>
   );
