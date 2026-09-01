@@ -77,12 +77,24 @@ export default async function AdminGodzinyPage({
     <div className="flex flex-col gap-6">
       <BackLink href="/admin" label="Panel admina" />
 
-      <div>
-        <h1 className="text-lg font-bold text-zinc-900">Godziny pracy — admin</h1>
-        <p className="text-sm text-zinc-500">
-          Edycja godzin dowolnego pracownika, dla dowolnego dnia — bez limitu 7 dni obowiązującego
-          pracownika.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-bold text-zinc-900">Godziny pracy — admin</h1>
+          <p className="text-sm text-zinc-500">
+            Edycja godzin dowolnego pracownika, dla dowolnego dnia — bez limitu 7 dni obowiązującego
+            pracownika. Wpisy starsze niż 3 miesiące trafiają do{" "}
+            <Link href="/admin/godziny/archiwum" className="font-semibold text-brand-orange hover:underline">
+              archiwum
+            </Link>
+            .
+          </p>
+        </div>
+        <Link
+          href="/admin/godziny/archiwum"
+          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-semibold text-zinc-600 hover:bg-zinc-100"
+        >
+          Archiwum →
+        </Link>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
