@@ -27,7 +27,11 @@ export default async function WynagrodzeniaPage({
   const supabase = createServerSupabaseClient();
   const dates = daysInMonth(year, month).map(toDateKey);
 
-  const [{ data: employees }, { data: entries }, { data: shiftRows }] = await Promise.all([
+  // Wpisy starsze niż 3 miesiące przenoszą się do time_entry_archive (patrz
+  // api/cron/data-retention) — miesiąc sprzed tego okna miałby tu zerowe
+  // godziny, gdyby pytać tylko "gorącej" tabeli. Każda data leży dokładnie w
+  // jednej z tych dwóch tabel naraz, więc bezpiecznie łączymy oba wyniki.
+  const [{ data: employees }, { data: entries }, { data: archivedEntries }, { data: shiftRows }] = await Promise.all([
     supabase
       .from("employee")
       .select("id, name, color_hex, hourly_rate")
@@ -39,6 +43,10 @@ export default async function WynagrodzeniaPage({
       .select("employee_id, date, actual_start, actual_end, is_remote")
       .in("date", dates),
     supabase
+      .from("time_entry_archive")
+      .select("employee_id, date, actual_start, actual_end, is_remote")
+      .in("date", dates),
+    supabase
       .from("schedule_shift")
       .select(
         "employee_id, start_time, end_time, schedule_day!inner(date, weekday, schedule_month!inner(status))"
@@ -47,6 +55,7 @@ export default async function WynagrodzeniaPage({
       .eq("schedule_day.schedule_month.status", "published")
       .in("schedule_day.date", dates),
   ]);
+  const allEntries = [...(entries ?? []), ...(archivedEntries ?? [])];
 
   type ShiftRow = {
     employee_id: string;
@@ -71,7 +80,7 @@ export default async function WynagrodzeniaPage({
   // przerwą, np. 08:00–10:00 i 15:00–22:00) — stąd mapa na LISTĘ wpisów, a
   // przepracowane godziny to suma wszystkich, nie jedna para start/koniec.
   const entriesByEmpDate = new Map<string, { actual_start: string | null; actual_end: string | null; is_remote: boolean }[]>();
-  for (const e of entries ?? []) {
+  for (const e of allEntries) {
     const key = `${e.employee_id}|${e.date}`;
     if (!entriesByEmpDate.has(key)) entriesByEmpDate.set(key, []);
     entriesByEmpDate.get(key)!.push(e);
@@ -135,6 +144,9 @@ export default async function WynagrodzeniaPage({
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
+          <Link href="/admin/godziny/archiwum" className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+            Archiwum
+          </Link>
           <Link href={`/admin/wynagrodzenia${prevLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
             ← poprzedni
           </Link>

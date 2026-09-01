@@ -138,7 +138,12 @@ export function DayTimeEntryEditor({
               noteRequired && !row.note.trim() ? "border-red-300 bg-red-50/40" : "border-zinc-200 bg-zinc-50/60"
             }`}
           >
-            <div className="flex flex-wrap items-end gap-2">
+            {/* Od/Do, checkbox i przyciski w OSOBNYCH, jawnie ułożonych rzędach —
+                jeden wspólny flex-wrap (jak było wcześniej) na wąskim ekranie
+                zawijał się nieprzewidywalnie: checkbox lądował wciśnięty obok
+                pól godzin, przyciski osobno pod spodem, całość wyglądała
+                przypadkowo. */}
+            <div className="flex items-end gap-2">
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-zinc-600">Od</label>
                 <input
@@ -157,12 +162,14 @@ export function DayTimeEntryEditor({
                   className={`${INPUT} w-[110px]`}
                 />
               </div>
-              {showRemoteCheckbox && (
-                <label className="flex items-center gap-1.5 pb-1.5 text-xs font-semibold text-zinc-600">
-                  <input type="checkbox" checked={row.isRemote} onChange={() => toggleRemote(row.id)} className="h-3.5 w-3.5" />
-                  🏠 Praca zdalna
-                </label>
-              )}
+            </div>
+            {showRemoteCheckbox && (
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
+                <input type="checkbox" checked={row.isRemote} onChange={() => toggleRemote(row.id)} className="h-3.5 w-3.5" />
+                🏠 Praca zdalna
+              </label>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 disabled={pending === row.id}
