@@ -23,15 +23,16 @@ function shiftLabel(date: string, start: string, end: string) {
 export default async function AdminSwapsPage() {
   const supabase = createServerSupabaseClient();
 
-  const { data: employees } = await supabase.from("employee").select("id, name, color_hex");
+  const [{ data: employees }, { data: requests }] = await Promise.all([
+    supabase.from("employee").select("id, name, color_hex"),
+    supabase
+      .from("shift_swap_request")
+      .select(
+        "id, status, hour_delta, requested_at, requester_employee_id, target_employee_id, requester_shift_id, target_shift_id"
+      )
+      .order("requested_at", { ascending: false }),
+  ]);
   const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
-
-  const { data: requests } = await supabase
-    .from("shift_swap_request")
-    .select(
-      "id, status, hour_delta, requested_at, requester_employee_id, target_employee_id, requester_shift_id, target_shift_id"
-    )
-    .order("requested_at", { ascending: false });
 
   const shiftIds = Array.from(new Set((requests ?? []).flatMap((r) => [r.requester_shift_id, r.target_shift_id])));
   const shiftDetails = new Map<string, { date: string; start_time: string; end_time: string }>();

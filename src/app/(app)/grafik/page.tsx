@@ -85,7 +85,12 @@ export default async function MyGrafikPage({
 
   const supabase = createServerSupabaseClient();
   const monthDateKeys = daysInMonth(year, month).map(toDateKey);
-  const [{ data: days }, { data: myClasses }, { data: myTimeEntries }] = await Promise.all([
+  // Pięć niezależnych zapytań naraz zamiast trzech osobnych rund w tę i z
+  // powrotem (poprzednio employees i requests dociągały się dopiero PO tym
+  // pierwszym Promise.all, mimo że żadne z nich nie zależy od jego wyniku)
+  // — ta strona ładuje się przy każdym wejściu w "Mój grafik", więc każda
+  // zaoszczędzona runda ma tu największe znaczenie w całej appce.
+  const [{ data: days }, { data: myClasses }, { data: myTimeEntries }, { data: employees }, { data: requests }] = await Promise.all([
     supabase
       .from("schedule_day")
       .select(
@@ -99,6 +104,12 @@ export default async function MyGrafikPage({
       .select("id, date, actual_start, actual_end, note, is_remote")
       .eq("employee_id", employee.id)
       .in("date", monthDateKeys),
+    supabase.from("employee").select("id, name, color_hex"),
+    supabase
+      .from("shift_swap_request")
+      .select("id, status, hour_delta, requested_at, requester_employee_id, target_employee_id, requester_shift_id, target_shift_id")
+      .or(`requester_employee_id.eq.${employee.id},target_employee_id.eq.${employee.id}`)
+      .order("requested_at", { ascending: false }),
   ]);
 
   // Wpisane "przy okazji" swojej zmiany, na tej samej stronie co grafik —
@@ -119,14 +130,7 @@ export default async function MyGrafikPage({
       (myTimeEntries ?? []).reduce((sum, e) => sum + (e.actual_start && e.actual_end ? hoursBetween(e.actual_start, e.actual_end) : 0), 0) * 100
     ) / 100;
 
-  const { data: employees } = await supabase.from("employee").select("id, name, color_hex");
   const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
-
-  const { data: requests } = await supabase
-    .from("shift_swap_request")
-    .select("id, status, hour_delta, requested_at, requester_employee_id, target_employee_id, requester_shift_id, target_shift_id")
-    .or(`requester_employee_id.eq.${employee.id},target_employee_id.eq.${employee.id}`)
-    .order("requested_at", { ascending: false });
 
   const shiftIds = Array.from(new Set((requests ?? []).flatMap((r) => [r.requester_shift_id, r.target_shift_id])));
   const shiftDetails = new Map<string, { date: string; start_time: string; end_time: string }>();

@@ -25,16 +25,15 @@ export default async function WynagrodzeniaPage({
   // miejsce w grafiku), ale bez stawki nie wpisuje godzin i nie ma tu
   // wypłaty — jest po prostu na stałej pensji.
   const supabase = createServerSupabaseClient();
-  const { data: employees } = await supabase
-    .from("employee")
-    .select("id, name, color_hex, hourly_rate")
-    .eq("active", true)
-    .gt("hourly_rate", 0)
-    .order("name");
-
   const dates = daysInMonth(year, month).map(toDateKey);
 
-  const [{ data: entries }, { data: shiftRows }] = await Promise.all([
+  const [{ data: employees }, { data: entries }, { data: shiftRows }] = await Promise.all([
+    supabase
+      .from("employee")
+      .select("id, name, color_hex, hourly_rate")
+      .eq("active", true)
+      .gt("hourly_rate", 0)
+      .order("name"),
     supabase
       .from("time_entry")
       .select("employee_id, date, actual_start, actual_end, is_remote")
