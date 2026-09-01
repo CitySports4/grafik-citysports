@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { requiresDiscrepancyNote, DISCREPANCY_TOLERANCE_MIN } from "@/lib/time-entry-window";
+import { requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
 
 export type TimeEntryRow = { id: string; actualStart: string; actualEnd: string; note: string };
 
@@ -64,7 +64,7 @@ export function DayTimeEntryEditor({
     if (noteRequiredFor(row) && !row.note.trim()) {
       setError((prev) => ({
         ...prev,
-        [row.id]: `Godziny odbiegają od grafiku o więcej niż ${DISCREPANCY_TOLERANCE_MIN} min — dodaj notatkę z wyjaśnieniem.`,
+        [row.id]: `Zaczynasz więcej niż ${EARLY_START_MARGIN_MIN} min przed zmianą albo kończysz więcej niż ${LATE_END_MARGIN_MIN} min po niej — dodaj notatkę z wyjaśnieniem.`,
       }));
       return;
     }
@@ -104,61 +104,75 @@ export function DayTimeEntryEditor({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2.5">
       {rows.map((row) => {
         const noteRequired = noteRequiredFor(row);
         return (
-          <div key={row.id} className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-zinc-600">Od</label>
-              <input
-                type="time"
-                value={row.actualStart}
-                onChange={(e) => updateField(row.id, "actualStart", e.target.value)}
-                className={`${INPUT} w-[110px]`}
-              />
+          // Każdy wpis we własnej, wyraźnie odgraniczonej "karcie" — luźno
+          // rzucone pola bez żadnej ramki (jak było wcześniej) wyglądały
+          // przypadkowo, zwłaszcza gdy kilka wierszy stało jeden pod drugim.
+          <div
+            key={row.id}
+            className={`flex flex-col gap-2 rounded-xl border p-2.5 ${
+              noteRequired && !row.note.trim() ? "border-red-300 bg-red-50/40" : "border-zinc-200 bg-zinc-50/60"
+            }`}
+          >
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-zinc-600">Od</label>
+                <input
+                  type="time"
+                  value={row.actualStart}
+                  onChange={(e) => updateField(row.id, "actualStart", e.target.value)}
+                  className={`${INPUT} w-[110px]`}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-zinc-600">Do</label>
+                <input
+                  type="time"
+                  value={row.actualEnd}
+                  onChange={(e) => updateField(row.id, "actualEnd", e.target.value)}
+                  className={`${INPUT} w-[110px]`}
+                />
+              </div>
+              <button
+                type="button"
+                disabled={pending === row.id}
+                onClick={() => handleSave(row)}
+                className="rounded-lg bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+              >
+                {pending === row.id ? "Zapisywanie…" : "Zapisz"}
+              </button>
+              <button
+                type="button"
+                disabled={pending === row.id}
+                onClick={() => handleDelete(row)}
+                className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                Usuń
+              </button>
+              {savedFlash[row.id] && <span className="text-xs font-semibold text-emerald-600">✓ Zapisano</span>}
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-zinc-600">Do</label>
-              <input
-                type="time"
-                value={row.actualEnd}
-                onChange={(e) => updateField(row.id, "actualEnd", e.target.value)}
-                className={`${INPUT} w-[110px]`}
-              />
-            </div>
-            <div className="flex min-w-[160px] flex-1 flex-col gap-1">
               <label className={`text-xs font-semibold ${noteRequired && !row.note.trim() ? "text-red-600" : "text-zinc-600"}`}>
                 Notatka {noteRequired ? "(wymagana — odbiega od grafiku)" : "(opcjonalnie)"}
               </label>
               <input
                 value={row.note}
                 onChange={(e) => updateField(row.id, "note", e.target.value)}
-                className={`${INPUT} ${noteRequired && !row.note.trim() ? "border-red-400" : ""}`}
+                className={`${INPUT} bg-white ${noteRequired && !row.note.trim() ? "border-red-400" : ""}`}
               />
             </div>
-            <button
-              type="button"
-              disabled={pending === row.id}
-              onClick={() => handleSave(row)}
-              className="rounded-lg bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
-            >
-              {pending === row.id ? "Zapisywanie…" : "Zapisz"}
-            </button>
-            <button
-              type="button"
-              disabled={pending === row.id}
-              onClick={() => handleDelete(row)}
-              className="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-            >
-              Usuń
-            </button>
-            {savedFlash[row.id] && <span className="text-xs font-semibold text-emerald-600">✓ Zapisano</span>}
-            {error[row.id] && <span className="text-xs font-semibold text-red-600">{error[row.id]}</span>}
+            {error[row.id] && <p className="text-xs font-semibold text-red-600">{error[row.id]}</p>}
           </div>
         );
       })}
-      <button type="button" onClick={addBlankRow} className="self-start text-xs font-semibold text-brand-orange hover:underline">
+      <button
+        type="button"
+        onClick={addBlankRow}
+        className="self-start rounded-lg border-[1.5px] border-dashed border-brand-orange/50 px-3 py-1.5 text-xs font-bold text-brand-orange hover:border-brand-orange hover:bg-brand-orange/5"
+      >
         + Dodaj zmianę{rows.length > 0 ? " (np. po przerwie)" : ""}
       </button>
     </div>

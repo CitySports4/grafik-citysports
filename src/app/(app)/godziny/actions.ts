@@ -4,15 +4,15 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, tracksHours } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
-import { isWithinEditWindow, requiresDiscrepancyNote, DISCREPANCY_TOLERANCE_MIN } from "@/lib/time-entry-window";
+import { isWithinEditWindow, requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
 
 // Jeden dzień może mieć KILKA wpisów godzin (podzielona zmiana z przerwą,
 // np. 08:00–10:00 i 15:00–22:00) — stąd osobne dodaj/edytuj/usuń zamiast
 // jednego upsert na (employee_id, date), jak było wcześniej.
 
-// Gdy wpisane godziny odbiegają od grafiku o więcej niż
-// DISCREPANCY_TOLERANCE_MIN (albo nie ma tego dnia w ogóle zaplanowanej
-// zmiany), notatka z wyjaśnieniem jest OBOWIĄZKOWA — zobaczy ją admin przy
+// Gdy wpisane godziny wykraczają poza margines wokół najbliższej
+// zaplanowanej zmiany (albo nie ma tego dnia w ogóle żadnej zmiany),
+// notatka z wyjaśnieniem jest OBOWIĄZKOWA — zobaczy ją admin przy
 // rozliczaniu wynagrodzeń (patrz admin/wynagrodzenia). Sprawdzane tu, po
 // stronie serwera — DayTimeEntryEditor robi to samo wcześniej po stronie
 // klienta, ale to tylko wygoda, nie zabezpieczenie.
@@ -30,7 +30,7 @@ async function assertDiscrepancyExplained(employeeId: string, date: string, actu
   const scheduled = (shiftRows ?? []).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
   if (requiresDiscrepancyNote(actualStart, actualEnd, scheduled) && !note.trim()) {
     throw new Error(
-      `Wpisane godziny odbiegają od grafiku o więcej niż ${DISCREPANCY_TOLERANCE_MIN} min (albo nie masz tego dnia zmiany w grafiku) — dodaj notatkę z wyjaśnieniem, zobaczy ją admin.`
+      `Zaczynasz więcej niż ${EARLY_START_MARGIN_MIN} min przed zmianą albo kończysz więcej niż ${LATE_END_MARGIN_MIN} min po niej (albo nie masz tego dnia zmiany w grafiku) — dodaj notatkę z wyjaśnieniem, zobaczy ją admin.`
     );
   }
 }
