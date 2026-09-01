@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, tracksHours } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
-import { isWithinEditWindow, requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
+import { isWithinEditWindow, requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
 
 // Jeden dzień może mieć KILKA wpisów godzin (podzielona zmiana z przerwą,
 // np. 08:00–10:00 i 15:00–22:00) — stąd osobne dodaj/edytuj/usuń zamiast
@@ -30,7 +30,7 @@ async function assertDiscrepancyExplained(employeeId: string, date: string, actu
   const scheduled = (shiftRows ?? []).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
   if (requiresDiscrepancyNote(actualStart, actualEnd, scheduled) && !note.trim()) {
     throw new Error(
-      `Zaczynasz więcej niż ${EARLY_START_MARGIN_MIN} min przed zmianą albo kończysz więcej niż ${LATE_END_MARGIN_MIN} min po niej (albo nie masz tego dnia zmiany w grafiku) — dodaj notatkę z wyjaśnieniem, zobaczy ją admin.`
+      `Zaczynasz więcej niż ${EARLY_START_MARGIN_MIN} min przed zmianą albo ${LATE_START_MARGIN_MIN} min po jej rozpoczęciu, albo kończysz więcej niż ${LATE_END_MARGIN_MIN} min po jej zakończeniu (albo nie masz tego dnia zmiany w grafiku) — dodaj notatkę z wyjaśnieniem, zobaczy ją admin.`
     );
   }
 }

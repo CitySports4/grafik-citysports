@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
+import { requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
 
 export type TimeEntryRow = { id: string; actualStart: string; actualEnd: string; note: string };
 
@@ -64,7 +64,7 @@ export function DayTimeEntryEditor({
     if (noteRequiredFor(row) && !row.note.trim()) {
       setError((prev) => ({
         ...prev,
-        [row.id]: `Zaczynasz więcej niż ${EARLY_START_MARGIN_MIN} min przed zmianą albo kończysz więcej niż ${LATE_END_MARGIN_MIN} min po niej — dodaj notatkę z wyjaśnieniem.`,
+        [row.id]: `Zaczynasz więcej niż ${EARLY_START_MARGIN_MIN} min przed zmianą albo ${LATE_START_MARGIN_MIN} min po jej rozpoczęciu, albo kończysz więcej niż ${LATE_END_MARGIN_MIN} min po jej zakończeniu — dodaj notatkę z wyjaśnieniem.`,
       }));
       return;
     }

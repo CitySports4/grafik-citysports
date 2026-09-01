@@ -113,8 +113,8 @@ export default async function GodzinyPage({
               editable: isWithinEditWindow(dateKey),
               entries: (entriesByDate.get(dateKey) ?? []).map((e) => ({
                 id: e.id,
-                actualStart: e.actual_start ?? "",
-                actualEnd: e.actual_end ?? "",
+                actualStart: e.actual_start ? formatHm(e.actual_start) : "",
+                actualEnd: e.actual_end ? formatHm(e.actual_end) : "",
                 note: e.note ?? "",
               })),
             };

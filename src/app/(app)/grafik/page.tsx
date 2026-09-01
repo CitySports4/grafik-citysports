@@ -106,7 +106,9 @@ export default async function MyGrafikPage({
   const timeEntriesByDate = new Map<string, { id: string; actualStart: string; actualEnd: string; note: string }[]>();
   for (const e of myTimeEntries ?? []) {
     if (!timeEntriesByDate.has(e.date)) timeEntriesByDate.set(e.date, []);
-    timeEntriesByDate.get(e.date)!.push({ id: e.id, actualStart: e.actual_start ?? "", actualEnd: e.actual_end ?? "", note: e.note ?? "" });
+    timeEntriesByDate
+      .get(e.date)!
+      .push({ id: e.id, actualStart: e.actual_start ? formatHm(e.actual_start) : "", actualEnd: e.actual_end ? formatHm(e.actual_end) : "", note: e.note ?? "" });
   }
   const myLoggedHours =
     Math.round(
