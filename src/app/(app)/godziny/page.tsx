@@ -6,6 +6,7 @@ import { weekdayLabel } from "@/lib/weekdays";
 import { formatHm } from "@/lib/time";
 import { isWithinEditWindow } from "@/lib/time-entry-window";
 import { Card } from "@/components/Card";
+import { BackLink } from "@/components/BackLink";
 import { TimeEntryCalendar } from "./TimeEntryCalendar";
 
 export default async function GodzinyPage({
@@ -26,6 +27,7 @@ export default async function GodzinyPage({
   if (!tracksHours(employee)) {
     return (
       <div className="flex flex-col gap-6">
+        <BackLink href="/grafik" label="Mój grafik" />
         <div>
           <h1 className="text-lg font-bold text-zinc-900">Godziny pracy</h1>
           <p className="text-sm text-zinc-500">Nie masz ustawionej stawki godzinowej — ta funkcja Cię nie dotyczy.</p>
@@ -75,6 +77,7 @@ export default async function GodzinyPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href="/grafik" label="Mój grafik" />
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Godziny pracy</h1>
         <p className="text-sm text-zinc-500">

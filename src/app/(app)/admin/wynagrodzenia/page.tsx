@@ -169,7 +169,20 @@ export default async function WynagrodzeniaPage({
       </div>
 
       <Card>
-        <h2 className="mb-3 font-semibold text-zinc-900">Recepcja</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+          <h2 className="font-semibold text-zinc-900">Recepcja</h2>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-500" /> brak wpisu godzin
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-violet-500" /> brak w grafiku
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> odbiega od grafiku
+            </span>
+          </div>
+        </div>
         {rows.length === 0 && (
           <p className="text-sm text-zinc-400">Brak aktywnych osób z ustawioną stawką godzinową.</p>
         )}
@@ -200,35 +213,68 @@ export default async function WynagrodzeniaPage({
                     <span className="font-normal text-zinc-400 group-open:hidden">— pokaż ▸</span>
                     <span className="hidden font-normal text-zinc-400 group-open:inline">— ukryj ▾</span>
                   </summary>
-                  <ul className="mt-2 flex flex-col gap-1 border-t border-zinc-100 pt-2">
+                  <div className="mt-2 flex flex-col gap-2 border-t border-zinc-100 pt-2">
                     {flaggedDays.map((d) => {
                       // Notatka, którą pracownik musiał podać przy wpisywaniu
                       // godzin odbiegających od grafiku (patrz godziny/actions.ts)
                       // — dotąd nigdzie tu się nie pokazywała, mimo że cała ta
                       // funkcja istnieje właśnie po to, żeby admin ją zobaczył.
                       const notes = d.dayEntries.map((e) => e.note).filter((n): n is string => Boolean(n?.trim()));
+                      // Osobne, wyraźnie odgraniczone karty (etykieta nad
+                      // wartością, jak w Dyspozycyjności Zespołu) zamiast
+                      // jednego zdania upchniętego w linijkę — to samo trzeba
+                      // było czytać słowo po słowie, żeby wyłapać, co dokładnie
+                      // jest nie tak z danym dniem.
+                      const flagStyle =
+                        d.flag === "brak wpisu godzin"
+                          ? "border-red-200 bg-red-50"
+                          : d.flag === "brak w grafiku"
+                            ? "border-violet-200 bg-violet-50"
+                            : "border-amber-200 bg-amber-50";
+                      const badgeStyle =
+                        d.flag === "brak wpisu godzin"
+                          ? "bg-red-100 text-red-700"
+                          : d.flag === "brak w grafiku"
+                            ? "bg-violet-100 text-violet-700"
+                            : "bg-amber-100 text-amber-700";
                       return (
-                        <li key={d.date} className="text-xs">
-                          <span className="font-semibold text-zinc-700">
-                            {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
-                            {" "}
-                            ({weekdayLabel(d.scheduled?.weekday ?? new Date(d.date + "T00:00:00").getDay()).slice(0, 3)})
-                          </span>{" "}
-                          — grafik:{" "}
-                          {d.scheduled ? `${formatHm(d.scheduled.start_time)}–${formatHm(d.scheduled.end_time)}` : "—"}, rzeczywiste:{" "}
-                          {d.dayEntries.length > 0
-                            ? d.dayEntries.map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}${e.is_remote ? " 🏠 zdalnie" : ""}`).join(", ")
-                            : "—"}{" "}
-                          <span className="font-bold text-red-600">⚠ {d.flag}</span>
+                        <div key={d.date} className={`rounded-lg border p-2.5 text-xs ${flagStyle}`}>
+                          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold capitalize text-zinc-800">
+                              {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}{" "}
+                              <span className="font-normal lowercase text-zinc-500">
+                                ({weekdayLabel(d.scheduled?.weekday ?? new Date(d.date + "T00:00:00").getDay()).slice(0, 3)})
+                              </span>
+                            </span>
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${badgeStyle}`}>⚠ {d.flag}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                            <div>
+                              <span className="text-zinc-400">Grafik: </span>
+                              <span className="text-zinc-700">
+                                {d.scheduled ? `${formatHm(d.scheduled.start_time)}–${formatHm(d.scheduled.end_time)}` : "—"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-zinc-400">Wpisano: </span>
+                              <span className="text-zinc-700">
+                                {d.dayEntries.length > 0
+                                  ? d.dayEntries
+                                      .map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}${e.is_remote ? " 🏠" : ""}`)
+                                      .join(", ")
+                                  : "—"}
+                              </span>
+                            </div>
+                          </div>
                           {notes.length > 0 ? (
-                            <span className="text-zinc-500"> · notatka: {notes.join("; ")}</span>
+                            <p className="mt-1.5 text-zinc-500">📝 {notes.join("; ")}</p>
                           ) : d.flag === "odbiega od grafiku" ? (
-                            <span className="font-semibold text-amber-600"> · brak notatki</span>
+                            <p className="mt-1.5 font-semibold text-amber-700">Brak notatki z wyjaśnieniem.</p>
                           ) : null}
-                        </li>
+                        </div>
                       );
                     })}
-                  </ul>
+                  </div>
                 </details>
               )}
             </div>
