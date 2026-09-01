@@ -16,7 +16,14 @@ import { isWithinEditWindow, requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LA
 // rozliczaniu wynagrodzeń (patrz admin/wynagrodzenia). Sprawdzane tu, po
 // stronie serwera — DayTimeEntryEditor robi to samo wcześniej po stronie
 // klienta, ale to tylko wygoda, nie zabezpieczenie.
-async function assertDiscrepancyExplained(employeeId: string, date: string, actualStart: string, actualEnd: string, note: string) {
+async function assertDiscrepancyExplained(
+  employeeId: string,
+  date: string,
+  actualStart: string,
+  actualEnd: string,
+  note: string,
+  allowUnscheduled: boolean
+) {
   if (!actualStart || !actualEnd) return; // niepełny wpis — nic do porównania
 
   const supabase = createServerSupabaseClient();
@@ -28,7 +35,7 @@ async function assertDiscrepancyExplained(employeeId: string, date: string, actu
     .eq("schedule_day.schedule_month.status", "published");
 
   const scheduled = (shiftRows ?? []).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
-  if (requiresDiscrepancyNote(actualStart, actualEnd, scheduled) && !note.trim()) {
+  if (requiresDiscrepancyNote(actualStart, actualEnd, scheduled, allowUnscheduled) && !note.trim()) {
     throw new Error(
       `Zaczynasz więcej niż ${EARLY_START_MARGIN_MIN} min przed zmianą albo ${LATE_START_MARGIN_MIN} min po jej rozpoczęciu, albo kończysz więcej niż ${LATE_END_MARGIN_MIN} min po jej zakończeniu (albo nie masz tego dnia zmiany w grafiku) — dodaj notatkę z wyjaśnieniem, zobaczy ją admin.`
     );
@@ -48,7 +55,7 @@ export async function addTimeEntry(date: string, actualStart: string, actualEnd:
   if (!isWithinEditWindow(date)) {
     throw new Error("Można wpisywać/edytować godziny tylko do 7 dni po danym dniu.");
   }
-  await assertDiscrepancyExplained(employee.id, date, actualStart, actualEnd, note);
+  await assertDiscrepancyExplained(employee.id, date, actualStart, actualEnd, note, employee.allowRemoteWork);
 
   const supabase = createServerSupabaseClient();
   const { data, error } = await supabase
@@ -80,7 +87,7 @@ export async function updateTimeEntry(id: string, actualStart: string, actualEnd
   if (!isWithinEditWindow(existing.date)) {
     throw new Error("Można wpisywać/edytować godziny tylko do 7 dni po danym dniu.");
   }
-  await assertDiscrepancyExplained(employee.id, existing.date, actualStart, actualEnd, note);
+  await assertDiscrepancyExplained(employee.id, existing.date, actualStart, actualEnd, note, employee.allowRemoteWork);
 
   const supabase = createServerSupabaseClient();
   const { error } = await supabase

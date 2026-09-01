@@ -47,6 +47,7 @@ export async function createEmployee(formData: FormData) {
   const rolesOrDefault = roles.length > 0 ? roles : ["recepcja"];
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
   const is_instructor = formData.get("is_instructor") === "on";
+  const allow_remote_work = formData.get("allow_remote_work") === "on";
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
   const target_hours_month = parseNumber(formData.get("target_hours_month"));
   const hourly_rate = parseNumber(formData.get("hourly_rate"));
@@ -67,6 +68,7 @@ export async function createEmployee(formData: FormData) {
       phone,
       color_hex,
       is_instructor,
+      allow_remote_work,
       min_hours_month,
       target_hours_month,
       hourly_rate,
@@ -92,6 +94,7 @@ export async function updateEmployee(formData: FormData) {
   const roles = parseRoles(formData);
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
   const is_instructor = formData.get("is_instructor") === "on";
+  const allow_remote_work = formData.get("allow_remote_work") === "on";
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
   const target_hours_month = parseNumber(formData.get("target_hours_month"));
   const hourly_rate = parseNumber(formData.get("hourly_rate"));
@@ -109,6 +112,7 @@ export async function updateEmployee(formData: FormData) {
       phone,
       color_hex,
       is_instructor,
+      allow_remote_work,
       min_hours_month,
       target_hours_month,
       hourly_rate,

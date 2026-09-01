@@ -81,6 +81,7 @@ export default async function GodzinyPage({
           Wpisz rzeczywistą godzinę rozpoczęcia i zakończenia pracy. Można edytować w dowolnym
           momencie, ale tylko do 7 dni po danym dniu — starsze wpisy widzisz tu w całości, ale już
           tylko do odczytu (poprawki po tym czasie robi admin).
+          {employee.allowRemoteWork && " Masz zgodę na pracę zdalną — możesz wpisać godziny dowolnego dnia, nawet bez zmiany w grafiku."}
         </p>
       </div>
 
@@ -98,6 +99,7 @@ export default async function GodzinyPage({
 
       <Card>
         <TimeEntryCalendar
+          allowUnscheduled={employee.allowRemoteWork}
           days={dates.map((dateKey) => {
             const dateObj = new Date(dateKey + "T00:00:00");
             const weekday = dateObj.getDay();

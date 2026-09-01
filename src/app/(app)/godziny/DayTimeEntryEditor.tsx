@@ -29,6 +29,7 @@ export function DayTimeEntryEditor({
   dateKey,
   initialEntries,
   scheduled,
+  allowUnscheduled = false,
   addAction,
   updateAction,
   deleteAction,
@@ -36,6 +37,10 @@ export function DayTimeEntryEditor({
   dateKey: string;
   initialEntries: TimeEntryRow[];
   scheduled?: { start_time: string; end_time: string }[];
+  // Zgoda tej osoby na pracę zdalną (SessionEmployee.allowRemoteWork) — dla
+  // niej brak zmiany w grafiku tego dnia (scheduled: []) sam w sobie NIE
+  // wymaga notatki. Bez znaczenia, gdy scheduled===undefined (panel admina).
+  allowUnscheduled?: boolean;
   addAction: (date: string, actualStart: string, actualEnd: string, note: string) => Promise<{ id: string }>;
   updateAction: (id: string, actualStart: string, actualEnd: string, note: string) => Promise<void>;
   deleteAction: (id: string) => Promise<void>;
@@ -57,7 +62,7 @@ export function DayTimeEntryEditor({
   function noteRequiredFor(row: TimeEntryRow): boolean {
     if (scheduled === undefined) return false;
     if (!row.actualStart || !row.actualEnd) return false;
-    return requiresDiscrepancyNote(row.actualStart, row.actualEnd, scheduled);
+    return requiresDiscrepancyNote(row.actualStart, row.actualEnd, scheduled, allowUnscheduled);
   }
 
   async function handleSave(row: TimeEntryRow) {
