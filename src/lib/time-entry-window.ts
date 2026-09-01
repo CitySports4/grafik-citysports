@@ -20,15 +20,19 @@ export function isWithinEditWindow(dateKey: string): boolean {
 // komentarz tam) — to osobna tolerancja dla osobnego, zbiorczego widoku.
 export const DISCREPANCY_TOLERANCE_MIN = 30;
 
-// Margines na POJEDYNCZY wpis względem NAJBLIŻSZEJ zaplanowanej zmiany:
-// można zacząć maksymalnie EARLY_START_MARGIN_MIN wcześniej niż zmiana i
-// skończyć maksymalnie LATE_END_MARGIN_MIN później — bez tłumaczenia.
-// Węższe niż zmiana wpisy (spóźnienie na start, wcześniejsze wyjście) same w
-// sobie NIE wymagają notatki — to nie problem rozliczeniowy w tę stronę,
-// liczy się tylko to, co wykracza POZA zaplanowaną zmianę (bo to properly
-// dodatkowe, płatne godziny, które admin powinien móc zweryfikować).
+// Margines na POJEDYNCZY wpis względem NAJBLIŻSZEJ zaplanowanej zmiany —
+// cztery osobne progi, bo wcześniejszy/późniejszy start i wcześniejszy/
+// późniejszy koniec to cztery różne sytuacje:
+//   - można zacząć maks. EARLY_START_MARGIN_MIN wcześniej niż zmiana,
+//   - można zacząć maks. LATE_START_MARGIN_MIN później niż zmiana (spóźnienie),
+//   - można skończyć maks. LATE_END_MARGIN_MIN później niż zmiana (nadgodziny)
+// — bez tłumaczenia. Wcześniejsze zakończenie (wyjście przed końcem zmiany)
+// samo w sobie NIE wymaga notatki, niezależnie od tego, o ile wcześniej —
+// to nie problem rozliczeniowy w tę stronę (mniej godzin = mniej do
+// zapłaty), więc nie ma go czym ograniczać.
 export const EARLY_START_MARGIN_MIN = 20;
-export const LATE_END_MARGIN_MIN = 30;
+export const LATE_START_MARGIN_MIN = 60;
+export const LATE_END_MARGIN_MIN = 60;
 
 // Czy wpisane godziny odbiegają od grafiku na tyle, że pracownik MUSI dodać
 // notatkę z wyjaśnieniem (zobaczy ją admin) — brak zaplanowanej zmiany tego
@@ -52,6 +56,7 @@ export function requiresDiscrepancyNote(actualStart: string, actualEnd: string, 
   );
 
   const earliestAllowedStart = timeToMinutes(closest.start_time) - EARLY_START_MARGIN_MIN;
+  const latestAllowedStart = timeToMinutes(closest.start_time) + LATE_START_MARGIN_MIN;
   const latestAllowedEnd = timeToMinutes(closest.end_time) + LATE_END_MARGIN_MIN;
-  return actualStartMin < earliestAllowedStart || timeToMinutes(actualEnd) > latestAllowedEnd;
+  return actualStartMin < earliestAllowedStart || actualStartMin > latestAllowedStart || timeToMinutes(actualEnd) > latestAllowedEnd;
 }
