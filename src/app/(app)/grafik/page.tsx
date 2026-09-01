@@ -253,7 +253,7 @@ export default async function MyGrafikPage({
                   ))}
                 </div>
               )}
-              {isMyDay &&
+              {(isMyDay || employee.allowRemoteWork) &&
                 tracksHours &&
                 (() => {
                   const dayEntries = timeEntriesByDate.get(day.date) ?? [];
@@ -263,10 +263,14 @@ export default async function MyGrafikPage({
                       <p className="mt-2 border-t border-zinc-200 pt-2 text-xs text-zinc-500">Godziny: {entriesLabel}</p>
                     ) : null;
                   }
+                  // Dzień bez własnej zmiany pokazuje ten sam wpis tylko dla
+                  // osoby ze zgodą na pracę zdalną (allowRemoteWork) — inaczej
+                  // sekcja w ogóle by się tu nie pojawiła (patrz warunek wyżej).
+                  const label = dayEntries.length > 0 ? `Godziny: ${entriesLabel}` : isMyDay ? "Wpisz godziny" : "Wpisz godziny (zdalnie)";
                   return (
                     <details className="group mt-2 border-t border-zinc-200 pt-2">
                       <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange marker:content-none">
-                        <span>{dayEntries.length > 0 ? `Godziny: ${entriesLabel}` : "Wpisz godziny"}</span>
+                        <span>{label}</span>
                         <span className="font-normal text-zinc-400 group-open:hidden">{dayEntries.length > 0 ? "— edytuj ▸" : "▸"}</span>
                         <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
                       </summary>
@@ -275,6 +279,7 @@ export default async function MyGrafikPage({
                           dateKey={day.date}
                           initialEntries={dayEntries}
                           scheduled={myShiftsRaw}
+                          allowUnscheduled={employee.allowRemoteWork}
                           addAction={addTimeEntry}
                           updateAction={updateTimeEntry}
                           deleteAction={deleteTimeEntry}

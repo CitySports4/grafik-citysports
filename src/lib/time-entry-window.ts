@@ -47,8 +47,18 @@ export const LATE_END_MARGIN_MIN = 60;
 // fałszywie wyłapywało "różnicę" rzędu wielu godzin, mimo że wpis idealnie
 // pasował do jednej z nich. Dlatego dopasowujemy wpis do najbliższej (po
 // godzinie startu) zaplanowanej zmiany i porównujemy tylko z nią.
-export function requiresDiscrepancyNote(actualStart: string, actualEnd: string, scheduled: { start_time: string; end_time: string }[]): boolean {
-  if (scheduled.length === 0) return true;
+//
+// `allowUnscheduled` — zgoda tej konkretnej osoby na pracę zdalną (patrz
+// employee.allow_remote_work / SessionEmployee.allowRemoteWork) — dla niej
+// brak JAKIEJKOLWIEK zmiany w grafiku tego dnia to normalna, oczekiwana
+// sytuacja, nie rozbieżność wymagająca tłumaczenia.
+export function requiresDiscrepancyNote(
+  actualStart: string,
+  actualEnd: string,
+  scheduled: { start_time: string; end_time: string }[],
+  allowUnscheduled = false
+): boolean {
+  if (scheduled.length === 0) return !allowUnscheduled;
 
   const actualStartMin = timeToMinutes(actualStart);
   const closest = scheduled.reduce((best, s) =>

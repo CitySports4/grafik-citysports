@@ -70,6 +70,12 @@ export default async function EmployeesPage() {
               Jest instruktorem (ma zajęcia)
             </label>
           </div>
+          <div className="flex items-center gap-2 pt-6">
+            <input type="checkbox" id="allow_remote_work" name="allow_remote_work" className="h-4 w-4" />
+            <label htmlFor="allow_remote_work" className="text-sm text-zinc-900">
+              Pozwalaj pracować zdalnie (godziny bez zmiany w grafiku, bez notatki)
+            </label>
+          </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Minimalna liczba godzin / mies.</label>
             <input type="number" step="0.5" name="min_hours_month" defaultValue={0} className={INPUT} />

@@ -63,6 +63,11 @@ export type SessionEmployee = {
   // swoje miejsce w grafiku), ale bez stawki jest na stałej pensji: nie
   // wpisuje godzin i nie ma tu wypłaty. Patrz tracksHours poniżej.
   hourlyRate: number;
+  // Zgoda na wpisywanie godzin bez zaplanowanej zmiany w grafiku (praca
+  // zdalna, nieplanowana z góry) — bez tłumaczenia notatką, patrz
+  // requiresDiscrepancyNote w lib/time-entry-window.ts. Ustawiane w
+  // Pracownicy, per osoba (np. Sasza) — domyślnie wyłączone.
+  allowRemoteWork: boolean;
 };
 
 export async function getSessionEmployee(): Promise<SessionEmployee | null> {
@@ -72,7 +77,7 @@ export async function getSessionEmployee(): Promise<SessionEmployee | null> {
   const supabase = createServerSupabaseClient();
   const { data } = await supabase
     .from("employee")
-    .select("id, name, color_hex, active, hourly_rate, employee_role(role)")
+    .select("id, name, color_hex, active, hourly_rate, allow_remote_work, employee_role(role)")
     .eq("id", employeeId)
     .single();
 
@@ -83,6 +88,7 @@ export async function getSessionEmployee(): Promise<SessionEmployee | null> {
     roles: (data.employee_role ?? []).map((r: { role: string }) => r.role as EmployeeRole),
     colorHex: data.color_hex,
     hourlyRate: data.hourly_rate ?? 0,
+    allowRemoteWork: data.allow_remote_work ?? false,
   };
 }
 

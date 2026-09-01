@@ -23,7 +23,7 @@ type DayEntry = {
 // Klik na dzień nie rozwija się W MIEJSCU (formularz z 3 polami + przyciski
 // nie zmieściłby się w wąskiej kolumnie siatki) — pod spodem pokazuje się
 // jeden, pełnej szerokości panel edycji dla wybranego dnia.
-export function TimeEntryCalendar({ days }: { days: DayEntry[] }) {
+export function TimeEntryCalendar({ days, allowUnscheduled = false }: { days: DayEntry[]; allowUnscheduled?: boolean }) {
   const [selected, setSelected] = useState<string | null>(() => {
     const pending = days.find((d) => d.scheduledRaw.length > 0 && d.entries.length === 0 && d.editable);
     return pending?.dateKey ?? null;
@@ -45,7 +45,13 @@ export function TimeEntryCalendar({ days }: { days: DayEntry[] }) {
             <div key={`blank-${i}`} className="hidden sm:block" />
           ))}
           {days.map((day) => (
-            <DayCell key={day.dateKey} day={day} selected={day.dateKey === selected} onSelect={() => setSelected(day.dateKey)} />
+            <DayCell
+              key={day.dateKey}
+              day={day}
+              allowUnscheduled={allowUnscheduled}
+              selected={day.dateKey === selected}
+              onSelect={() => setSelected(day.dateKey)}
+            />
           ))}
         </div>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
@@ -72,6 +78,7 @@ export function TimeEntryCalendar({ days }: { days: DayEntry[] }) {
               dateKey={selectedDay.dateKey}
               initialEntries={selectedDay.entries}
               scheduled={selectedDay.scheduledRaw}
+              allowUnscheduled={allowUnscheduled}
               addAction={addTimeEntry}
               updateAction={updateTimeEntry}
               deleteAction={deleteTimeEntry}
@@ -94,10 +101,24 @@ export function TimeEntryCalendar({ days }: { days: DayEntry[] }) {
   );
 }
 
-function DayCell({ day, selected, onSelect }: { day: DayEntry; selected: boolean; onSelect: () => void }) {
+function DayCell({
+  day,
+  allowUnscheduled,
+  selected,
+  onSelect,
+}: {
+  day: DayEntry;
+  allowUnscheduled: boolean;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const hasSchedule = day.scheduledRaw.length > 0;
   const hasEntries = day.entries.length > 0;
   const isEmpty = !hasSchedule && !hasEntries;
+  // Dzień bez zmiany i bez wpisu jest normalnie tylko tłem siatki (nic nie
+  // ma tu robić) — ale kto ma zgodę na pracę zdalną, może wpisać godziny
+  // dowolnego dnia, więc dla niego taki dzień musi zostać klikalny.
+  const clickable = !isEmpty || (allowUnscheduled && day.editable);
   const entriesLabel = day.entries.map((e) => `${e.actualStart}–${e.actualEnd}`).join(", ");
 
   const boxClass = hasEntries
@@ -121,11 +142,13 @@ function DayCell({ day, selected, onSelect }: { day: DayEntry; selected: boolean
         <div className={`mt-0.5 text-[11px] font-semibold ${day.editable ? "text-amber-700" : "text-red-600"}`}>
           {day.editable ? "Wpisz godziny" : "Brak wpisu"}
         </div>
+      ) : isEmpty && allowUnscheduled && day.editable ? (
+        <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">+ zdalnie</div>
       ) : null}
     </>
   );
 
-  if (isEmpty) {
+  if (!clickable) {
     return <div className={`rounded-xl border p-2 text-left text-xs sm:min-h-[76px] sm:p-1.5 ${boxClass}`}>{content}</div>;
   }
 
@@ -134,8 +157,8 @@ function DayCell({ day, selected, onSelect }: { day: DayEntry; selected: boolean
       type="button"
       onClick={onSelect}
       className={`rounded-xl border p-2 text-left text-xs transition-shadow sm:min-h-[76px] sm:p-1.5 ${boxClass} ${
-        selected ? "ring-2 ring-brand-orange" : ""
-      }`}
+        isEmpty ? "hover:bg-zinc-100" : ""
+      } ${selected ? "ring-2 ring-brand-orange" : ""}`}
     >
       {content}
     </button>

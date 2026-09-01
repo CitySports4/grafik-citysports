@@ -139,6 +139,18 @@ export default async function EmployeeDetailPage({
             </label>
           </div>
           <div className="flex items-center gap-2 pt-6">
+            <input
+              type="checkbox"
+              id="allow_remote_work"
+              name="allow_remote_work"
+              defaultChecked={employee.allow_remote_work}
+              className="h-4 w-4"
+            />
+            <label htmlFor="allow_remote_work" className="text-sm text-zinc-900">
+              Pozwalaj pracować zdalnie (godziny bez zmiany w grafiku, bez notatki)
+            </label>
+          </div>
+          <div className="flex items-center gap-2 pt-6">
             <input type="checkbox" id="active" name="active" defaultChecked={employee.active} className="h-4 w-4" />
             <label htmlFor="active" className="text-sm text-zinc-900">
               Konto aktywne
