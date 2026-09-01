@@ -166,37 +166,37 @@ export async function assignEventParticipantsToShifts(
     throw new Error("To wydarzenie nie ma przypisanych pracowników.");
   }
 
-  const { data: day } = await supabase
-    .from("schedule_day")
-    .select("date, weekday, schedule_month_id")
-    .eq("id", event.schedule_day_id)
-    .single();
+  // day/shifts/constraints zależą tylko od event (już mamy) — naraz, nie po
+  // kolei. Nie przypisujemy niedostępnego pracownika nawet przez ten skrót —
+  // sprawdzamy te same twarde reguły co przy ręcznym przypisaniu.
+  const [{ data: day }, { data: shifts }, { data: constraints }] = await Promise.all([
+    supabase.from("schedule_day").select("date, weekday, schedule_month_id").eq("id", event.schedule_day_id).single(),
+    supabase.from("schedule_shift").select("id, slot_index, start_time, end_time").eq("schedule_day_id", event.schedule_day_id).order("slot_index"),
+    supabase
+      .from("weekly_recurring_constraint")
+      .select("employee_id, weekday, start_time, end_time")
+      .eq("type", "unavailable")
+      .in("employee_id", participantIds),
+  ]);
   if (!day) throw new Error("Nie znaleziono dnia.");
 
-  const { data: shifts } = await supabase
-    .from("schedule_shift")
-    .select("id, slot_index, start_time, end_time")
-    .eq("schedule_day_id", event.schedule_day_id)
-    .order("slot_index");
-
-  // Nie przypisujemy niedostępnego pracownika nawet przez ten skrót —
-  // sprawdzamy te same twarde reguły co przy ręcznym przypisaniu.
-  const { data: constraints } = await supabase
-    .from("weekly_recurring_constraint")
-    .select("employee_id, weekday, start_time, end_time")
-    .eq("type", "unavailable")
-    .in("employee_id", participantIds);
   const hardConstraintsByEmployee = new Map<string, HardConstraint[]>();
   for (const c of constraints ?? []) {
     if (!hardConstraintsByEmployee.has(c.employee_id)) hardConstraintsByEmployee.set(c.employee_id, []);
     hardConstraintsByEmployee.get(c.employee_id)!.push({ weekday: c.weekday, start_time: c.start_time, end_time: c.end_time });
   }
 
-  const { data: submissions } = await supabase
-    .from("availability_submission")
-    .select("id, employee_id")
-    .eq("schedule_month_id", day.schedule_month_id)
-    .in("employee_id", participantIds);
+  // submissions/plannedAbsences zależą od day (schedule_month_id / date), ale
+  // nie od siebie nawzajem — znowu naraz zamiast po kolei.
+  const [{ data: submissions }, { data: plannedAbsences }] = await Promise.all([
+    supabase.from("availability_submission").select("id, employee_id").eq("schedule_month_id", day.schedule_month_id).in("employee_id", participantIds),
+    supabase
+      .from("planned_absence")
+      .select("employee_id, start_date, end_date")
+      .in("employee_id", participantIds)
+      .lte("start_date", day.date)
+      .gte("end_date", day.date),
+  ]);
   const submissionIds = (submissions ?? []).map((s) => s.id);
   const employeeIdBySubmission = new Map((submissions ?? []).map((s) => [s.id, s.employee_id]));
   let availabilityEntries: { availability_submission_id: string; date: string; whole_day: boolean; slot_index: number | null }[] = [];
@@ -208,13 +208,6 @@ export async function assignEventParticipantsToShifts(
     availabilityEntries = data ?? [];
   }
   const availabilityMap = buildAvailabilityMap(availabilityEntries, employeeIdBySubmission);
-
-  const { data: plannedAbsences } = await supabase
-    .from("planned_absence")
-    .select("employee_id, start_date, end_date")
-    .in("employee_id", participantIds)
-    .lte("start_date", day.date)
-    .gte("end_date", day.date);
   applyPlannedAbsences(availabilityMap, plannedAbsences ?? []);
 
   // Wybór, kto idzie na którą zmianę, zależy od poprzednich wyborów (pula

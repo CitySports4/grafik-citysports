@@ -99,13 +99,23 @@ export default async function AdminAvailabilityOverviewPage({
 
   const scheduleMonth = await getOrCreateScheduleMonth(year, month);
   const supabase = createServerSupabaseClient();
+  const dateKeys = daysInMonth(year, month).map(toDateKey);
 
-  const [{ data: employees }, { data: shiftTemplate }, { data: constraints }, { data: submissions }] = await Promise.all([
-    supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
-    supabase.from("shift_template").select("weekday, slot_index, default_start_time, default_end_time").eq("active", true),
-    supabase.from("weekly_recurring_constraint").select("employee_id, weekday, start_time, end_time, type"),
-    supabase.from("availability_submission").select("id, employee_id, status, submitted_at").eq("schedule_month_id", scheduleMonth.id),
-  ]);
+  // plannedAbsences nie zależy od żadnego z pozostałych zapytań (tylko od
+  // dateKeys, znanych od razu) — dołączona tu, zamiast osobną rundą niżej
+  // po submissions, mimo że z nimi nie ma nic wspólnego.
+  const [{ data: employees }, { data: shiftTemplate }, { data: constraints }, { data: submissions }, { data: plannedAbsences }] =
+    await Promise.all([
+      supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
+      supabase.from("shift_template").select("weekday, slot_index, default_start_time, default_end_time").eq("active", true),
+      supabase.from("weekly_recurring_constraint").select("employee_id, weekday, start_time, end_time, type"),
+      supabase.from("availability_submission").select("id, employee_id, status, submitted_at").eq("schedule_month_id", scheduleMonth.id),
+      supabase
+        .from("planned_absence")
+        .select("employee_id, start_date, end_date")
+        .lte("start_date", dateKeys[dateKeys.length - 1])
+        .gte("end_date", dateKeys[0]),
+    ]);
 
   const shiftsByWeekday = new Map<number, ShiftSlot[]>();
   for (const s of shiftTemplate ?? []) {
@@ -135,12 +145,6 @@ export default async function AdminAvailabilityOverviewPage({
   const availabilityMap = buildAvailabilityMap(availabilityEntries, employeeIdBySubmission);
 
   const dates = daysInMonth(year, month);
-  const dateKeys = dates.map(toDateKey);
-  const { data: plannedAbsences } = await supabase
-    .from("planned_absence")
-    .select("employee_id, start_date, end_date")
-    .lte("start_date", dateKeys[dateKeys.length - 1])
-    .gte("end_date", dateKeys[0]);
   applyPlannedAbsences(availabilityMap, plannedAbsences ?? []);
 
   // Dla każdego pracownika: reguły cykliczne jako jedna linijka wzoru,
