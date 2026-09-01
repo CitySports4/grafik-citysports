@@ -40,7 +40,7 @@ export default async function GodzinyPage({
   const [{ data: entries }, { data: shiftRows }] = await Promise.all([
     supabase
       .from("time_entry")
-      .select("id, date, actual_start, actual_end, note")
+      .select("id, date, actual_start, actual_end, note, is_remote")
       .eq("employee_id", employee.id)
       .in("date", dates),
     supabase
@@ -53,7 +53,7 @@ export default async function GodzinyPage({
 
   // Jeden dzień może mieć kilka wpisów (podzielona zmiana z przerwą) — stąd
   // mapa na LISTĘ, nie na pojedynczy wiersz.
-  const entriesByDate = new Map<string, { id: string; actual_start: string | null; actual_end: string | null; note: string | null }[]>();
+  const entriesByDate = new Map<string, { id: string; actual_start: string | null; actual_end: string | null; note: string | null; is_remote: boolean }[]>();
   for (const e of entries ?? []) {
     if (!entriesByDate.has(e.date)) entriesByDate.set(e.date, []);
     entriesByDate.get(e.date)!.push(e);
@@ -118,6 +118,7 @@ export default async function GodzinyPage({
                 actualStart: e.actual_start ? formatHm(e.actual_start) : "",
                 actualEnd: e.actual_end ? formatHm(e.actual_end) : "",
                 note: e.note ?? "",
+                isRemote: e.is_remote,
               })),
             };
           })}
