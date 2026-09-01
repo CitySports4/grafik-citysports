@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { hoursBetween, timeToMinutes, formatHm } from "@/lib/time";
-import { DISCREPANCY_TOLERANCE_MIN } from "@/lib/time-entry-window";
+import { requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
@@ -40,11 +40,11 @@ export default async function WynagrodzeniaPage({
       .order("name"),
     supabase
       .from("time_entry")
-      .select("employee_id, date, actual_start, actual_end, is_remote")
+      .select("employee_id, date, actual_start, actual_end, is_remote, note")
       .in("date", dates),
     supabase
       .from("time_entry_archive")
-      .select("employee_id, date, actual_start, actual_end, is_remote")
+      .select("employee_id, date, actual_start, actual_end, is_remote, note")
       .in("date", dates),
     supabase
       .from("schedule_shift")
@@ -63,7 +63,13 @@ export default async function WynagrodzeniaPage({
     end_time: string;
     schedule_day: { date: string; weekday: number };
   };
+  // Zbiorczy zakres (min start/max end) dla samego WYŚWIETLANIA "grafik: X–Y"
+  // w liście dni wymagających uwagi — a osobno surowa lista zmian per dzień
+  // (scheduledListByEmpDate), bo requiresDiscrepancyNote (ta sama reguła co
+  // przy wpisywaniu godzin — patrz godziny/actions.ts) dopasowuje KAŻDY
+  // wpis do najbliższej pojedynczej zmiany, nie do zbiorczego zakresu.
   const scheduledByEmpDate = new Map<string, { start_time: string; end_time: string; weekday: number }>();
+  const scheduledListByEmpDate = new Map<string, { start_time: string; end_time: string }[]>();
   for (const s of (shiftRows ?? []) as unknown as ShiftRow[]) {
     const key = `${s.employee_id}|${s.schedule_day.date}`;
     const existing = scheduledByEmpDate.get(key);
@@ -75,11 +81,13 @@ export default async function WynagrodzeniaPage({
       existing.start_time = timeToMinutes(s.start_time) < timeToMinutes(existing.start_time) ? s.start_time : existing.start_time;
       existing.end_time = timeToMinutes(s.end_time) > timeToMinutes(existing.end_time) ? s.end_time : existing.end_time;
     }
+    if (!scheduledListByEmpDate.has(key)) scheduledListByEmpDate.set(key, []);
+    scheduledListByEmpDate.get(key)!.push({ start_time: s.start_time, end_time: s.end_time });
   }
   // Jeden dzień może mieć kilka niezależnych wpisów (podzielona zmiana z
   // przerwą, np. 08:00–10:00 i 15:00–22:00) — stąd mapa na LISTĘ wpisów, a
   // przepracowane godziny to suma wszystkich, nie jedna para start/koniec.
-  const entriesByEmpDate = new Map<string, { actual_start: string | null; actual_end: string | null; is_remote: boolean }[]>();
+  const entriesByEmpDate = new Map<string, { actual_start: string | null; actual_end: string | null; is_remote: boolean; note: string | null }[]>();
   for (const e of allEntries) {
     const key = `${e.employee_id}|${e.date}`;
     if (!entriesByEmpDate.has(key)) entriesByEmpDate.set(key, []);
@@ -93,32 +101,35 @@ export default async function WynagrodzeniaPage({
   const rows = (employees ?? []).map((emp) => {
     const days = dates.map((date) => {
       const scheduled = scheduledByEmpDate.get(`${emp.id}|${date}`) ?? null;
+      const scheduledList = scheduledListByEmpDate.get(`${emp.id}|${date}`) ?? [];
       const dayEntries = (entriesByEmpDate.get(`${emp.id}|${date}`) ?? []).filter(
-        (e): e is { actual_start: string; actual_end: string; is_remote: boolean } => Boolean(e.actual_start && e.actual_end)
+        (e): e is { actual_start: string; actual_end: string; is_remote: boolean; note: string | null } => Boolean(e.actual_start && e.actual_end)
       );
       const workedHours = dayEntries.reduce((sum, e) => sum + hoursBetween(e.actual_start, e.actual_end), 0);
-      // Do porównania z grafikiem bierzemy najwcześniejszy start i najpóźniejszy
-      // koniec spośród wszystkich wpisów tego dnia — ta sama zasada co przy
-      // scalaniu kilku zmian w grafiku (scheduledByEmpDate wyżej).
-      const minStart = dayEntries.length > 0 ? dayEntries.reduce((a, b) => (timeToMinutes(b.actual_start) < timeToMinutes(a) ? b.actual_start : a), dayEntries[0].actual_start) : null;
-      const maxEnd = dayEntries.length > 0 ? dayEntries.reduce((a, b) => (timeToMinutes(b.actual_end) > timeToMinutes(a) ? b.actual_end : a), dayEntries[0].actual_end) : null;
 
       // "Brak wpisu godzin" ma sens tylko dla dnia, który już się odbył — dla
       // przyszłych zmian (cały nadchodzący miesiąc na starcie) nikt jeszcze
       // fizycznie nie mógł wpisać rzeczywistych godzin, więc to nie jest brak,
       // tylko naturalny stan rzeczy. Bez tego warunku widok zapełniał się
       // dziesiątkami identycznych, przedwczesnych ostrzeżeń na cały miesiąc.
+      //
+      // Rozbieżność liczona teraz DOKŁADNIE tą samą regułą co przy samym
+      // wpisywaniu godzin (requiresDiscrepancyNote) — każdy wpis osobno,
+      // dopasowany do najbliższej zmiany, z marginesem (wcześniej/później) —
+      // zamiast osobnej, symetrycznej reguły ±30 min na zbiorczym zakresie,
+      // która potrafiła dać INNY wynik niż to, co system faktycznie wymusił
+      // przy zapisie (i pokazywał administratorowi mylące "wymaga uwagi" na
+      // dzień, który pracownik już wyjaśnił notatką).
       let flag: string | null = null;
       if (scheduled && dayEntries.length === 0 && date < todayKey) {
         flag = "brak wpisu godzin";
-      } else if (!scheduled && dayEntries.length > 0) {
+      } else if (!scheduled && dayEntries.length > 0 && !dayEntries.every((e) => e.is_remote)) {
+        // Dzień bez zmiany w grafiku, ale w całości praca zdalna (zgoda
+        // pracownika) — to nie anomalia, tylko normalny, oczekiwany
+        // przypadek, więc nie ma po co go flagować.
         flag = "brak w grafiku";
-      } else if (scheduled && minStart && maxEnd) {
-        const startDiff = Math.abs(timeToMinutes(minStart) - timeToMinutes(scheduled.start_time));
-        const endDiff = Math.abs(timeToMinutes(maxEnd) - timeToMinutes(scheduled.end_time));
-        if (startDiff > DISCREPANCY_TOLERANCE_MIN || endDiff > DISCREPANCY_TOLERANCE_MIN) {
-          flag = `różnica >±${DISCREPANCY_TOLERANCE_MIN} min`;
-        }
+      } else if (scheduled && dayEntries.some((e) => requiresDiscrepancyNote(e.actual_start, e.actual_end, scheduledList))) {
+        flag = "odbiega od grafiku";
       }
 
       return { date, scheduled, dayEntries, workedHours, flag };
@@ -139,8 +150,9 @@ export default async function WynagrodzeniaPage({
         <div>
           <h1 className="text-lg font-bold text-zinc-900">Wynagrodzenia</h1>
           <p className="text-sm text-zinc-500">
-            Recepcja: {monthLabel(month)} {year} — godziny × stawka, zgodność z grafikiem (tolerancja ±
-            {DISCREPANCY_TOLERANCE_MIN} min).
+            Recepcja: {monthLabel(month)} {year} — godziny × stawka, zgodność z grafikiem (margines {EARLY_START_MARGIN_MIN} min
+            wcześniej / {LATE_START_MARGIN_MIN} min później na starcie, {LATE_END_MARGIN_MIN} min później na końcu — jak przy
+            wpisywaniu godzin).
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
@@ -189,21 +201,33 @@ export default async function WynagrodzeniaPage({
                     <span className="hidden font-normal text-zinc-400 group-open:inline">— ukryj ▾</span>
                   </summary>
                   <ul className="mt-2 flex flex-col gap-1 border-t border-zinc-100 pt-2">
-                    {flaggedDays.map((d) => (
-                      <li key={d.date} className="text-xs">
-                        <span className="font-semibold text-zinc-700">
-                          {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
-                          {" "}
-                          ({weekdayLabel(d.scheduled?.weekday ?? new Date(d.date + "T00:00:00").getDay()).slice(0, 3)})
-                        </span>{" "}
-                        — grafik:{" "}
-                        {d.scheduled ? `${formatHm(d.scheduled.start_time)}–${formatHm(d.scheduled.end_time)}` : "—"}, rzeczywiste:{" "}
-                        {d.dayEntries.length > 0
-                          ? d.dayEntries.map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}${e.is_remote ? " 🏠 zdalnie" : ""}`).join(", ")
-                          : "—"}{" "}
-                        <span className="font-bold text-red-600">⚠ {d.flag}</span>
-                      </li>
-                    ))}
+                    {flaggedDays.map((d) => {
+                      // Notatka, którą pracownik musiał podać przy wpisywaniu
+                      // godzin odbiegających od grafiku (patrz godziny/actions.ts)
+                      // — dotąd nigdzie tu się nie pokazywała, mimo że cała ta
+                      // funkcja istnieje właśnie po to, żeby admin ją zobaczył.
+                      const notes = d.dayEntries.map((e) => e.note).filter((n): n is string => Boolean(n?.trim()));
+                      return (
+                        <li key={d.date} className="text-xs">
+                          <span className="font-semibold text-zinc-700">
+                            {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
+                            {" "}
+                            ({weekdayLabel(d.scheduled?.weekday ?? new Date(d.date + "T00:00:00").getDay()).slice(0, 3)})
+                          </span>{" "}
+                          — grafik:{" "}
+                          {d.scheduled ? `${formatHm(d.scheduled.start_time)}–${formatHm(d.scheduled.end_time)}` : "—"}, rzeczywiste:{" "}
+                          {d.dayEntries.length > 0
+                            ? d.dayEntries.map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}${e.is_remote ? " 🏠 zdalnie" : ""}`).join(", ")
+                            : "—"}{" "}
+                          <span className="font-bold text-red-600">⚠ {d.flag}</span>
+                          {notes.length > 0 ? (
+                            <span className="text-zinc-500"> · notatka: {notes.join("; ")}</span>
+                          ) : d.flag === "odbiega od grafiku" ? (
+                            <span className="font-semibold text-amber-600"> · brak notatki</span>
+                          ) : null}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </details>
               )}
