@@ -22,8 +22,8 @@ export function TimeEntryList({
   deleteAction = deleteTimeEntry,
 }: {
   days: DayEntry[];
-  addAction?: (date: string, actualStart: string, actualEnd: string, note: string) => Promise<{ id: string }>;
-  updateAction?: (id: string, actualStart: string, actualEnd: string, note: string) => Promise<void>;
+  addAction?: (date: string, actualStart: string, actualEnd: string, note: string, isRemote: boolean) => Promise<{ id: string }>;
+  updateAction?: (id: string, actualStart: string, actualEnd: string, note: string, isRemote: boolean) => Promise<void>;
   deleteAction?: (id: string) => Promise<void>;
 }) {
   return (
@@ -41,6 +41,7 @@ export function TimeEntryList({
                   day.entries.map((e) => (
                     <div key={e.id}>
                       {e.actualStart}–{e.actualEnd}
+                      {e.isRemote && <span className="text-sky-600"> · 🏠 zdalnie</span>}
                       {e.note && <span className="text-zinc-400"> · {e.note}</span>}
                     </div>
                   ))

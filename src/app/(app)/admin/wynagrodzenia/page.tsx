@@ -37,7 +37,7 @@ export default async function WynagrodzeniaPage({
   const [{ data: entries }, { data: shiftRows }] = await Promise.all([
     supabase
       .from("time_entry")
-      .select("employee_id, date, actual_start, actual_end")
+      .select("employee_id, date, actual_start, actual_end, is_remote")
       .in("date", dates),
     supabase
       .from("schedule_shift")
@@ -71,7 +71,7 @@ export default async function WynagrodzeniaPage({
   // Jeden dzień może mieć kilka niezależnych wpisów (podzielona zmiana z
   // przerwą, np. 08:00–10:00 i 15:00–22:00) — stąd mapa na LISTĘ wpisów, a
   // przepracowane godziny to suma wszystkich, nie jedna para start/koniec.
-  const entriesByEmpDate = new Map<string, { actual_start: string | null; actual_end: string | null }[]>();
+  const entriesByEmpDate = new Map<string, { actual_start: string | null; actual_end: string | null; is_remote: boolean }[]>();
   for (const e of entries ?? []) {
     const key = `${e.employee_id}|${e.date}`;
     if (!entriesByEmpDate.has(key)) entriesByEmpDate.set(key, []);
@@ -86,7 +86,7 @@ export default async function WynagrodzeniaPage({
     const days = dates.map((date) => {
       const scheduled = scheduledByEmpDate.get(`${emp.id}|${date}`) ?? null;
       const dayEntries = (entriesByEmpDate.get(`${emp.id}|${date}`) ?? []).filter(
-        (e): e is { actual_start: string; actual_end: string } => Boolean(e.actual_start && e.actual_end)
+        (e): e is { actual_start: string; actual_end: string; is_remote: boolean } => Boolean(e.actual_start && e.actual_end)
       );
       const workedHours = dayEntries.reduce((sum, e) => sum + hoursBetween(e.actual_start, e.actual_end), 0);
       // Do porównania z grafikiem bierzemy najwcześniejszy start i najpóźniejszy
@@ -188,7 +188,7 @@ export default async function WynagrodzeniaPage({
                         — grafik:{" "}
                         {d.scheduled ? `${formatHm(d.scheduled.start_time)}–${formatHm(d.scheduled.end_time)}` : "—"}, rzeczywiste:{" "}
                         {d.dayEntries.length > 0
-                          ? d.dayEntries.map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}`).join(", ")
+                          ? d.dayEntries.map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}${e.is_remote ? " 🏠 zdalnie" : ""}`).join(", ")
                           : "—"}{" "}
                         <span className="font-bold text-red-600">⚠ {d.flag}</span>
                       </li>

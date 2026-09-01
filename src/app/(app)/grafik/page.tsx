@@ -96,19 +96,23 @@ export default async function MyGrafikPage({
     supabase.from("employee_class_schedule").select("weekday, start_time, end_time").eq("employee_id", employee.id),
     supabase
       .from("time_entry")
-      .select("id, date, actual_start, actual_end, note")
+      .select("id, date, actual_start, actual_end, note, is_remote")
       .eq("employee_id", employee.id)
       .in("date", monthDateKeys),
   ]);
 
   // Wpisane "przy okazji" swojej zmiany, na tej samej stronie co grafik —
   // jeden dzień może mieć kilka wpisów (podzielona zmiana z przerwą).
-  const timeEntriesByDate = new Map<string, { id: string; actualStart: string; actualEnd: string; note: string }[]>();
+  const timeEntriesByDate = new Map<string, { id: string; actualStart: string; actualEnd: string; note: string; isRemote: boolean }[]>();
   for (const e of myTimeEntries ?? []) {
     if (!timeEntriesByDate.has(e.date)) timeEntriesByDate.set(e.date, []);
-    timeEntriesByDate
-      .get(e.date)!
-      .push({ id: e.id, actualStart: e.actual_start ? formatHm(e.actual_start) : "", actualEnd: e.actual_end ? formatHm(e.actual_end) : "", note: e.note ?? "" });
+    timeEntriesByDate.get(e.date)!.push({
+      id: e.id,
+      actualStart: e.actual_start ? formatHm(e.actual_start) : "",
+      actualEnd: e.actual_end ? formatHm(e.actual_end) : "",
+      note: e.note ?? "",
+      isRemote: e.is_remote,
+    });
   }
   const myLoggedHours =
     Math.round(
@@ -257,7 +261,7 @@ export default async function MyGrafikPage({
                 tracksHours &&
                 (() => {
                   const dayEntries = timeEntriesByDate.get(day.date) ?? [];
-                  const entriesLabel = dayEntries.map((e) => `${e.actualStart}–${e.actualEnd}`).join(", ");
+                  const entriesLabel = dayEntries.map((e) => `${e.actualStart}–${e.actualEnd}${e.isRemote ? " 🏠" : ""}`).join(", ");
                   if (!isWithinEditWindow(day.date)) {
                     return dayEntries.length > 0 ? (
                       <p className="mt-2 border-t border-zinc-200 pt-2 text-xs text-zinc-500">Godziny: {entriesLabel}</p>

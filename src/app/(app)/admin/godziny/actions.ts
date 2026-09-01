@@ -10,7 +10,14 @@ import { dbErrorMessage } from "@/lib/db-error";
 // edycji przez pracownika, patrz godziny/actions.ts). Jeden dzień może mieć
 // kilka wpisów (podzielona zmiana), stąd osobne dodaj/edytuj/usuń.
 
-export async function addTimeEntryAsAdmin(employeeId: string, date: string, actualStart: string, actualEnd: string, note: string): Promise<{ id: string }> {
+export async function addTimeEntryAsAdmin(
+  employeeId: string,
+  date: string,
+  actualStart: string,
+  actualEnd: string,
+  note: string,
+  isRemote: boolean
+): Promise<{ id: string }> {
   await requireAdmin();
 
   const supabase = createServerSupabaseClient();
@@ -22,6 +29,7 @@ export async function addTimeEntryAsAdmin(employeeId: string, date: string, actu
       actual_start: actualStart || null,
       actual_end: actualEnd || null,
       note: note || null,
+      is_remote: isRemote,
     })
     .select("id")
     .single();
@@ -34,7 +42,7 @@ export async function addTimeEntryAsAdmin(employeeId: string, date: string, actu
   return { id: data.id };
 }
 
-export async function updateTimeEntryAsAdmin(id: string, actualStart: string, actualEnd: string, note: string) {
+export async function updateTimeEntryAsAdmin(id: string, actualStart: string, actualEnd: string, note: string, isRemote: boolean) {
   await requireAdmin();
 
   const supabase = createServerSupabaseClient();
@@ -44,6 +52,7 @@ export async function updateTimeEntryAsAdmin(id: string, actualStart: string, ac
       actual_start: actualStart || null,
       actual_end: actualEnd || null,
       note: note || null,
+      is_remote: isRemote,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);

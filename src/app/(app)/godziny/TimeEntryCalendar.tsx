@@ -88,6 +88,7 @@ export function TimeEntryCalendar({ days, allowUnscheduled = false }: { days: Da
               {selectedDay.entries.map((e) => (
                 <div key={e.id}>
                   {e.actualStart}–{e.actualEnd}
+                  {e.isRemote && <span className="text-sky-600"> · 🏠 zdalnie</span>}
                   {e.note && <span className="text-zinc-400"> · {e.note}</span>}
                 </div>
               ))}
@@ -120,6 +121,9 @@ function DayCell({
   // dowolnego dnia, więc dla niego taki dzień musi zostać klikalny.
   const clickable = !isEmpty || (allowUnscheduled && day.editable);
   const entriesLabel = day.entries.map((e) => `${e.actualStart}–${e.actualEnd}`).join(", ");
+  // Za mało miejsca w komórce na oznaczenie przy KAŻDYM wpisie osobno —
+  // wystarczy jeden 🏠, jeśli którykolwiek wpis tego dnia był zdalny.
+  const anyRemote = day.entries.some((e) => e.isRemote);
 
   const boxClass = hasEntries
     ? "border-emerald-200 bg-emerald-50"
@@ -137,7 +141,10 @@ function DayCell({
       </div>
       {hasSchedule && <div className="mt-0.5 truncate text-[11px] text-zinc-500">{day.scheduled}</div>}
       {hasEntries ? (
-        <div className="mt-0.5 truncate text-[11px] font-semibold text-emerald-700">✓ {entriesLabel}</div>
+        <div className="mt-0.5 truncate text-[11px] font-semibold text-emerald-700">
+          ✓ {entriesLabel}
+          {anyRemote && " 🏠"}
+        </div>
       ) : hasSchedule ? (
         <div className={`mt-0.5 text-[11px] font-semibold ${day.editable ? "text-amber-700" : "text-red-600"}`}>
           {day.editable ? "Wpisz godziny" : "Brak wpisu"}

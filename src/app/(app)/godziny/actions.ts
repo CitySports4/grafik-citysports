@@ -42,7 +42,7 @@ async function assertDiscrepancyExplained(
   }
 }
 
-export async function addTimeEntry(date: string, actualStart: string, actualEnd: string, note: string): Promise<{ id: string }> {
+export async function addTimeEntry(date: string, actualStart: string, actualEnd: string, note: string, isRemote: boolean): Promise<{ id: string }> {
   const employee = await requireEmployee();
 
   // Wpisywanie godzin dotyczy tego, kto ma ustawioną stawkę godzinową — kto
@@ -57,6 +57,10 @@ export async function addTimeEntry(date: string, actualStart: string, actualEnd:
   }
   await assertDiscrepancyExplained(employee.id, date, actualStart, actualEnd, note, employee.allowRemoteWork);
 
+  // Oznaczenie "praca zdalna" ma sens tylko dla kogoś z tą zgodą — nawet
+  // gdyby ktoś ominął ukrycie checkboxa w UI, serwer je ignoruje.
+  const finalIsRemote = employee.allowRemoteWork && isRemote;
+
   const supabase = createServerSupabaseClient();
   const { data, error } = await supabase
     .from("time_entry")
@@ -66,6 +70,7 @@ export async function addTimeEntry(date: string, actualStart: string, actualEnd:
       actual_start: actualStart || null,
       actual_end: actualEnd || null,
       note: note || null,
+      is_remote: finalIsRemote,
     })
     .select("id")
     .single();
@@ -79,7 +84,7 @@ export async function addTimeEntry(date: string, actualStart: string, actualEnd:
   return { id: data.id };
 }
 
-export async function updateTimeEntry(id: string, actualStart: string, actualEnd: string, note: string) {
+export async function updateTimeEntry(id: string, actualStart: string, actualEnd: string, note: string, isRemote: boolean) {
   const employee = await requireEmployee();
 
   const { data: existing } = await createServerSupabaseClient().from("time_entry").select("employee_id, date").eq("id", id).single();
@@ -89,6 +94,8 @@ export async function updateTimeEntry(id: string, actualStart: string, actualEnd
   }
   await assertDiscrepancyExplained(employee.id, existing.date, actualStart, actualEnd, note, employee.allowRemoteWork);
 
+  const finalIsRemote = employee.allowRemoteWork && isRemote;
+
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("time_entry")
@@ -96,6 +103,7 @@ export async function updateTimeEntry(id: string, actualStart: string, actualEnd
       actual_start: actualStart || null,
       actual_end: actualEnd || null,
       note: note || null,
+      is_remote: finalIsRemote,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);

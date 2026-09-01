@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
 
-export type TimeEntryRow = { id: string; actualStart: string; actualEnd: string; note: string };
+export type TimeEntryRow = { id: string; actualStart: string; actualEnd: string; note: string; isRemote: boolean };
 
 const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2 py-1.5 text-sm";
 
@@ -39,10 +39,13 @@ export function DayTimeEntryEditor({
   scheduled?: { start_time: string; end_time: string }[];
   // Zgoda tej osoby na pracę zdalną (SessionEmployee.allowRemoteWork) — dla
   // niej brak zmiany w grafiku tego dnia (scheduled: []) sam w sobie NIE
-  // wymaga notatki. Bez znaczenia, gdy scheduled===undefined (panel admina).
+  // wymaga notatki, i pokazuje się checkbox "Praca zdalna" niżej (osobne
+  // oznaczenie wpisu, niezależne od tego). Bez znaczenia, gdy
+  // scheduled===undefined (panel admina) — tam checkbox pokazuje się zawsze,
+  // admin poprawia/oznacza dowolny wpis.
   allowUnscheduled?: boolean;
-  addAction: (date: string, actualStart: string, actualEnd: string, note: string) => Promise<{ id: string }>;
-  updateAction: (id: string, actualStart: string, actualEnd: string, note: string) => Promise<void>;
+  addAction: (date: string, actualStart: string, actualEnd: string, note: string, isRemote: boolean) => Promise<{ id: string }>;
+  updateAction: (id: string, actualStart: string, actualEnd: string, note: string, isRemote: boolean) => Promise<void>;
   deleteAction: (id: string) => Promise<void>;
 }) {
   const [rows, setRows] = useState<TimeEntryRow[]>(initialEntries);
@@ -50,12 +53,25 @@ export function DayTimeEntryEditor({
   const [error, setError] = useState<Record<string, string>>({});
   const [savedFlash, setSavedFlash] = useState<Record<string, boolean>>({});
 
+  // Checkbox "Praca zdalna" ma sens tylko tam, gdzie w ogóle może wystąpić
+  // wpis bez zmiany w grafiku: panel admina (scheduled===undefined, admin
+  // poprawia dowolny wpis) albo pracownik ze zgodą na pracę zdalną.
+  const showRemoteCheckbox = scheduled === undefined || allowUnscheduled;
+
   function addBlankRow() {
-    setRows((prev) => [...prev, { id: `new-${Date.now()}`, actualStart: "", actualEnd: "", note: "" }]);
+    // Domyślnie zaznacz "zdalna", gdy tego dnia i tak nie ma żadnej zmiany w
+    // grafiku — to prawie na pewno dokładnie ta sytuacja, mniej klikania.
+    const defaultRemote = allowUnscheduled === true && (scheduled?.length ?? 0) === 0;
+    setRows((prev) => [...prev, { id: `new-${Date.now()}`, actualStart: "", actualEnd: "", note: "", isRemote: defaultRemote }]);
   }
 
   function updateField(id: string, field: "actualStart" | "actualEnd" | "note", value: string) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    setSavedFlash((prev) => ({ ...prev, [id]: false }));
+  }
+
+  function toggleRemote(id: string) {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, isRemote: !r.isRemote } : r)));
     setSavedFlash((prev) => ({ ...prev, [id]: false }));
   }
 
@@ -77,11 +93,11 @@ export function DayTimeEntryEditor({
     setError((prev) => ({ ...prev, [row.id]: "" }));
     try {
       if (row.id.startsWith("new-")) {
-        const { id } = await addAction(dateKey, row.actualStart, row.actualEnd, row.note);
+        const { id } = await addAction(dateKey, row.actualStart, row.actualEnd, row.note, row.isRemote);
         setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, id } : r)));
         setSavedFlash((prev) => ({ ...prev, [id]: true }));
       } else {
-        await updateAction(row.id, row.actualStart, row.actualEnd, row.note);
+        await updateAction(row.id, row.actualStart, row.actualEnd, row.note, row.isRemote);
         setSavedFlash((prev) => ({ ...prev, [row.id]: true }));
       }
     } catch (err) {
@@ -141,6 +157,12 @@ export function DayTimeEntryEditor({
                   className={`${INPUT} w-[110px]`}
                 />
               </div>
+              {showRemoteCheckbox && (
+                <label className="flex items-center gap-1.5 pb-1.5 text-xs font-semibold text-zinc-600">
+                  <input type="checkbox" checked={row.isRemote} onChange={() => toggleRemote(row.id)} className="h-3.5 w-3.5" />
+                  🏠 Praca zdalna
+                </label>
+              )}
               <button
                 type="button"
                 disabled={pending === row.id}
