@@ -47,6 +47,7 @@ type Employee = {
   can_clean: boolean;
   min_hours_month: number;
   target_hours_month: number;
+  hourly_rate: number;
 };
 type ClassEntry = { weekday: number; start_time: string; end_time: string };
 
@@ -612,6 +613,11 @@ export function ScheduleTable({
               const hrs = Math.round((hoursByEmployee.get(e.id) ?? 0) * 100) / 100;
               const belowMin = hrs < e.min_hours_month;
               const belowTarget = hrs < e.target_hours_month;
+              // Koszt wg zaplanowanych (nie jeszcze przepracowanych) godzin —
+              // szacunek "ile to będzie kosztować", nie rozliczenie (to robi
+              // Wynagrodzenia, na podstawie realnie wpisanych godzin). Bez
+              // sensu dla kogoś bez stawki (szef na stałej pensji).
+              const cost = e.hourly_rate > 0 ? Math.round(hrs * e.hourly_rate * 100) / 100 : null;
               return (
                 <li key={e.id} className="text-sm">
                   <div className="flex items-center justify-between">
@@ -627,13 +633,28 @@ export function ScheduleTable({
                       {hrs}h
                     </span>
                   </div>
-                  <div className="text-xs text-zinc-400">
-                    min {e.min_hours_month}h · cel {e.target_hours_month}h
+                  <div className="flex items-center justify-between text-xs text-zinc-400">
+                    <span>
+                      min {e.min_hours_month}h · cel {e.target_hours_month}h
+                    </span>
+                    {cost !== null && <span className="font-semibold text-zinc-500">{cost.toFixed(2)} PLN</span>}
                   </div>
                 </li>
               );
             })}
           </ul>
+          {(() => {
+            const totalCost = employees.reduce((sum, e) => {
+              const hrs = hoursByEmployee.get(e.id) ?? 0;
+              return sum + (e.hourly_rate > 0 ? hrs * e.hourly_rate : 0);
+            }, 0);
+            return totalCost > 0 ? (
+              <div className="mt-3 flex items-center justify-between border-t border-zinc-100 pt-2.5 text-sm">
+                <span className="font-semibold text-zinc-700">Łączny koszt (recepcja)</span>
+                <span className="font-bold text-zinc-900">{(Math.round(totalCost * 100) / 100).toFixed(2)} PLN</span>
+              </div>
+            ) : null;
+          })()}
         </div>
 
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">

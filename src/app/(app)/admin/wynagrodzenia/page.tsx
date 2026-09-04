@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { hoursBetween, timeToMinutes, formatHm } from "@/lib/time";
-import { requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
+import { requiresDiscrepancyNote, DISCREPANCY_MARGIN_MIN } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
@@ -146,15 +146,20 @@ export default async function WynagrodzeniaPage({
     <div className="flex flex-col gap-6">
       <BackLink href="/admin" label="Panel admina" />
 
+      <div>
+        <h1 className="text-lg font-bold text-zinc-900">Wynagrodzenia</h1>
+        <p className="text-sm text-zinc-500">
+          Recepcja — godziny × stawka, zgodność z grafikiem (margines ±{DISCREPANCY_MARGIN_MIN} min na starcie i na końcu
+          zmiany — jak przy wpisywaniu godzin).
+        </p>
+      </div>
+
+      {/* Miesiąc jako osobny, wyraźny element (nie schowany w zdaniu opisu
+          wyżej) — dokładnie ten sam wzorzec co w /godziny i admin/godziny. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-bold text-zinc-900">Wynagrodzenia</h1>
-          <p className="text-sm text-zinc-500">
-            Recepcja: {monthLabel(month)} {year} — godziny × stawka, zgodność z grafikiem (margines {EARLY_START_MARGIN_MIN} min
-            wcześniej / {LATE_START_MARGIN_MIN} min później na starcie, {LATE_END_MARGIN_MIN} min później na końcu — jak przy
-            wpisywaniu godzin).
-          </p>
-        </div>
+        <span className="text-base font-bold capitalize text-zinc-900">
+          {monthLabel(month)} {year}
+        </span>
         <div className="flex items-center gap-2 text-sm">
           <Link href="/admin/godziny/archiwum" className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             Archiwum
