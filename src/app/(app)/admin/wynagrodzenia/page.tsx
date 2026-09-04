@@ -132,7 +132,7 @@ export default async function WynagrodzeniaPage({
         flag = "odbiega od grafiku";
       }
 
-      return { date, scheduled, dayEntries, workedHours, flag };
+      return { date, scheduled, scheduledList, dayEntries, workedHours, flag };
     });
 
     const totalHours = Math.round(days.reduce((sum, d) => sum + d.workedHours, 0) * 100) / 100;
@@ -252,7 +252,14 @@ export default async function WynagrodzeniaPage({
                             <div>
                               <span className="text-zinc-400">Grafik: </span>
                               <span className="text-zinc-700">
-                                {d.scheduled ? `${formatHm(d.scheduled.start_time)}–${formatHm(d.scheduled.end_time)}` : "—"}
+                                {/* WSZYSTKIE zmiany tego dnia osobno, nie zbiorczy zakres
+                                    min-start/max-end — przy podzielonej zmianie (np.
+                                    8–10 i 15–21) zakres "8–21" wygląda jak jedna ciągła
+                                    zmiana i chowa przerwę, przez którą wpis realnie
+                                    odbiega od grafiku. */}
+                                {d.scheduledList.length > 0
+                                  ? d.scheduledList.map((s) => `${formatHm(s.start_time)}–${formatHm(s.end_time)}`).join(", ")
+                                  : "—"}
                               </span>
                             </div>
                             <div>
