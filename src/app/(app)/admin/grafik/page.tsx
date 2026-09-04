@@ -42,7 +42,7 @@ export default async function ScheduleBuilderPage({
   ] = await Promise.all([
     supabase
       .from("employee")
-      .select("id, name, color_hex, min_hours_month, target_hours_month")
+      .select("id, name, color_hex, min_hours_month, target_hours_month, hourly_rate")
       .eq("active", true)
       .order("name"),
     supabase.from("employee_cleaning_zone").select("employee_id"),

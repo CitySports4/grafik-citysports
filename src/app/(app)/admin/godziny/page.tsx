@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { weekdayLabel } from "@/lib/weekdays";
-import { formatHm } from "@/lib/time";
+import { formatHm, hoursBetween } from "@/lib/time";
 import { Card } from "@/components/Card";
 import { BackLink } from "@/components/BackLink";
 import { TimeEntryList } from "../../godziny/TimeEntryList";
@@ -24,11 +24,12 @@ export default async function AdminGodzinyPage({
   const supabase = createServerSupabaseClient();
   const { data: employees } = await supabase
     .from("employee")
-    .select("id, name, color_hex")
+    .select("id, name, color_hex, hourly_rate")
     .eq("active", true)
     .order("name");
 
   const employeeId = params.employee || employees?.[0]?.id || "";
+  const selectedEmployee = employees?.find((e) => e.id === employeeId) ?? null;
   const dates = daysInMonth(year, month).map(toDateKey);
 
   const [{ data: entries }, { data: shiftRows }] = employeeId
@@ -63,6 +64,14 @@ export default async function AdminGodzinyPage({
   }
 
   const relevantDates = dates.filter((d) => scheduledByDate.has(d) || entriesByDate.has(d));
+
+  // Koszt wg REALNIE wpisanych godzin (nie zaplanowanych, jak przy
+  // układaniu grafiku) — bez sensu dla kogoś bez stawki (szef na stałej
+  // pensji).
+  const totalHours =
+    Math.round((entries ?? []).reduce((sum, e) => sum + (e.actual_start && e.actual_end ? hoursBetween(e.actual_start, e.actual_end) : 0), 0) * 100) /
+    100;
+  const totalCost = selectedEmployee && selectedEmployee.hourly_rate > 0 ? Math.round(totalHours * selectedEmployee.hourly_rate * 100) / 100 : null;
 
   const qs = (overrides: Record<string, string | number>) => {
     const p = new URLSearchParams({ year: String(year), month: String(month), employee: employeeId, ...Object.fromEntries(Object.entries(overrides).map(([k, v]) => [k, String(v)])) });
@@ -124,6 +133,22 @@ export default async function AdminGodzinyPage({
           </Link>
         </div>
       </div>
+
+      {selectedEmployee && (
+        <Card className="flex items-center justify-between">
+          <span className="text-sm text-zinc-600">
+            Godziny {selectedEmployee.name} w {monthLabel(month)}
+          </span>
+          {totalCost !== null ? (
+            <span className="text-lg font-bold text-zinc-900">
+              {totalHours}h × {selectedEmployee.hourly_rate} PLN/h ={" "}
+              <span className="text-brand-orange">{totalCost.toFixed(2)} PLN</span>
+            </span>
+          ) : (
+            <span className="text-lg font-bold text-zinc-900">{totalHours}h</span>
+          )}
+        </Card>
+      )}
 
       <Card>
         {boundAdd ? (

@@ -21,18 +21,11 @@ export function isWithinEditWindow(dateKey: string): boolean {
 export const DISCREPANCY_TOLERANCE_MIN = 30;
 
 // Margines na POJEDYNCZY wpis względem NAJBLIŻSZEJ zaplanowanej zmiany —
-// cztery osobne progi, bo wcześniejszy/późniejszy start i wcześniejszy/
-// późniejszy koniec to cztery różne sytuacje:
-//   - można zacząć maks. EARLY_START_MARGIN_MIN wcześniej niż zmiana,
-//   - można zacząć maks. LATE_START_MARGIN_MIN później niż zmiana (spóźnienie),
-//   - można skończyć maks. LATE_END_MARGIN_MIN później niż zmiana (nadgodziny)
-// — bez tłumaczenia. Wcześniejsze zakończenie (wyjście przed końcem zmiany)
-// samo w sobie NIE wymaga notatki, niezależnie od tego, o ile wcześniej —
-// to nie problem rozliczeniowy w tę stronę (mniej godzin = mniej do
-// zapłaty), więc nie ma go czym ograniczać.
-export const EARLY_START_MARGIN_MIN = 20;
-export const LATE_START_MARGIN_MIN = 60;
-export const LATE_END_MARGIN_MIN = 60;
+// jeden próg, symetryczny, osobno na start i na koniec: można zacząć do
+// DISCREPANCY_MARGIN_MIN wcześniej/później niż zmiana, i skończyć do
+// DISCREPANCY_MARGIN_MIN wcześniej/później niż jej koniec ("przy
+// zamykaniu") — bez tłumaczenia notatką.
+export const DISCREPANCY_MARGIN_MIN = 20;
 
 // Czy wpisane godziny odbiegają od grafiku na tyle, że pracownik MUSI dodać
 // notatkę z wyjaśnieniem (zobaczy ją admin) — brak zaplanowanej zmiany tego
@@ -65,8 +58,7 @@ export function requiresDiscrepancyNote(
     Math.abs(timeToMinutes(s.start_time) - actualStartMin) < Math.abs(timeToMinutes(best.start_time) - actualStartMin) ? s : best
   );
 
-  const earliestAllowedStart = timeToMinutes(closest.start_time) - EARLY_START_MARGIN_MIN;
-  const latestAllowedStart = timeToMinutes(closest.start_time) + LATE_START_MARGIN_MIN;
-  const latestAllowedEnd = timeToMinutes(closest.end_time) + LATE_END_MARGIN_MIN;
-  return actualStartMin < earliestAllowedStart || actualStartMin > latestAllowedStart || timeToMinutes(actualEnd) > latestAllowedEnd;
+  const startDiff = Math.abs(actualStartMin - timeToMinutes(closest.start_time));
+  const endDiff = Math.abs(timeToMinutes(actualEnd) - timeToMinutes(closest.end_time));
+  return startDiff > DISCREPANCY_MARGIN_MIN || endDiff > DISCREPANCY_MARGIN_MIN;
 }

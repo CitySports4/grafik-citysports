@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { requiresDiscrepancyNote, EARLY_START_MARGIN_MIN, LATE_START_MARGIN_MIN, LATE_END_MARGIN_MIN } from "@/lib/time-entry-window";
+import { requiresDiscrepancyNote, DISCREPANCY_MARGIN_MIN } from "@/lib/time-entry-window";
 
 export type TimeEntryRow = { id: string; actualStart: string; actualEnd: string; note: string; isRemote: boolean };
 
@@ -16,7 +16,7 @@ const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2 py-1.5 text
 // pracownik, bez okna edycji) i /grafik (wpis "przy okazji" swojej zmiany).
 //
 // `scheduled` — godziny zaplanowanej zmiany tego dnia (do porównania z
-// wpisanymi) — gdy różnica przekracza DISCREPANCY_TOLERANCE_MIN (albo w
+// wpisanymi) — gdy różnica przekracza DISCREPANCY_MARGIN_MIN (albo w
 // ogóle nie ma tu zmiany w grafiku), notatka staje się WYMAGANA — to samo
 // sprawdza serwer (godziny/actions.ts), tu tylko dla natychmiastowej
 // informacji zamiast dowiadywania się dopiero po nieudanym zapisie.
@@ -85,7 +85,7 @@ export function DayTimeEntryEditor({
     if (noteRequiredFor(row) && !row.note.trim()) {
       setError((prev) => ({
         ...prev,
-        [row.id]: `Zaczynasz więcej niż ${EARLY_START_MARGIN_MIN} min przed zmianą albo ${LATE_START_MARGIN_MIN} min po jej rozpoczęciu, albo kończysz więcej niż ${LATE_END_MARGIN_MIN} min po jej zakończeniu — dodaj notatkę z wyjaśnieniem.`,
+        [row.id]: `Godziny odbiegają od zmiany o więcej niż ${DISCREPANCY_MARGIN_MIN} min (na starcie lub na końcu) — dodaj notatkę z wyjaśnieniem.`,
       }));
       return;
     }
