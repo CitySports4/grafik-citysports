@@ -21,11 +21,11 @@ export function isWithinEditWindow(dateKey: string): boolean {
 export const DISCREPANCY_TOLERANCE_MIN = 30;
 
 // Margines na POJEDYNCZY wpis względem NAJBLIŻSZEJ zaplanowanej zmiany —
-// jeden próg, symetryczny, osobno na start i na koniec: można zacząć do
-// DISCREPANCY_MARGIN_MIN wcześniej/później niż zmiana, i skończyć do
-// DISCREPANCY_MARGIN_MIN wcześniej/później niż jej koniec ("przy
-// zamykaniu") — bez tłumaczenia notatką.
-export const DISCREPANCY_MARGIN_MIN = 20;
+// symetrycznie wcześniej/później na każdym krańcu, ale z osobnym progiem
+// na start i na koniec (przy zamykaniu jest po prostu więcej naturalnych
+// powodów na drobne opóźnienie niż przy rozpoczęciu).
+export const DISCREPANCY_START_MARGIN_MIN = 20;
+export const DISCREPANCY_END_MARGIN_MIN = 30;
 
 // Czy wpisane godziny odbiegają od grafiku na tyle, że pracownik MUSI dodać
 // notatkę z wyjaśnieniem (zobaczy ją admin) — brak zaplanowanej zmiany tego
@@ -60,5 +60,5 @@ export function requiresDiscrepancyNote(
 
   const startDiff = Math.abs(actualStartMin - timeToMinutes(closest.start_time));
   const endDiff = Math.abs(timeToMinutes(actualEnd) - timeToMinutes(closest.end_time));
-  return startDiff > DISCREPANCY_MARGIN_MIN || endDiff > DISCREPANCY_MARGIN_MIN;
+  return startDiff > DISCREPANCY_START_MARGIN_MIN || endDiff > DISCREPANCY_END_MARGIN_MIN;
 }

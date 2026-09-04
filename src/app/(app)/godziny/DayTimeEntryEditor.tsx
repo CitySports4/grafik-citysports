@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { requiresDiscrepancyNote, DISCREPANCY_MARGIN_MIN } from "@/lib/time-entry-window";
+import { requiresDiscrepancyNote, DISCREPANCY_START_MARGIN_MIN, DISCREPANCY_END_MARGIN_MIN } from "@/lib/time-entry-window";
 
 export type TimeEntryRow = { id: string; actualStart: string; actualEnd: string; note: string; isRemote: boolean };
 
@@ -16,8 +16,9 @@ const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2 py-1.5 text
 // pracownik, bez okna edycji) i /grafik (wpis "przy okazji" swojej zmiany).
 //
 // `scheduled` — godziny zaplanowanej zmiany tego dnia (do porównania z
-// wpisanymi) — gdy różnica przekracza DISCREPANCY_MARGIN_MIN (albo w
-// ogóle nie ma tu zmiany w grafiku), notatka staje się WYMAGANA — to samo
+// wpisanymi) — gdy różnica przekracza margines (DISCREPANCY_START_MARGIN_MIN
+// na starcie, DISCREPANCY_END_MARGIN_MIN na końcu, albo w ogóle nie ma tu
+// zmiany w grafiku), notatka staje się WYMAGANA — to samo
 // sprawdza serwer (godziny/actions.ts), tu tylko dla natychmiastowej
 // informacji zamiast dowiadywania się dopiero po nieudanym zapisie.
 // Zostaw `undefined` (panel admina), żeby CAŁKOWICIE wyłączyć tę walidację —
@@ -85,7 +86,7 @@ export function DayTimeEntryEditor({
     if (noteRequiredFor(row) && !row.note.trim()) {
       setError((prev) => ({
         ...prev,
-        [row.id]: `Godziny odbiegają od zmiany o więcej niż ${DISCREPANCY_MARGIN_MIN} min (na starcie lub na końcu) — dodaj notatkę z wyjaśnieniem.`,
+        [row.id]: `Godziny odbiegają od zmiany o więcej niż ${DISCREPANCY_START_MARGIN_MIN} min na starcie lub ${DISCREPANCY_END_MARGIN_MIN} min na końcu — dodaj notatkę z wyjaśnieniem.`,
       }));
       return;
     }
