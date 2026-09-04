@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { hoursBetween, timeToMinutes, formatHm } from "@/lib/time";
-import { requiresDiscrepancyNote, DISCREPANCY_MARGIN_MIN } from "@/lib/time-entry-window";
+import { requiresDiscrepancyNote, DISCREPANCY_START_MARGIN_MIN, DISCREPANCY_END_MARGIN_MIN } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
@@ -149,8 +149,8 @@ export default async function WynagrodzeniaPage({
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Wynagrodzenia</h1>
         <p className="text-sm text-zinc-500">
-          Recepcja — godziny × stawka, zgodność z grafikiem (margines ±{DISCREPANCY_MARGIN_MIN} min na starcie i na końcu
-          zmiany — jak przy wpisywaniu godzin).
+          Recepcja — godziny × stawka, zgodność z grafikiem (margines ±{DISCREPANCY_START_MARGIN_MIN} min na starcie, ±
+          {DISCREPANCY_END_MARGIN_MIN} min na końcu zmiany — jak przy wpisywaniu godzin).
         </p>
       </div>
 
