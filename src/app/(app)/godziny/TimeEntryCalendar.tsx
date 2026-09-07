@@ -4,6 +4,7 @@ import { useState } from "react";
 import { DayTimeEntryEditor, type TimeEntryRow } from "./DayTimeEntryEditor";
 import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "./actions";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
+import { timeToMinutes } from "@/lib/time";
 
 type DayEntry = {
   dateKey: string;
@@ -85,13 +86,15 @@ export function TimeEntryCalendar({ days, allowUnscheduled = false }: { days: Da
             />
           ) : selectedDay.entries.length > 0 ? (
             <div className="text-sm text-zinc-600">
-              {selectedDay.entries.map((e) => (
-                <div key={e.id}>
-                  {e.actualStart}–{e.actualEnd}
-                  {e.isRemote && <span className="text-sky-600"> · 🏠 zdalnie</span>}
-                  {e.note && <span className="text-zinc-400"> · {e.note}</span>}
-                </div>
-              ))}
+              {[...selectedDay.entries]
+                .sort((a, b) => timeToMinutes(a.actualStart) - timeToMinutes(b.actualStart))
+                .map((e) => (
+                  <div key={e.id}>
+                    {e.actualStart}–{e.actualEnd}
+                    {e.isRemote && <span className="text-sky-600"> · 🏠 zdalnie</span>}
+                    {e.note && <span className="text-zinc-400"> · {e.note}</span>}
+                  </div>
+                ))}
             </div>
           ) : (
             <p className="text-sm text-zinc-400">Brak wpisu — okno edycji (7 dni) minęło.</p>
@@ -120,7 +123,10 @@ function DayCell({
   // ma tu robić) — ale kto ma zgodę na pracę zdalną, może wpisać godziny
   // dowolnego dnia, więc dla niego taki dzień musi zostać klikalny.
   const clickable = !isEmpty || (allowUnscheduled && day.editable);
-  const entriesLabel = day.entries.map((e) => `${e.actualStart}–${e.actualEnd}`).join(", ");
+  const entriesLabel = [...day.entries]
+    .sort((a, b) => timeToMinutes(a.actualStart) - timeToMinutes(b.actualStart))
+    .map((e) => `${e.actualStart}–${e.actualEnd}`)
+    .join(", ");
   // Za mało miejsca w komórce na oznaczenie przy KAŻDYM wpisie osobno —
   // wystarczy jeden 🏠, jeśli którykolwiek wpis tego dnia był zdalny.
   const anyRemote = day.entries.some((e) => e.isRemote);

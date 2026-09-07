@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { requiresDiscrepancyNote, DISCREPANCY_START_MARGIN_MIN, DISCREPANCY_END_MARGIN_MIN } from "@/lib/time-entry-window";
+import { timeToMinutes } from "@/lib/time";
 
 export type TimeEntryRow = { id: string; actualStart: string; actualEnd: string; note: string; isRemote: boolean };
 
@@ -125,9 +126,16 @@ export function DayTimeEntryEditor({
     }
   }
 
+  // Wiersze zawsze w kolejności chronologicznej (po godzinie startu) —
+  // niezależnie od tego, w jakiej kolejności zostały dodane/zapisane. Wiersz
+  // bez wpisanego jeszcze startu (świeżo dodany, pusty) ląduje na końcu.
+  const sortedRows = [...rows].sort(
+    (a, b) => (a.actualStart ? timeToMinutes(a.actualStart) : Infinity) - (b.actualStart ? timeToMinutes(b.actualStart) : Infinity)
+  );
+
   return (
     <div className="flex flex-col gap-2.5">
-      {rows.map((row) => {
+      {sortedRows.map((row) => {
         const noteRequired = noteRequiredFor(row);
         return (
           // Każdy wpis we własnej, wyraźnie odgraniczonej "karcie" — luźno

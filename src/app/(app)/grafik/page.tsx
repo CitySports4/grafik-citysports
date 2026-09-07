@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, tracksHours as employeeTracksHours } from "@/lib/session";
 import { findScheduleMonth, currentMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
-import { hoursBetween, formatHm, dailyEffectiveHours, extraEventHours } from "@/lib/time";
+import { hoursBetween, formatHm, dailyEffectiveHours, extraEventHours, timeToMinutes } from "@/lib/time";
 import { isWithinEditWindow, EDIT_WINDOW_DAYS } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
@@ -265,7 +265,10 @@ export default async function MyGrafikPage({
                 tracksHours &&
                 (() => {
                   const dayEntries = timeEntriesByDate.get(day.date) ?? [];
-                  const entriesLabel = dayEntries.map((e) => `${e.actualStart}–${e.actualEnd}${e.isRemote ? " 🏠" : ""}`).join(", ");
+                  const entriesLabel = [...dayEntries]
+                    .sort((a, b) => timeToMinutes(a.actualStart) - timeToMinutes(b.actualStart))
+                    .map((e) => `${e.actualStart}–${e.actualEnd}${e.isRemote ? " 🏠" : ""}`)
+                    .join(", ");
                   if (!isWithinEditWindow(day.date)) {
                     return dayEntries.length > 0 ? (
                       <p className="mt-2 border-t border-zinc-200 pt-2 text-xs text-zinc-500">Godziny: {entriesLabel}</p>

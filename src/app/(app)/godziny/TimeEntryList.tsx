@@ -1,5 +1,6 @@
 import { DayTimeEntryEditor, type TimeEntryRow } from "./DayTimeEntryEditor";
 import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "./actions";
+import { timeToMinutes } from "@/lib/time";
 
 type DayEntry = {
   dateKey: string;
@@ -38,7 +39,9 @@ export function TimeEntryList({
               </div>
               <div className="text-sm text-zinc-600">
                 {day.entries.length > 0 ? (
-                  day.entries.map((e) => (
+                  [...day.entries]
+                    .sort((a, b) => timeToMinutes(a.actualStart) - timeToMinutes(b.actualStart))
+                    .map((e) => (
                     <div key={e.id}>
                       {e.actualStart}–{e.actualEnd}
                       {e.isRemote && <span className="text-sky-600"> · 🏠 zdalnie</span>}

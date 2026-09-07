@@ -58,7 +58,10 @@ export async function GET(request: Request) {
     const dayEntries = (entriesByEmp.get(emp.id) ?? []).filter(
       (e): e is { actual_start: string; actual_end: string } => Boolean(e.actual_start && e.actual_end)
     );
-    const entriesLabel = dayEntries.map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}`).join(", ");
+    const entriesLabel = [...dayEntries]
+      .sort((a, b) => timeToMinutes(a.actual_start) - timeToMinutes(b.actual_start))
+      .map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}`)
+      .join(", ");
     const minStart = dayEntries.length > 0 ? dayEntries.reduce((a, b) => (timeToMinutes(b.actual_start) < timeToMinutes(a) ? b.actual_start : a), dayEntries[0].actual_start) : null;
     const maxEnd = dayEntries.length > 0 ? dayEntries.reduce((a, b) => (timeToMinutes(b.actual_end) > timeToMinutes(a) ? b.actual_end : a), dayEntries[0].actual_end) : null;
 
