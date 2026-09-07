@@ -271,7 +271,8 @@ export default async function WynagrodzeniaPage({
                               <span className="text-zinc-400">Wpisano: </span>
                               <span className="text-zinc-700">
                                 {d.dayEntries.length > 0
-                                  ? d.dayEntries
+                                  ? [...d.dayEntries]
+                                      .sort((a, b) => timeToMinutes(a.actual_start) - timeToMinutes(b.actual_start))
                                       .map((e) => `${e.actual_start.slice(0, 5)}–${e.actual_end.slice(0, 5)}${e.is_remote ? " 🏠" : ""}`)
                                       .join(", ")
                                   : "—"}

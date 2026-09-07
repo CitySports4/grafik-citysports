@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
-import { formatHm, hoursBetween } from "@/lib/time";
+import { formatHm, hoursBetween, timeToMinutes } from "@/lib/time";
 import { Card } from "@/components/Card";
 import { BackLink } from "@/components/BackLink";
 import { ColorDot } from "@/components/ColorDot";
@@ -128,7 +128,9 @@ export default async function TimeEntryArchivePage({
                     </span>
                   </div>
                   <ul className="flex flex-col gap-1 text-sm">
-                    {empEntries.map((e) => (
+                    {[...empEntries]
+                      .sort((a, b) => a.date.localeCompare(b.date) || timeToMinutes(a.actual_start ?? "00:00") - timeToMinutes(b.actual_start ?? "00:00"))
+                      .map((e) => (
                       <li key={e.id} className="flex flex-wrap items-center gap-1.5 text-zinc-700">
                         <span className="font-semibold">{new Date(e.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}</span>
                         <span>
