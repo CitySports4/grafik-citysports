@@ -3,7 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, tracksHours } from "@/lib/session";
 import { currentMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { weekdayLabel } from "@/lib/weekdays";
-import { formatHm } from "@/lib/time";
+import { formatHm, shiftsAndEventWindows } from "@/lib/time";
 import { isWithinEditWindow } from "@/lib/time-entry-window";
 import { Card } from "@/components/Card";
 import { BackLink } from "@/components/BackLink";
@@ -39,7 +39,7 @@ export default async function GodzinyPage({
   const supabase = createServerSupabaseClient();
   const dates = daysInMonth(year, month).map(toDateKey);
 
-  const [{ data: entries }, { data: shiftRows }] = await Promise.all([
+  const [{ data: entries }, { data: shiftRows }, { data: eventRows }] = await Promise.all([
     supabase
       .from("time_entry")
       .select("id, date, actual_start, actual_end, note, is_remote")
@@ -49,6 +49,15 @@ export default async function GodzinyPage({
       .from("schedule_shift")
       .select("start_time, end_time, schedule_day!inner(date, schedule_month!inner(status))")
       .eq("employee_id", employee.id)
+      .eq("schedule_day.schedule_month.status", "published")
+      .in("schedule_day.date", dates),
+    // Wydarzenia (np. sprzątanie), w których ten pracownik uczestniczy —
+    // liczą się do grafiku tego dnia na równi ze zmianami, patrz
+    // shiftsAndEventWindows.
+    supabase
+      .from("schedule_event")
+      .select("start_time, end_time, schedule_day!inner(date, schedule_month!inner(status))")
+      .contains("participant_employee_ids", [employee.id])
       .eq("schedule_day.schedule_month.status", "published")
       .in("schedule_day.date", dates),
   ]);
@@ -61,11 +70,22 @@ export default async function GodzinyPage({
     entriesByDate.get(e.date)!.push(e);
   }
   type ShiftRow = { start_time: string; end_time: string; schedule_day: { date: string } };
-  const scheduledByDate = new Map<string, { start_time: string; end_time: string }[]>();
+  const shiftsByDate = new Map<string, { start_time: string; end_time: string }[]>();
   for (const s of (shiftRows ?? []) as unknown as ShiftRow[]) {
     const date = s.schedule_day.date;
-    if (!scheduledByDate.has(date)) scheduledByDate.set(date, []);
-    scheduledByDate.get(date)!.push({ start_time: s.start_time, end_time: s.end_time });
+    if (!shiftsByDate.has(date)) shiftsByDate.set(date, []);
+    shiftsByDate.get(date)!.push({ start_time: s.start_time, end_time: s.end_time });
+  }
+  type EventRow = { start_time: string | null; end_time: string | null; schedule_day: { date: string } };
+  const eventsByDate = new Map<string, { start_time: string | null; end_time: string | null }[]>();
+  for (const ev of (eventRows ?? []) as unknown as EventRow[]) {
+    const date = ev.schedule_day.date;
+    if (!eventsByDate.has(date)) eventsByDate.set(date, []);
+    eventsByDate.get(date)!.push({ start_time: ev.start_time, end_time: ev.end_time });
+  }
+  const scheduledByDate = new Map<string, { start_time: string; end_time: string }[]>();
+  for (const date of new Set([...shiftsByDate.keys(), ...eventsByDate.keys()])) {
+    scheduledByDate.set(date, shiftsAndEventWindows(shiftsByDate.get(date) ?? [], eventsByDate.get(date) ?? []));
   }
 
   // Tylko do komunikatu "brak niczego w tym miesiącu" — sam kalendarz

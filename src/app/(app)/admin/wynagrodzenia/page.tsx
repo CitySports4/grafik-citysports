@@ -31,7 +31,7 @@ export default async function WynagrodzeniaPage({
   // api/cron/data-retention) — miesiąc sprzed tego okna miałby tu zerowe
   // godziny, gdyby pytać tylko "gorącej" tabeli. Każda data leży dokładnie w
   // jednej z tych dwóch tabel naraz, więc bezpiecznie łączymy oba wyniki.
-  const [{ data: employees }, { data: entries }, { data: archivedEntries }, { data: shiftRows }] = await Promise.all([
+  const [{ data: employees }, { data: entries }, { data: archivedEntries }, { data: shiftRows }, { data: eventRows }] = await Promise.all([
     supabase
       .from("employee")
       .select("id, name, color_hex, hourly_rate")
@@ -54,6 +54,15 @@ export default async function WynagrodzeniaPage({
       .not("employee_id", "is", null)
       .eq("schedule_day.schedule_month.status", "published")
       .in("schedule_day.date", dates),
+    // Wydarzenia (np. sprzątanie) — kto w nich uczestniczy, ma to liczone do
+    // grafiku tego dnia na równi ze zmianą (patrz shiftsAndEventWindows),
+    // inaczej zmiana POPRZEDZONA wydarzeniem (np. sprzątanie 7:30–9:00 przed
+    // zmianą 9:00–15:00) wygląda jak fałszywa rozbieżność na starcie.
+    supabase
+      .from("schedule_event")
+      .select("start_time, end_time, participant_employee_ids, schedule_day!inner(date, weekday, schedule_month!inner(status))")
+      .eq("schedule_day.schedule_month.status", "published")
+      .in("schedule_day.date", dates),
   ]);
   const allEntries = [...(entries ?? []), ...(archivedEntries ?? [])];
 
@@ -63,6 +72,12 @@ export default async function WynagrodzeniaPage({
     end_time: string;
     schedule_day: { date: string; weekday: number };
   };
+  type EventRow = {
+    start_time: string | null;
+    end_time: string | null;
+    participant_employee_ids: string[] | null;
+    schedule_day: { date: string; weekday: number };
+  };
   // Zbiorczy zakres (min start/max end) dla samego WYŚWIETLANIA "grafik: X–Y"
   // w liście dni wymagających uwagi — a osobno surowa lista zmian per dzień
   // (scheduledListByEmpDate), bo requiresDiscrepancyNote (ta sama reguła co
@@ -70,19 +85,25 @@ export default async function WynagrodzeniaPage({
   // wpis do najbliższej pojedynczej zmiany, nie do zbiorczego zakresu.
   const scheduledByEmpDate = new Map<string, { start_time: string; end_time: string; weekday: number }>();
   const scheduledListByEmpDate = new Map<string, { start_time: string; end_time: string }[]>();
-  for (const s of (shiftRows ?? []) as unknown as ShiftRow[]) {
-    const key = `${s.employee_id}|${s.schedule_day.date}`;
+  function addScheduledWindow(key: string, start_time: string, end_time: string, weekday: number) {
     const existing = scheduledByEmpDate.get(key);
     if (!existing) {
-      scheduledByEmpDate.set(key, { start_time: s.start_time, end_time: s.end_time, weekday: s.schedule_day.weekday });
+      scheduledByEmpDate.set(key, { start_time, end_time, weekday });
     } else {
-      // Kilka zmian tego dnia (nietypowe dla recepcji) — bierz najwcześniejszy
-      // start i najpóźniejszy koniec jako całe okno do porównania.
-      existing.start_time = timeToMinutes(s.start_time) < timeToMinutes(existing.start_time) ? s.start_time : existing.start_time;
-      existing.end_time = timeToMinutes(s.end_time) > timeToMinutes(existing.end_time) ? s.end_time : existing.end_time;
+      existing.start_time = timeToMinutes(start_time) < timeToMinutes(existing.start_time) ? start_time : existing.start_time;
+      existing.end_time = timeToMinutes(end_time) > timeToMinutes(existing.end_time) ? end_time : existing.end_time;
     }
     if (!scheduledListByEmpDate.has(key)) scheduledListByEmpDate.set(key, []);
-    scheduledListByEmpDate.get(key)!.push({ start_time: s.start_time, end_time: s.end_time });
+    scheduledListByEmpDate.get(key)!.push({ start_time, end_time });
+  }
+  for (const s of (shiftRows ?? []) as unknown as ShiftRow[]) {
+    addScheduledWindow(`${s.employee_id}|${s.schedule_day.date}`, s.start_time, s.end_time, s.schedule_day.weekday);
+  }
+  for (const ev of (eventRows ?? []) as unknown as EventRow[]) {
+    if (!ev.start_time || !ev.end_time) continue;
+    for (const participantId of ev.participant_employee_ids ?? []) {
+      addScheduledWindow(`${participantId}|${ev.schedule_day.date}`, ev.start_time, ev.end_time, ev.schedule_day.weekday);
+    }
   }
   // Jeden dzień może mieć kilka niezależnych wpisów (podzielona zmiana z
   // przerwą, np. 08:00–10:00 i 15:00–22:00) — stąd mapa na LISTĘ wpisów, a

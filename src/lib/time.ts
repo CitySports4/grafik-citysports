@@ -36,6 +36,22 @@ export function extraEventHours(
   return Math.round((extraMinutes / 60) * 100) / 100;
 }
 
+// Łączy zmiany (schedule_shift) z wydarzeniami, w których dana osoba
+// uczestniczy (schedule_event, np. "Sprzątanie" przed otwarciem) — używane
+// jako pełny obraz "co ta osoba miała robić tego dnia" przy sprawdzaniu, czy
+// wpisane godziny odbiegają od grafiku (requiresDiscrepancyNote). Bez tego
+// ktoś, kto pracował zmianę POPRZEDZONĄ wydarzeniem (np. sprzątanie 7:30–9:00
+// przed zmianą 9:00–15:00), wygląda jakby zaczynał 100 min za wcześnie,
+// mimo że wszystko się zgadza. Wydarzenia bez obu godzin (start/end) są
+// pomijane — nie da się ich z niczym porównać.
+export function shiftsAndEventWindows(
+  shifts: { start_time: string; end_time: string }[],
+  events: { start_time: string | null; end_time: string | null }[]
+): { start_time: string; end_time: string }[] {
+  const eventWindows = events.filter((e): e is { start_time: string; end_time: string } => Boolean(e.start_time && e.end_time));
+  return [...shifts, ...eventWindows];
+}
+
 // Godziny jednego pracownika w jednym dniu, liczone z sumy przedziałów
 // czasowych PO POŁĄCZENIU nakładających się zmian (żeby np. zmiana 14–21 i
 // 17–22 przypisane tej samej osobie nie liczyły się podwójnie za 17–21), a
