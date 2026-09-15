@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, tracksHours as employeeTracksHours } from "@/lib/session";
 import { findScheduleMonth, currentMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
-import { hoursBetween, formatHm, dailyEffectiveHours, extraEventHours, timeToMinutes } from "@/lib/time";
+import { hoursBetween, formatHm, dailyEffectiveHours, extraEventHours, timeToMinutes, shiftsAndEventWindows } from "@/lib/time";
 import { isWithinEditWindow, EDIT_WINDOW_DAYS } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
@@ -201,7 +201,12 @@ export default async function MyGrafikPage({
           const shifts = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
           const events = day.schedule_event ?? [];
           const isMyDay = shifts.some((s) => s.employee_id === employee.id);
-          const myShiftsRaw = shifts.filter((s) => s.employee_id === employee.id).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
+          const myShiftsOnly = shifts.filter((s) => s.employee_id === employee.id).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
+          // Do porównania z wpisanymi godzinami (odbiega od grafiku?) liczy się
+          // też udział w wydarzeniach tego dnia (np. sprzątanie przed zmianą) —
+          // patrz shiftsAndEventWindows.
+          const myEventsToday = events.filter((ev) => ev.participant_employee_ids?.includes(employee.id));
+          const myShiftsRaw = shiftsAndEventWindows(myShiftsOnly, myEventsToday);
           const isToday = day.date === today;
           const dateLabelStr = new Date(day.date + "T00:00:00").toLocaleDateString("pl-PL", {
             day: "numeric",

@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, tracksHours } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { isWithinEditWindow, requiresDiscrepancyNote, DISCREPANCY_START_MARGIN_MIN, DISCREPANCY_END_MARGIN_MIN } from "@/lib/time-entry-window";
+import { shiftsAndEventWindows } from "@/lib/time";
 
 // Jeden dzień może mieć KILKA wpisów godzin (podzielona zmiana z przerwą,
 // np. 08:00–10:00 i 15:00–22:00) — stąd osobne dodaj/edytuj/usuń zamiast
@@ -27,14 +28,25 @@ async function assertDiscrepancyExplained(
   if (!actualStart || !actualEnd) return; // niepełny wpis — nic do porównania
 
   const supabase = createServerSupabaseClient();
-  const { data: shiftRows } = await supabase
-    .from("schedule_shift")
-    .select("start_time, end_time, schedule_day!inner(date, schedule_month!inner(status))")
-    .eq("employee_id", employeeId)
-    .eq("schedule_day.date", date)
-    .eq("schedule_day.schedule_month.status", "published");
+  const [{ data: shiftRows }, { data: eventRows }] = await Promise.all([
+    supabase
+      .from("schedule_shift")
+      .select("start_time, end_time, schedule_day!inner(date, schedule_month!inner(status))")
+      .eq("employee_id", employeeId)
+      .eq("schedule_day.date", date)
+      .eq("schedule_day.schedule_month.status", "published"),
+    supabase
+      .from("schedule_event")
+      .select("start_time, end_time, schedule_day!inner(date, schedule_month!inner(status))")
+      .contains("participant_employee_ids", [employeeId])
+      .eq("schedule_day.date", date)
+      .eq("schedule_day.schedule_month.status", "published"),
+  ]);
 
-  const scheduled = (shiftRows ?? []).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
+  const scheduled = shiftsAndEventWindows(
+    (shiftRows ?? []).map((s) => ({ start_time: s.start_time, end_time: s.end_time })),
+    (eventRows ?? []).map((e) => ({ start_time: e.start_time, end_time: e.end_time }))
+  );
   if (requiresDiscrepancyNote(actualStart, actualEnd, scheduled, allowUnscheduled) && !note.trim()) {
     throw new Error(
       `Godziny odbiegają od zmiany o więcej niż ${DISCREPANCY_START_MARGIN_MIN} min na starcie lub ${DISCREPANCY_END_MARGIN_MIN} min na końcu, albo nie masz tego dnia zmiany w grafiku — dodaj notatkę z wyjaśnieniem, zobaczy ją admin.`
