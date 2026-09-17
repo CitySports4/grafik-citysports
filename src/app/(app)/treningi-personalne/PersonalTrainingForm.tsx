@@ -15,10 +15,16 @@ const LABEL = "text-xs font-semibold text-zinc-600";
 export function NewPersonalTrainingForm({
   action,
   defaultDate,
+  roomCapacity,
   trainerOptions,
 }: {
   action: (formData: FormData) => Promise<void>;
   defaultDate: string;
+  // Górna granica listy "Liczba osób" — nie da się wybrać więcej niż
+  // dopuszcza limit sali ustawiony przez klub, nawet jeśli akurat o tej
+  // porze byłoby jeszcze mniej wolnych miejsc (to sprawdza dopiero serwer
+  // po wybraniu godziny, patrz błąd + podpowiedź niżej).
+  roomCapacity: number;
   trainerOptions?: { id: string; name: string }[];
 }) {
   const [trainerId, setTrainerId] = useState(trainerOptions?.[0]?.id ?? "");
@@ -109,13 +115,13 @@ export function NewPersonalTrainingForm({
         </div>
         <div className="flex flex-col gap-1">
           <label className={LABEL}>Liczba osób</label>
-          <input
-            type="number"
-            min={1}
-            value={clientCount}
-            onChange={(e) => setClientCount(Number(e.target.value))}
-            className={`${INPUT} w-[90px]`}
-          />
+          <select value={clientCount} onChange={(e) => setClientCount(Number(e.target.value))} className={`${INPUT} w-[90px]`}>
+            {Array.from({ length: Math.max(roomCapacity, 1) }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
       <div className="flex flex-col gap-1">
