@@ -177,7 +177,7 @@ export default async function PersonalTrainingPage({
                 </span>
               </div>
 
-              {windows.length > 0 && (
+              {windows.length > 0 && daySessions.length > 0 && (
                 <div className="mb-2">
                   <OccupancyBar
                     segments={occupancyTimeline(
