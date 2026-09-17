@@ -50,6 +50,20 @@ export default function AdminHomePage() {
           </CardLink>
         </div>
       </div>
+
+      <div>
+        <h2 className={SECTION_LABEL}>Treningi personalne</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <CardLink href="/treningi-personalne">
+            <h2 className="font-semibold text-zinc-900">Grafik treningów</h2>
+            <p className="mt-1 text-sm text-zinc-500">Podgląd i zarządzanie treningami wszystkich trenerów.</p>
+          </CardLink>
+          <CardLink href="/admin/treningi-personalne">
+            <h2 className="font-semibold text-zinc-900">Ustawienia</h2>
+            <p className="mt-1 text-sm text-zinc-500">Limit sali, stawka za osobę, godziny dostępności sali.</p>
+          </CardLink>
+        </div>
+      </div>
     </div>
   );
 }

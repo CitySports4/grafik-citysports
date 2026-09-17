@@ -88,6 +88,14 @@ export default async function EmployeesPage() {
             <label className={LABEL}>Stawka godzinowa (PLN/h)</label>
             <input type="number" step="0.01" name="hourly_rate" defaultValue={0} className={INPUT} />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Cykl rozliczeń treningów personalnych</label>
+            <select name="pt_billing_cycle" defaultValue="" className={INPUT}>
+              <option value="">— nie dotyczy —</option>
+              <option value="weekly">Co tydzień</option>
+              <option value="monthly">Co miesiąc</option>
+            </select>
+          </div>
           <div className="sm:col-span-2">
             <SubmitButton className={BTN_PRIMARY}>Dodaj pracownika</SubmitButton>
           </div>

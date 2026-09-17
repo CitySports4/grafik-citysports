@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { requireEmployee, tracksHours as employeeTracksHours } from "@/lib/session";
+import { redirect } from "next/navigation";
+import { requireEmployee, tracksHours as employeeTracksHours, isPersonalTrainerOnly } from "@/lib/session";
 import { findScheduleMonth, currentMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
 import { hoursBetween, formatHm, dailyEffectiveHours, extraEventHours, timeToMinutes, shiftsAndEventWindows } from "@/lib/time";
 import { isWithinEditWindow, EDIT_WINDOW_DAYS } from "@/lib/time-entry-window";
@@ -34,6 +35,10 @@ export default async function MyGrafikPage({
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
   const employee = await requireEmployee();
+  // Ktoś wyłącznie z rolą trenera personalnego nie ma tu w ogóle czego
+  // szukać (żadnej zmiany, żadnych godzin recepcji) — patrz app/page.tsx i
+  // (app)/layout.tsx, gdzie cała reszta nawigacji jest dla niego ukryta.
+  if (isPersonalTrainerOnly(employee)) redirect("/treningi-personalne");
   const params = await searchParams;
   const fallback = currentMonth();
   const year = Number(params.year) || fallback.year;

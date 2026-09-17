@@ -45,13 +45,17 @@ export async function clearSession() {
   store.delete(COOKIE_NAME);
 }
 
-export type EmployeeRole = "recepcja" | "sprzatanie" | "admin";
+export type EmployeeRole = "recepcja" | "sprzatanie" | "admin" | "trener_personalny";
 
 export const ROLE_LABELS: Record<EmployeeRole, string> = {
   recepcja: "Recepcja",
   sprzatanie: "Sprzątanie",
   admin: "Administrator",
+  trener_personalny: "Trener Personalny",
 };
+
+export type PtBillingCycle = "weekly" | "monthly";
+
 export type SessionEmployee = {
   id: string;
   name: string;
@@ -68,6 +72,10 @@ export type SessionEmployee = {
   // requiresDiscrepancyNote w lib/time-entry-window.ts. Ustawiane w
   // Pracownicy, per osoba (np. Sasza) — domyślnie wyłączone.
   allowRemoteWork: boolean;
+  // Cykl rozliczeń treningów personalnych tego trenera (tydzień/miesiąc) —
+  // ma sens tylko dla kogoś z rolą trener_personalny, patrz
+  // treningi-personalne/rozliczenia.
+  ptBillingCycle: PtBillingCycle | null;
 };
 
 export async function getSessionEmployee(): Promise<SessionEmployee | null> {
@@ -77,7 +85,7 @@ export async function getSessionEmployee(): Promise<SessionEmployee | null> {
   const supabase = createServerSupabaseClient();
   const { data } = await supabase
     .from("employee")
-    .select("id, name, color_hex, active, hourly_rate, allow_remote_work, employee_role(role)")
+    .select("id, name, color_hex, active, hourly_rate, allow_remote_work, pt_billing_cycle, employee_role(role)")
     .eq("id", employeeId)
     .single();
 
@@ -89,7 +97,21 @@ export async function getSessionEmployee(): Promise<SessionEmployee | null> {
     colorHex: data.color_hex,
     hourlyRate: data.hourly_rate ?? 0,
     allowRemoteWork: data.allow_remote_work ?? false,
+    ptBillingCycle: data.pt_billing_cycle ?? null,
   };
+}
+
+// Ktoś, kto ma WYŁĄCZNIE rolę trenera personalnego (żadnej innej) — po
+// zalogowaniu widzi tylko grafik treningów personalnych, bez reszty
+// aplikacji (patrz (app)/layout.tsx i app/page.tsx).
+export function isPersonalTrainerOnly(employee: SessionEmployee): boolean {
+  return employee.roles.length === 1 && employee.roles[0] === "trener_personalny";
+}
+
+// Podgląd grafiku treningów personalnych (bez pełnej edycji) dotyczy
+// recepcji i admina — to oni realnie rozliczają się z trenerami.
+export function canPreviewPersonalTraining(employee: SessionEmployee): boolean {
+  return employee.roles.includes("recepcja") || employee.roles.includes("admin");
 }
 
 // Czy pracownik rozlicza się godzinowo — patrz komentarz przy hourlyRate.

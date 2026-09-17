@@ -51,6 +51,7 @@ export async function createEmployee(formData: FormData) {
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
   const target_hours_month = parseNumber(formData.get("target_hours_month"));
   const hourly_rate = parseNumber(formData.get("hourly_rate"));
+  const pt_billing_cycle = String(formData.get("pt_billing_cycle") ?? "") || null;
 
   if (!name || !phone) {
     throw new Error("Podaj imię i numer telefonu.");
@@ -72,6 +73,7 @@ export async function createEmployee(formData: FormData) {
       min_hours_month,
       target_hours_month,
       hourly_rate,
+      pt_billing_cycle,
     })
     .select("id")
     .single();
@@ -98,6 +100,7 @@ export async function updateEmployee(formData: FormData) {
   const min_hours_month = parseNumber(formData.get("min_hours_month"));
   const target_hours_month = parseNumber(formData.get("target_hours_month"));
   const hourly_rate = parseNumber(formData.get("hourly_rate"));
+  const pt_billing_cycle = String(formData.get("pt_billing_cycle") ?? "") || null;
   const active = formData.get("active") === "on";
 
   if (!id || !name || !phone) {
@@ -116,6 +119,7 @@ export async function updateEmployee(formData: FormData) {
       min_hours_month,
       target_hours_month,
       hourly_rate,
+      pt_billing_cycle,
       active,
     })
     .eq("id", id);
