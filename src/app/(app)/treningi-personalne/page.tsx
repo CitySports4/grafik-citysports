@@ -160,7 +160,7 @@ export default async function PersonalTrainingPage({
                 <span className="text-xs text-zinc-500">
                   {windows.length === 0
                     ? "Sala niedostępna"
-                    : `Sala: ${windows.map((w) => `${formatHm(w.start_time)}–${formatHm(w.end_time)}`).join(", ")} · obłożenie max ${peak}/${roomCapacity}`}
+                    : `Sala: ${windows.map((w) => `${formatHm(w.start_time)}–${formatHm(w.end_time)}`).join(", ")} · najwięcej osób naraz: ${peak}/${roomCapacity}`}
                 </span>
               </div>
 
