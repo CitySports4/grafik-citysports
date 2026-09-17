@@ -63,7 +63,12 @@ async function checkAvailability(
   durationMin: number,
   clientCount: number,
   roomCapacity: number,
-  excludeSessionId?: string
+  excludeSessionId?: string,
+  // Przy przenoszeniu CAŁEJ serii na nową godzinę seria nie może kolidować
+  // sama ze sobą — wyklucza wszystkie wystąpienia tej serii z konfliktu,
+  // zostawiając w sprawdzeniu wszystko inne (inni trenerzy, inne treningi
+  // tego samego trenera spoza tej serii).
+  excludeSeriesId?: string
 ): Promise<{ ok: true } | { ok: false; conflictDate: string; suggestion: string | null }> {
   const windows = await getRoomWindows(supabase, weekday);
 
@@ -74,6 +79,7 @@ async function checkAvailability(
       .eq("date", date)
       .eq("status", "scheduled");
     if (excludeSessionId) query = query.neq("id", excludeSessionId);
+    if (excludeSeriesId) query = query.or(`series_id.is.null,series_id.neq.${excludeSeriesId}`);
     const { data: existing } = await query;
 
     const fits = fitsInRoomHours(startMin, startMin + durationMin, windows);
@@ -234,6 +240,66 @@ export async function updatePersonalTrainingSession(formData: FormData) {
 
   revalidatePath("/treningi-personalne");
   revalidatePath("/treningi-personalne/rozliczenia");
+}
+
+// Przenosi CAŁĄ serię na nową godzinę (data każdego wystąpienia zostaje bez
+// zmian — to seria co tydzień, nie da się jej "przesunąć" na jedną wspólną
+// datę) — tylko przyszłe, wciąż zaplanowane wystąpienia. Sprawdza dostępność
+// dla KAŻDEGO wystąpienia osobno pod nową godziną (obłożenie sali różni się
+// dzień do dnia) — przy pierwszym konflikcie nic się nie zapisuje (wszystko
+// albo nic), z podpowiedzią najbliższej wolnej godziny dla tego dnia.
+export async function movePersonalTrainingSeries(formData: FormData) {
+  const { trainerId } = await resolveTrainerActor(formData);
+
+  const seriesId = String(formData.get("series_id") ?? "");
+  const startTime = String(formData.get("start_time") ?? "");
+  if (!seriesId || !startTime) throw new Error("Podaj nową godzinę.");
+
+  const supabase = createServerSupabaseClient();
+  const today = toDateKey(new Date());
+  const { data: sessions } = await supabase
+    .from("personal_training_session")
+    .select("id, date, duration_minutes, client_count")
+    .eq("series_id", seriesId)
+    .eq("trainer_employee_id", trainerId)
+    .eq("status", "scheduled")
+    .gte("date", today)
+    .order("date", { ascending: true });
+  if (!sessions || sessions.length === 0) return;
+
+  const startMin = timeToMinutes(startTime);
+  const settings = await getSettings(supabase);
+
+  for (const s of sessions) {
+    const weekday = new Date(s.date + "T00:00:00").getDay();
+    const availability = await checkAvailability(
+      supabase,
+      [s.date],
+      weekday,
+      startMin,
+      s.duration_minutes,
+      s.client_count,
+      settings.room_capacity,
+      undefined,
+      seriesId
+    );
+    if (!availability.ok) {
+      const suggestionText = availability.suggestion ? ` Najbliższy wolny termin: ${availability.suggestion}.` : " Brak wolnego terminu tego dnia.";
+      const dateLabel = new Date(s.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+      throw new Error(`Nowa godzina koliduje z inną rezerwacją (${dateLabel}).${suggestionText}`);
+    }
+  }
+
+  const { error } = await supabase
+    .from("personal_training_session")
+    .update({ start_time: startTime, updated_at: new Date().toISOString() })
+    .in(
+      "id",
+      sessions.map((s) => s.id)
+    );
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/treningi-personalne");
 }
 
 // Odwołuje JEDNO wystąpienie — jeśli było opłacone z góry, kwota od razu
