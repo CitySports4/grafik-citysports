@@ -4,13 +4,14 @@ import { requireEmployee, canPreviewPersonalTraining, isPersonalTrainerOnly } fr
 import { toDateKey, mondayOfWeek } from "@/lib/schedule-month";
 import { weekdayLabel } from "@/lib/weekdays";
 import { formatHm, timeToMinutes } from "@/lib/time";
-import { sessionAmount, maxConcurrentClients, minutesToTime } from "@/lib/personal-training";
+import { sessionAmount, maxConcurrentClients, minutesToTime, occupancyTimeline } from "@/lib/personal-training";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
 import { BackLink } from "@/components/BackLink";
 import { NewPersonalTrainingForm } from "./PersonalTrainingForm";
 import { EditableSessionRow } from "./EditableSessionRow";
 import { SettleToggle } from "./SettleToggle";
+import { OccupancyBar } from "./OccupancyBar";
 import {
   createPersonalTrainingSession,
   updatePersonalTrainingSession,
@@ -118,6 +119,9 @@ export default async function PersonalTrainingPage({
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
+          <Link href="/treningi-personalne/historia" className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+            Historia
+          </Link>
           <Link href={`/treningi-personalne/rozliczenia`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             Rozliczenia
           </Link>
@@ -128,6 +132,18 @@ export default async function PersonalTrainingPage({
             następny →
           </Link>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-emerald-200" /> wolno
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-amber-300" /> częściowo zajęte
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-red-400" /> pełno
+        </span>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -160,6 +176,18 @@ export default async function PersonalTrainingPage({
                     : `Sala: ${windows.map((w) => `${formatHm(w.start_time)}–${formatHm(w.end_time)}`).join(", ")} · obłożenie max ${peak}/${roomCapacity}`}
                 </span>
               </div>
+
+              {windows.length > 0 && (
+                <div className="mb-2">
+                  <OccupancyBar
+                    segments={occupancyTimeline(
+                      windows,
+                      daySessions.map((s) => ({ start_time: s.start_time, duration_minutes: s.duration_minutes, client_count: s.client_count }))
+                    )}
+                    roomCapacity={roomCapacity}
+                  />
+                </div>
+              )}
 
               <div className="flex flex-col gap-2">
                 {daySessions.map((s) => {
