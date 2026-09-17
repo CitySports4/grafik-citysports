@@ -14,6 +14,7 @@ import { SettleToggle } from "./SettleToggle";
 import {
   createPersonalTrainingSession,
   updatePersonalTrainingSession,
+  movePersonalTrainingSeries,
   cancelPersonalTrainingSession,
   cancelPersonalTrainingSeries,
   togglePersonalTrainingSettled,
@@ -162,7 +163,12 @@ export default async function PersonalTrainingPage({
 
               <div className="flex flex-col gap-2">
                 {daySessions.map((s) => {
-                  const canEditThis = isAdmin || s.trainer_employee_id === employee.id;
+                  // Edycję/przenoszenie/usuwanie widzi WYŁĄCZNIE trener-właściciel
+                  // treningu — admin/recepcja mają tylko podgląd (kto zajmuje slot
+                  // + dane do rozliczenia), bez imienia klienta. Admin dodaje komuś
+                  // trening przez "+ Nowy trening" z wyborem trenera niżej, nie
+                  // edytując cudzych wpisów tutaj.
+                  const canEditThis = s.trainer_employee_id === employee.id;
                   const amount = sessionAmount(s.rate_per_person_snapshot, s.client_count);
                   if (canEditThis) {
                     return (
@@ -182,6 +188,7 @@ export default async function PersonalTrainingPage({
                         }}
                         trainerEmployeeId={s.trainer_employee_id}
                         updateAction={updatePersonalTrainingSession}
+                        moveSeriesAction={movePersonalTrainingSeries}
                         cancelAction={cancelPersonalTrainingSession}
                         cancelSeriesAction={cancelPersonalTrainingSeries}
                         toggleAction={canPreview ? togglePersonalTrainingSettled : undefined}

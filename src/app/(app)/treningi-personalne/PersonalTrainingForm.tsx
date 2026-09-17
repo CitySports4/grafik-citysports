@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PT_DURATIONS_MIN } from "@/lib/personal-training";
+import { friendlyActionError } from "@/lib/client-error";
 
 const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2.5 py-1.5 text-sm";
 const LABEL = "text-xs font-semibold text-zinc-600";
@@ -64,9 +65,9 @@ export function NewPersonalTrainingForm({
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2500);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Nie udało się zapisać.";
-      setError(msg);
-      const match = msg.match(/(\d{2}:\d{2})\.?\s*$/);
+      const raw = err instanceof Error ? err.message : "";
+      setError(friendlyActionError(err));
+      const match = raw.match(/(\d{2}:\d{2})\.?\s*$/);
       if (match) setSuggestion(match[1]);
     } finally {
       setPending(false);

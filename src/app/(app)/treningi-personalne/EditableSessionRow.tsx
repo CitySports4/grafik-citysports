@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { PT_DURATIONS_MIN } from "@/lib/personal-training";
+import { formatHm, timeToMinutes } from "@/lib/time";
+import { minutesToTime } from "@/lib/personal-training";
+import { friendlyActionError } from "@/lib/client-error";
 import { SettleToggle } from "./SettleToggle";
 
-const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2 py-1.5 text-sm";
+const INPUT_SM = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2 py-1.5 text-sm";
 
 export type EditableSession = {
   id: string;
@@ -19,61 +21,73 @@ export type EditableSession = {
   amount: number;
 };
 
-// Wiersz WŁASNEGO treningu trenera — od razu edytowalny (jak w
-// DayTimeEntryEditor), bez osobnego trybu "podgląd"/"edycja": zmień pole,
-// kliknij Zapisz. Usuń dotyczy tylko tego jednego wystąpienia; jeśli
-// trening jest częścią cyklicznej serii, obok pojawia się dodatkowo "Usuń
-// całą serię".
+// Wiersz WŁASNEGO treningu trenera — domyślnie zwinięty do jednej linii
+// (to ma służyć za czytelny grafik "kiedy i z kim", nie formularz edycji
+// zawsze rozłożony na pełną szerokość). "Przenieś" otwiera mały panel zmiany
+// terminu — dla serii cyklicznej pyta najpierw, czy dotyczy tylko tego
+// wystąpienia, czy całej serii od teraz (cała seria zmienia tylko GODZINĘ,
+// każde wystąpienie zostaje na swojej dacie). "Usuń"/"Usuń całą serię"
+// odwołuje.
 export function EditableSessionRow({
   session,
   trainerEmployeeId,
   updateAction,
+  moveSeriesAction,
   cancelAction,
   cancelSeriesAction,
   toggleAction,
 }: {
   session: EditableSession;
-  // Id trenera, którego dotyczy trening — admin edytuje cudze treningi, więc
-  // serwer musi wiedzieć, w czyim imieniu działa (patrz resolveTrainerActor).
+  // Id trenera, którego dotyczy trening — potrzebne serwerowi, patrz
+  // resolveTrainerActor w actions.ts.
   trainerEmployeeId: string;
   updateAction: (formData: FormData) => Promise<void>;
+  moveSeriesAction: (formData: FormData) => Promise<void>;
   cancelAction: (formData: FormData) => Promise<void>;
   cancelSeriesAction: (formData: FormData) => Promise<void>;
-  // Podane tylko dla recepcji/admina — plain trener nie może sam sobie
-  // oznaczać rozliczenia (patrz canPreviewPersonalTraining), widzi wtedy
-  // tylko statyczną plakietkę niżej.
+  // Podane tylko dla recepcji/admina — plain trener nie oznacza sam sobie
+  // rozliczenia (patrz canPreviewPersonalTraining), widzi wtedy tylko
+  // statyczną plakietkę.
   toggleAction?: (formData: FormData) => Promise<void>;
 }) {
-  const [date, setDate] = useState(session.date);
-  const [startTime, setStartTime] = useState(session.startTime);
-  const [durationMinutes, setDurationMinutes] = useState(session.durationMinutes);
-  const [clientCount, setClientCount] = useState(session.clientCount);
-  const [clientName, setClientName] = useState(session.clientName);
-  const [pending, setPending] = useState<"save" | "delete" | "delete-series" | null>(null);
+  const [showMove, setShowMove] = useState(false);
+  const [moveScope, setMoveScope] = useState<"single" | "series">("single");
+  const [moveDate, setMoveDate] = useState(session.date);
+  const [moveTime, setMoveTime] = useState(session.startTime);
+  const [pending, setPending] = useState<"move" | "delete" | "delete-series" | null>(null);
   const [error, setError] = useState("");
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
 
-  async function handleSave() {
-    setPending("save");
+  const endTime = minutesToTime(timeToMinutes(session.startTime) + session.durationMinutes);
+
+  async function handleMove() {
+    setPending("move");
     setError("");
     setSuggestion(null);
     try {
       const fd = new FormData();
-      fd.set("id", session.id);
       fd.set("trainer_employee_id", trainerEmployeeId);
-      fd.set("date", date);
-      fd.set("start_time", startTime);
-      fd.set("duration_minutes", String(durationMinutes));
-      fd.set("client_count", String(clientCount));
-      fd.set("client_name", clientName);
-      await updateAction(fd);
+      if (moveScope === "series" && session.seriesId) {
+        fd.set("series_id", session.seriesId);
+        fd.set("start_time", moveTime);
+        await moveSeriesAction(fd);
+      } else {
+        fd.set("id", session.id);
+        fd.set("date", moveDate);
+        fd.set("start_time", moveTime);
+        fd.set("duration_minutes", String(session.durationMinutes));
+        fd.set("client_count", String(session.clientCount));
+        fd.set("client_name", session.clientName);
+        await updateAction(fd);
+      }
+      setShowMove(false);
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2500);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Nie udało się zapisać.";
-      setError(msg);
-      const match = msg.match(/(\d{2}:\d{2})\.?\s*$/);
+      const raw = err instanceof Error ? err.message : "";
+      setError(friendlyActionError(err));
+      const match = raw.match(/(\d{2}:\d{2})\.?\s*$/);
       if (match) setSuggestion(match[1]);
     } finally {
       setPending(null);
@@ -95,49 +109,25 @@ export function EditableSessionRow({
         await cancelAction(fd);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Nie udało się usunąć.");
+      setError(friendlyActionError(err));
     } finally {
       setPending(null);
     }
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-2.5">
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-zinc-600">Dzień</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${INPUT} w-[140px]`} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-zinc-600">Start</label>
-          <input type="time" step={300} value={startTime} onChange={(e) => setStartTime(e.target.value)} className={`${INPUT} w-[100px]`} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-zinc-600">Czas</label>
-          <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} className={`${INPUT} w-[90px]`}>
-            {PT_DURATIONS_MIN.map((d) => (
-              <option key={d} value={d}>
-                {d} min
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-zinc-600">Osoby</label>
-          <input
-            type="number"
-            min={1}
-            value={clientCount}
-            onChange={(e) => setClientCount(Number(e.target.value))}
-            className={`${INPUT} w-[70px]`}
-          />
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-semibold text-zinc-600">Imię klienta (widoczne tylko dla Ciebie)</label>
-        <input value={clientName} onChange={(e) => setClientName(e.target.value)} className={INPUT} />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-1.5 rounded-xl border border-zinc-200 bg-white p-2.5 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span>
+          <span className="font-semibold text-zinc-900">
+            {formatHm(session.startTime)}–{endTime}
+          </span>
+          <span className="text-zinc-700"> · {session.clientName || "(bez imienia klienta)"}</span>
+          <span className="text-zinc-400">
+            {" "}
+            · {session.clientCount} {session.clientCount === 1 ? "osoba" : "osób"}
+          </span>
+        </span>
         {toggleAction ? (
           <SettleToggle sessionId={session.id} initialSettled={session.isSettled} toggleAction={toggleAction} />
         ) : (
@@ -149,9 +139,54 @@ export function EditableSessionRow({
             {session.isSettled ? "✓ rozliczone" : "nierozliczone"}
           </span>
         )}
-        <span className="text-xs text-zinc-500">{session.amount.toFixed(2)} PLN</span>
-        {session.settledNote && <span className="text-xs text-zinc-400">{session.settledNote}</span>}
       </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+        <span>{session.amount.toFixed(2)} PLN</span>
+        {session.settledNote && <span className="text-zinc-400">· {session.settledNote}</span>}
+      </div>
+
+      {showMove && (
+        <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-2.5">
+          {session.seriesId && (
+            <div className="flex flex-wrap gap-3 text-xs font-semibold text-zinc-700">
+              <label className="flex items-center gap-1">
+                <input type="radio" checked={moveScope === "single"} onChange={() => setMoveScope("single")} /> tylko ten trening
+              </label>
+              <label className="flex items-center gap-1">
+                <input type="radio" checked={moveScope === "series"} onChange={() => setMoveScope("series")} /> cała seria (od teraz)
+              </label>
+            </div>
+          )}
+          <div className="flex flex-wrap items-end gap-2">
+            {moveScope === "single" && (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-zinc-600">Nowy dzień</label>
+                <input type="date" value={moveDate} onChange={(e) => setMoveDate(e.target.value)} className={`${INPUT_SM} w-[140px]`} />
+              </div>
+            )}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-zinc-600">Nowa godzina</label>
+              <input type="time" step={300} value={moveTime} onChange={(e) => setMoveTime(e.target.value)} className={`${INPUT_SM} w-[110px]`} />
+            </div>
+            <button
+              type="button"
+              disabled={pending !== null}
+              onClick={handleMove}
+              className="rounded-lg bg-brand-orange px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+            >
+              {pending === "move" ? "Przenoszenie…" : "Zastosuj"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowMove(false)}
+              className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
+            >
+              Anuluj
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
           {error}
@@ -159,7 +194,7 @@ export function EditableSessionRow({
             <button
               type="button"
               onClick={() => {
-                setStartTime(suggestion);
+                setMoveTime(suggestion);
                 setError("");
                 setSuggestion(null);
               }}
@@ -170,14 +205,15 @@ export function EditableSessionRow({
           )}
         </div>
       )}
+
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={pending !== null}
-          onClick={handleSave}
-          className="rounded-lg bg-brand-orange px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+          onClick={() => setShowMove((v) => !v)}
+          className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
         >
-          {pending === "save" ? "Zapisywanie…" : "Zapisz"}
+          {showMove ? "Zwiń" : "Przenieś"}
         </button>
         <button
           type="button"
