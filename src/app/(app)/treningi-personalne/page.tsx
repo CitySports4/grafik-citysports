@@ -228,6 +228,7 @@ export default async function PersonalTrainingPage({
                     <NewPersonalTrainingForm
                       action={createPersonalTrainingSession}
                       defaultDate={date}
+                      roomCapacity={roomCapacity}
                       trainerOptions={isAdmin ? trainerOptions : undefined}
                     />
                   </div>

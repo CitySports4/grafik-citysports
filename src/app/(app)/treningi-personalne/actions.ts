@@ -161,6 +161,14 @@ export async function createPersonalTrainingSession(formData: FormData) {
   const supabase = createServerSupabaseClient();
   const settings = await getSettings(supabase);
 
+  // Osobny, jednoznaczny komunikat, gdy sama liczba osób przekracza limit
+  // sali — bez tego trafiałoby to do checkAvailability i wychodziłoby jako
+  // mylące "brak wolnego terminu", mimo że żaden termin nigdy by nie pasował
+  // (limit sali nie da się w ogóle zmieścić, niezależnie od godziny).
+  if (clientCount > settings.room_capacity) {
+    throw new Error(`Za dużo osób — limit sali to ${settings.room_capacity} naraz, a podano ${clientCount}.`);
+  }
+
   const availability = await checkAvailability(supabase, dates, weekday, startMin, durationMinutes, clientCount, settings.room_capacity);
   if (!availability.ok) {
     const suggestionText = availability.suggestion
@@ -218,6 +226,10 @@ export async function updatePersonalTrainingSession(formData: FormData) {
   const weekday = new Date(date + "T00:00:00").getDay();
   const startMin = timeToMinutes(startTime);
   const settings = await getSettings(supabase);
+
+  if (clientCount > settings.room_capacity) {
+    throw new Error(`Za dużo osób — limit sali to ${settings.room_capacity} naraz, a podano ${clientCount}.`);
+  }
 
   const availability = await checkAvailability(supabase, [date], weekday, startMin, durationMinutes, clientCount, settings.room_capacity, id);
   if (!availability.ok) {
