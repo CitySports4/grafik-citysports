@@ -86,34 +86,6 @@ export function minutesToTime(min: number): string {
   return `${h}:${m}`;
 }
 
-export type OccupancySegment = { start: number; end: number; count: number };
-
-// Dzieli godziny otwarcia sali na krótkie odcinki (domyślnie 30 min) i liczy
-// dla każdego, ile osób ma wtedy zajęcia (suma wszystkich trenerów naraz) —
-// do wizualnego paska zajętości dnia, żeby od razu było widać, gdzie są
-// wolne okna, zamiast dopiero próbować dodać trening i czekać na podpowiedź.
-export function occupancyTimeline(
-  windows: RoomWindow[],
-  sessions: { start_time: string; duration_minutes: number; client_count: number }[],
-  stepMinutes = 30
-): OccupancySegment[] {
-  const segments: OccupancySegment[] = [];
-  for (const w of windows) {
-    const windowStart = timeToMinutes(w.start_time);
-    const windowEnd = timeToMinutes(w.end_time);
-    for (let t = windowStart; t < windowEnd; t += stepMinutes) {
-      const segEnd = Math.min(t + stepMinutes, windowEnd);
-      const mid = (t + segEnd) / 2;
-      const count = sessions.reduce((sum, s) => {
-        const [start, end] = sessionMinutes(s);
-        return start <= mid && mid < end ? sum + s.client_count : sum;
-      }, 0);
-      segments.push({ start: t, end: segEnd, count });
-    }
-  }
-  return segments;
-}
-
 // Kwota za jeden trening = stawka (zamrożona w chwili utworzenia) × liczba
 // osób — patrz rate_per_person_snapshot w migracji 0031, żeby późniejsza
 // zmiana globalnej stawki nie przepisywała historii już zaplanowanych treningów.
