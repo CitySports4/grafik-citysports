@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { getSessionEmployee } from "@/lib/session";
+import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining } from "@/lib/session";
 import { NavDropdown } from "@/components/NavDropdown";
 import { logout } from "./actions";
 
@@ -17,16 +17,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // grafik" (mniej klikania niż osobna strona) — /godziny zostaje jako
   // działający adres, ale bez własnej pozycji w menu, żeby nie dublować.
   // Zadania to teraz jedna strona (sprzątanie + inne), nie grupa.
-  const navGroups: { label: string; links: { href: string; label: string }[] }[] = [
-    {
-      label: "Grafik",
-      links: [
-        { href: "/grafik", label: "Mój grafik" },
-        { href: "/dyspozycyjnosc", label: "Dyspozycyjność" },
-      ],
-    },
-  ];
-  const trailingLinks = [{ href: "/zadania", label: "Zadania" }];
+  // Ktoś wyłącznie z rolą trenera personalnego nie ma normalnego grafiku
+  // zmian ani zadań — po zalogowaniu widzi WYŁĄCZNIE grafik treningów
+  // personalnych (patrz app/page.tsx dla przekierowania po loginie).
+  const isTrainerOnly = isPersonalTrainerOnly(employee);
+  const canSeePersonalTraining = employee.roles.includes("trener_personalny") || canPreviewPersonalTraining(employee);
+
+  const navGroups: { label: string; links: { href: string; label: string }[] }[] = isTrainerOnly
+    ? []
+    : [
+        {
+          label: "Grafik",
+          links: [
+            { href: "/grafik", label: "Mój grafik" },
+            { href: "/dyspozycyjnosc", label: "Dyspozycyjność" },
+          ],
+        },
+      ];
+  const trailingLinks: { href: string; label: string }[] = [];
+  if (!isTrainerOnly) trailingLinks.push({ href: "/zadania", label: "Zadania" });
+  if (canSeePersonalTraining) trailingLinks.push({ href: "/treningi-personalne", label: "Treningi personalne" });
   if (employee.roles.includes("admin")) {
     trailingLinks.push({ href: "/admin", label: "Panel admina" });
   }
@@ -36,7 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <header className="bg-brand-navy">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <Link href="/grafik">
+            <Link href={isTrainerOnly ? "/treningi-personalne" : "/grafik"}>
               <Image src="/logo.png" alt="City Sports" width={146} height={32} className="h-8 w-auto" priority />
             </Link>
             <span className="hidden h-6 w-px bg-white/20 sm:block" />

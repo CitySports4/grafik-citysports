@@ -186,6 +186,14 @@ export default async function EmployeeDetailPage({
               className={INPUT}
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Cykl rozliczeń treningów personalnych</label>
+            <select name="pt_billing_cycle" defaultValue={employee.pt_billing_cycle ?? ""} className={INPUT}>
+              <option value="">— nie dotyczy —</option>
+              <option value="weekly">Co tydzień</option>
+              <option value="monthly">Co miesiąc</option>
+            </select>
+          </div>
           <div className="sm:col-span-2">
             <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Zapisz zmiany
