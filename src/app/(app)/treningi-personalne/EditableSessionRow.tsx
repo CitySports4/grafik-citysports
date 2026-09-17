@@ -95,7 +95,16 @@ export function EditableSessionRow({
   }
 
   async function handleDelete(series: boolean) {
-    if (!window.confirm(series ? "Usunąć CAŁĄ serię przyszłych treningów?" : "Usunąć ten trening?")) return;
+    // Konkretny termin i klient w treści potwierdzenia — przy kilku
+    // treningach dziennie samo "Usunąć ten trening?" za łatwo potwierdzić
+    // machinalnie i skasować zły wpis.
+    const label = `${formatHm(session.startTime)}–${endTime}${session.clientName ? ` · ${session.clientName}` : ""}, ${new Date(
+      session.date + "T00:00:00"
+    ).toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}`;
+    const confirmText = series
+      ? `Usunąć CAŁĄ serię przyszłych treningów (od ${label})?`
+      : `Usunąć trening ${label}?`;
+    if (!window.confirm(confirmText)) return;
     setPending(series ? "delete-series" : "delete");
     setError("");
     try {
