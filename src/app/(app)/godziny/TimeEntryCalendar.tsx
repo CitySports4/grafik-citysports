@@ -4,7 +4,7 @@ import { useState } from "react";
 import { DayTimeEntryEditor, type TimeEntryRow } from "./DayTimeEntryEditor";
 import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "./actions";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
-import { timeToMinutes } from "@/lib/time";
+import { timeToMinutes, hoursBetween } from "@/lib/time";
 
 type DayEntry = {
   dateKey: string;
@@ -95,6 +95,14 @@ export function TimeEntryCalendar({ days, allowUnscheduled = false }: { days: Da
                     {e.note && <span className="text-zinc-400"> · {e.note}</span>}
                   </div>
                 ))}
+              <div className="mt-1 font-semibold text-emerald-700">
+                Razem:{" "}
+                {Math.round(
+                  selectedDay.entries.reduce((sum, e) => sum + (e.actualStart && e.actualEnd ? hoursBetween(e.actualStart, e.actualEnd) : 0), 0) *
+                    100
+                ) / 100}
+                h
+              </div>
             </div>
           ) : (
             <p className="text-sm text-zinc-400">Brak wpisu — okno edycji (7 dni) minęło.</p>
@@ -130,6 +138,14 @@ function DayCell({
   // Za mało miejsca w komórce na oznaczenie przy KAŻDYM wpisie osobno —
   // wystarczy jeden 🏠, jeśli którykolwiek wpis tego dnia był zdalny.
   const anyRemote = day.entries.some((e) => e.isRemote);
+  // Suma godzin z wpisanych zmian tego dnia — osobna, zawsze widoczna linia
+  // (nie obcinana razem z entriesLabel, który przy kilku wpisach i tak się
+  // ucina), żeby pracownik od razu widział "ile mi dziś wyszło" bez liczenia
+  // w głowie z godzin start/koniec.
+  const dayHours =
+    Math.round(
+      day.entries.reduce((sum, e) => sum + (e.actualStart && e.actualEnd ? hoursBetween(e.actualStart, e.actualEnd) : 0), 0) * 100
+    ) / 100;
 
   const boxClass = hasEntries
     ? "border-emerald-200 bg-emerald-50"
@@ -147,10 +163,13 @@ function DayCell({
       </div>
       {hasSchedule && <div className="mt-0.5 truncate text-[11px] text-zinc-500">{day.scheduled}</div>}
       {hasEntries ? (
-        <div className="mt-0.5 truncate text-[11px] font-semibold text-emerald-700">
-          ✓ {entriesLabel}
-          {anyRemote && " 🏠"}
-        </div>
+        <>
+          <div className="mt-0.5 truncate text-[11px] font-semibold text-emerald-700">
+            ✓ {entriesLabel}
+            {anyRemote && " 🏠"}
+          </div>
+          {dayHours > 0 && <div className="text-[11px] font-bold text-emerald-800">{dayHours}h</div>}
+        </>
       ) : hasSchedule ? (
         <div className={`mt-0.5 text-[11px] font-semibold ${day.editable ? "text-amber-700" : "text-red-600"}`}>
           {day.editable ? "Wpisz godziny" : "Brak wpisu"}
