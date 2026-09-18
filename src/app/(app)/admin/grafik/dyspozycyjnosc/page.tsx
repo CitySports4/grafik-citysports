@@ -106,7 +106,14 @@ export default async function AdminAvailabilityOverviewPage({
   // po submissions, mimo że z nimi nie ma nic wspólnego.
   const [{ data: employees }, { data: shiftTemplate }, { data: constraints }, { data: submissions }, { data: plannedAbsences }] =
     await Promise.all([
-      supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
+      // Dyspozycyjność dotyczy tylko recepcji, tak samo jak sam grafik zmian
+      // (patrz admin/grafik/page.tsx) — inne role mają swój własny grafik.
+      supabase
+        .from("employee")
+        .select("id, name, color_hex, employee_role!inner(role)")
+        .eq("active", true)
+        .eq("employee_role.role", "recepcja")
+        .order("name"),
       supabase.from("shift_template").select("weekday, slot_index, default_start_time, default_end_time").eq("active", true),
       supabase.from("weekly_recurring_constraint").select("employee_id, weekday, start_time, end_time, type"),
       supabase.from("availability_submission").select("id, employee_id, status, submitted_at").eq("schedule_month_id", scheduleMonth.id),

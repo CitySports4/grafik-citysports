@@ -40,10 +40,14 @@ export default async function ScheduleBuilderPage({
     { data: submissions },
     { data: plannedAbsences },
   ] = await Promise.all([
+    // Grafik zmian dotyczy tylko recepcji — inne role (sprzątanie, trener
+    // personalny, sam admin bez tej roli) mają swój własny grafik/panel i
+    // nie powinny się tu pojawiać jako osoby do przypisania na zmianę.
     supabase
       .from("employee")
-      .select("id, name, color_hex, min_hours_month, target_hours_month, hourly_rate")
+      .select("id, name, color_hex, min_hours_month, target_hours_month, hourly_rate, employee_role!inner(role)")
       .eq("active", true)
+      .eq("employee_role.role", "recepcja")
       .order("name"),
     supabase.from("employee_cleaning_zone").select("employee_id"),
     supabase.from("employee_class_schedule").select("employee_id, weekday, start_time, end_time"),
