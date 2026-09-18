@@ -6,6 +6,8 @@ import { sessionAmount } from "@/lib/personal-training";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
 import { BackLink } from "@/components/BackLink";
+import { SettleMonthPanel } from "../SettleMonthPanel";
+import { settlePersonalTrainingSessions, settleAllPersonalTrainingForRange } from "../actions";
 
 const CYCLE_LABELS: Record<string, string> = { weekly: "tygodniowo", monthly: "miesięcznie" };
 
@@ -45,7 +47,7 @@ export default async function PersonalTrainingBillingPage({
   let query = supabase
     .from("personal_training_session")
     .select(
-      "id, trainer_employee_id, client_count, is_settled, rate_per_person_snapshot, trainer:trainer_employee_id(name, color_hex, pt_billing_cycle)"
+      "id, trainer_employee_id, date, start_time, client_count, is_settled, rate_per_person_snapshot, trainer:trainer_employee_id(name, color_hex, pt_billing_cycle)"
     )
     .in("date", dates)
     .eq("status", "scheduled");
@@ -55,6 +57,8 @@ export default async function PersonalTrainingBillingPage({
   type Row = {
     id: string;
     trainer_employee_id: string;
+    date: string;
+    start_time: string;
     client_count: number;
     is_settled: boolean;
     rate_per_person_snapshot: number;
@@ -63,18 +67,29 @@ export default async function PersonalTrainingBillingPage({
 
   const byTrainer = new Map<
     string,
-    { name: string; color: string; cycle: string | null; sessionCount: number; total: number; settled: number }
+    {
+      trainerId: string;
+      name: string;
+      color: string;
+      cycle: string | null;
+      sessionCount: number;
+      total: number;
+      settled: number;
+      sessions: { id: string; date: string; startTime: string; clientCount: number; amount: number; isSettled: boolean }[];
+    }
   >();
   for (const s of (sessions ?? []) as unknown as Row[]) {
     const key = s.trainer_employee_id;
     if (!byTrainer.has(key)) {
       byTrainer.set(key, {
+        trainerId: key,
         name: s.trainer?.name ?? "?",
         color: s.trainer?.color_hex ?? "#999",
         cycle: s.trainer?.pt_billing_cycle ?? null,
         sessionCount: 0,
         total: 0,
         settled: 0,
+        sessions: [],
       });
     }
     const row = byTrainer.get(key)!;
@@ -82,6 +97,7 @@ export default async function PersonalTrainingBillingPage({
     row.sessionCount += 1;
     row.total += amount;
     if (s.is_settled) row.settled += amount;
+    row.sessions.push({ id: s.id, date: s.date, startTime: s.start_time, clientCount: s.client_count, amount, isSettled: s.is_settled });
   }
   const rows = [...byTrainer.values()].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -141,6 +157,16 @@ export default async function PersonalTrainingBillingPage({
                     <strong className={unpaid > 0 ? "text-amber-700" : "text-emerald-700"}>{unpaid.toFixed(2)} PLN</strong>
                   </span>
                 </div>
+                {canPreview && (
+                  <SettleMonthPanel
+                    sessions={r.sessions}
+                    trainerId={r.trainerId}
+                    startDate={dates[0]}
+                    endDate={dates[dates.length - 1]}
+                    settleSessionsAction={settlePersonalTrainingSessions}
+                    settleAllAction={settleAllPersonalTrainingForRange}
+                  />
+                )}
               </div>
             );
           })}

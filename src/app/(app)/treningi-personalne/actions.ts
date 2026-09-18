@@ -420,6 +420,61 @@ export async function togglePersonalTrainingSettled(formData: FormData) {
   revalidatePath("/treningi-personalne/rozliczenia");
 }
 
+// Oznacza WYBRANE treningi (konkretne id, zaznaczone checkboxami w
+// Rozliczeniach) jako rozliczone naraz — "część miesiąca", zamiast klikać
+// każdy z osobna. Ta sama zasada uprawnień i skutków co pojedynczy
+// przełącznik wyżej.
+export async function settlePersonalTrainingSessions(formData: FormData) {
+  const employee = await requireEmployee();
+  if (!canPreviewPersonalTraining(employee)) {
+    throw new Error("Brak uprawnień do oznaczania rozliczeń.");
+  }
+
+  const ids = formData.getAll("id").map(String).filter(Boolean);
+  if (ids.length === 0) return;
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("personal_training_session")
+    .update({ is_settled: true, settled_note: null })
+    .in("id", ids);
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/treningi-personalne");
+  revalidatePath("/treningi-personalne/rozliczenia");
+  revalidatePath("/treningi-personalne/historia");
+}
+
+// Oznacza WSZYSTKIE jeszcze nierozliczone treningi danego trenera w podanym
+// zakresie dat jako rozliczone jednym kliknięciem — "cały miesiąc" w
+// Rozliczeniach, bez ręcznego zaznaczania każdego osobno.
+export async function settleAllPersonalTrainingForRange(formData: FormData) {
+  const employee = await requireEmployee();
+  if (!canPreviewPersonalTraining(employee)) {
+    throw new Error("Brak uprawnień do oznaczania rozliczeń.");
+  }
+
+  const trainerId = String(formData.get("trainer_employee_id") ?? "");
+  const startDate = String(formData.get("start_date") ?? "");
+  const endDate = String(formData.get("end_date") ?? "");
+  if (!trainerId || !startDate || !endDate) throw new Error("Brak zakresu dat.");
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("personal_training_session")
+    .update({ is_settled: true, settled_note: null })
+    .eq("trainer_employee_id", trainerId)
+    .eq("status", "scheduled")
+    .eq("is_settled", false)
+    .gte("date", startDate)
+    .lte("date", endDate);
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/treningi-personalne");
+  revalidatePath("/treningi-personalne/rozliczenia");
+  revalidatePath("/treningi-personalne/historia");
+}
+
 export async function updatePersonalTrainingSettings(formData: FormData) {
   await requireAdmin();
 
