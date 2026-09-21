@@ -11,6 +11,7 @@ import { BackLink } from "@/components/BackLink";
 import { NewPersonalTrainingForm } from "./PersonalTrainingForm";
 import { EditableSessionRow } from "./EditableSessionRow";
 import { SettleToggle } from "./SettleToggle";
+import { RoomBlockForm } from "./RoomBlockForm";
 import {
   createPersonalTrainingSession,
   updatePersonalTrainingSession,
@@ -18,6 +19,8 @@ import {
   cancelPersonalTrainingSession,
   cancelPersonalTrainingSeries,
   togglePersonalTrainingSettled,
+  addRoomBlock,
+  deleteRoomBlock,
 } from "./actions";
 
 type SessionRow = {
@@ -34,6 +37,8 @@ type SessionRow = {
   rate_per_person_snapshot: number;
   trainer: { name: string; color_hex: string } | null;
 };
+
+type BlockRow = { id: string; date: string; start_time: string; end_time: string; reason: string | null };
 
 export default async function PersonalTrainingPage({
   searchParams,
@@ -69,7 +74,7 @@ export default async function PersonalTrainingPage({
   const nextMonday = toDateKey(new Date(mondayDate.getTime() + 7 * 86400000));
 
   const supabase = createServerSupabaseClient();
-  const [{ data: sessions }, { data: roomHoursRows }, { data: settings }, trainerOptionsResult] = await Promise.all([
+  const [{ data: sessions }, { data: roomHoursRows }, { data: settings }, trainerOptionsResult, { data: blockRows }] = await Promise.all([
     supabase
       .from("personal_training_session")
       .select(
@@ -83,6 +88,7 @@ export default async function PersonalTrainingPage({
     isAdmin
       ? supabase.from("employee").select("id, name, employee_role!inner(role)").eq("active", true).eq("employee_role.role", "trener_personalny").order("name")
       : Promise.resolve({ data: null }),
+    supabase.from("personal_training_room_block").select("id, date, start_time, end_time, reason").in("date", weekDates).order("start_time"),
   ]);
 
   const roomCapacity = settings?.room_capacity ?? 0;
@@ -90,6 +96,11 @@ export default async function PersonalTrainingPage({
   for (const s of (sessions ?? []) as unknown as SessionRow[]) {
     if (!sessionsByDate.has(s.date)) sessionsByDate.set(s.date, []);
     sessionsByDate.get(s.date)!.push(s);
+  }
+  const blocksByDate = new Map<string, BlockRow[]>();
+  for (const b of (blockRows ?? []) as BlockRow[]) {
+    if (!blocksByDate.has(b.date)) blocksByDate.set(b.date, []);
+    blocksByDate.get(b.date)!.push(b);
   }
   const roomHoursByWeekday = new Map<number, { start_time: string; end_time: string }[]>();
   for (const w of roomHoursRows ?? []) {
@@ -138,6 +149,7 @@ export default async function PersonalTrainingPage({
           const weekday = new Date(date + "T00:00:00").getDay();
           const windows = roomHoursByWeekday.get(weekday) ?? [];
           const daySessions = (sessionsByDate.get(date) ?? []).slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
+          const dayBlocks = (blocksByDate.get(date) ?? []).slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
           const peak = maxConcurrentClients(
             0,
             24 * 60,
@@ -165,6 +177,28 @@ export default async function PersonalTrainingPage({
               </div>
 
               <div className="flex flex-col gap-2">
+                {dayBlocks.map((b) => (
+                  <div
+                    key={b.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-300 bg-zinc-100 p-2.5 text-sm text-zinc-600"
+                  >
+                    <span>
+                      🔒{" "}
+                      <span className="font-semibold text-zinc-800">
+                        {formatHm(b.start_time)}–{formatHm(b.end_time)}
+                      </span>{" "}
+                      Sala zablokowana{b.reason ? ` — ${b.reason}` : ""}
+                    </span>
+                    {isAdmin && (
+                      <form action={deleteRoomBlock}>
+                        <input type="hidden" name="id" value={b.id} />
+                        <button type="submit" className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">
+                          Usuń
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                ))}
                 {daySessions.map((s) => {
                   // Edycję/przenoszenie/usuwanie widzi WYŁĄCZNIE trener-właściciel
                   // treningu — admin/recepcja mają tylko podgląd (kto zajmuje slot
@@ -214,7 +248,7 @@ export default async function PersonalTrainingPage({
                     </div>
                   );
                 })}
-                {daySessions.length === 0 && <p className="text-xs text-zinc-400">Brak treningów tego dnia.</p>}
+                {daySessions.length === 0 && dayBlocks.length === 0 && <p className="text-xs text-zinc-400">Brak treningów tego dnia.</p>}
               </div>
 
               {canManage && (
@@ -231,6 +265,19 @@ export default async function PersonalTrainingPage({
                       roomCapacity={roomCapacity}
                       trainerOptions={isAdmin ? trainerOptions : undefined}
                     />
+                  </div>
+                </details>
+              )}
+
+              {isAdmin && (
+                <details className="group mt-2 border-t border-zinc-200 pt-2">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-600 marker:content-none">
+                    <span>🔒 Zablokuj salę</span>
+                    <span className="font-normal text-zinc-400 group-open:hidden">▸</span>
+                    <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
+                  </summary>
+                  <div className="mt-2">
+                    <RoomBlockForm action={addRoomBlock} defaultDate={date} />
                   </div>
                 </details>
               )}
