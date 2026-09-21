@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, requireAdmin, canPreviewPersonalTraining } from "@/lib/session";
+import { hasKioskSession } from "@/lib/kiosk-session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { toDateKey } from "@/lib/schedule-month";
 import { timeToMinutes } from "@/lib/time";
@@ -21,7 +22,9 @@ type Supabase = ReturnType<typeof createServerSupabaseClient>;
 
 // Trener zarządza WYŁĄCZNIE swoimi treningami — admin zarządza wszystkimi
 // (może np. poprawić trening w zastępstwie trenera). Zwraca id trenera, na
-// którego rzecz akcja ma faktycznie działać.
+// którego rzecz akcja ma faktycznie działać. Używane przez edycję/przenoszenie
+// /usuwanie ISTNIEJĄCEGO treningu — tego NIE rozszerzamy na recepcję/kiosk
+// (patrz resolveCreateActor niżej, osobno, tylko dla zakładania nowych).
 async function resolveTrainerActor(formData: FormData) {
   const employee = await requireEmployee();
   const isAdmin = employee.roles.includes("admin");
@@ -35,6 +38,44 @@ async function resolveTrainerActor(formData: FormData) {
     throw new Error("Nie możesz zarządzać treningami innego trenera.");
   }
   return { employee, trainerId };
+}
+
+// Kto może ZAŁOŻYĆ nowy trening dla DOWOLNEGO trenera (wybór z listy, jak
+// admin) — admin, recepcja (osobiście zalogowana) i kiosk recepcyjny (wspólny
+// PIN, bez tożsamości pracownika — patrz lib/kiosk-session.ts). Zwykły trener
+// nadal może zakładać tylko swoje własne treningi.
+async function resolveCreateActor(formData: FormData): Promise<{ trainerId: string }> {
+  const requestedTrainerId = String(formData.get("trainer_employee_id") ?? "");
+
+  if (await hasKioskSession()) {
+    if (!requestedTrainerId) throw new Error("Wybierz trenera.");
+    return { trainerId: requestedTrainerId };
+  }
+
+  const employee = await requireEmployee();
+  const isAdmin = employee.roles.includes("admin");
+  const isTrainer = employee.roles.includes("trener_personalny");
+  const canPickAnyTrainer = isAdmin || canPreviewPersonalTraining(employee);
+  if (!isTrainer && !canPickAnyTrainer) {
+    throw new Error("Ta akcja jest dostępna tylko dla trenera personalnego, recepcji albo administratora.");
+  }
+  if (canPickAnyTrainer) {
+    if (!requestedTrainerId) throw new Error("Wybierz trenera.");
+    return { trainerId: requestedTrainerId };
+  }
+  return { trainerId: employee.id };
+}
+
+// Kto może oznaczać rozliczenia i zarządzać blokadą sali — recepcja, admin
+// (osobiście zalogowani) albo kiosk recepcyjny. Zwraca id pracownika do
+// zapisania jako "kto to zrobił", albo null dla kiosku (brak tożsamości).
+async function requireRecepcjaOrKiosk(): Promise<string | null> {
+  if (await hasKioskSession()) return null;
+  const employee = await requireEmployee();
+  if (!canPreviewPersonalTraining(employee)) {
+    throw new Error("Brak uprawnień — dotyczy recepcji i administratora.");
+  }
+  return employee.id;
 }
 
 async function getRoomWindows(supabase: Supabase, weekday: number): Promise<RoomWindow[]> {
@@ -150,7 +191,7 @@ async function applyPendingCredits(supabase: Supabase, trainerId: string) {
 }
 
 export async function createPersonalTrainingSession(formData: FormData) {
-  const { trainerId } = await resolveTrainerActor(formData);
+  const { trainerId } = await resolveCreateActor(formData);
 
   const date = String(formData.get("date") ?? "");
   const startTime = String(formData.get("start_time") ?? "");
@@ -420,10 +461,7 @@ export async function cancelPersonalTrainingSeries(formData: FormData) {
 // notatkę "z przeniesienia", jeśli taka tu była — recepcja właśnie
 // nadpisuje stan swoją bieżącą oceną.
 export async function togglePersonalTrainingSettled(formData: FormData) {
-  const employee = await requireEmployee();
-  if (!canPreviewPersonalTraining(employee)) {
-    throw new Error("Brak uprawnień do oznaczania rozliczeń.");
-  }
+  await requireRecepcjaOrKiosk();
 
   const id = String(formData.get("id") ?? "");
   const isSettled = formData.get("is_settled") === "on";
@@ -444,10 +482,7 @@ export async function togglePersonalTrainingSettled(formData: FormData) {
 // każdy z osobna. Ta sama zasada uprawnień i skutków co pojedynczy
 // przełącznik wyżej.
 export async function settlePersonalTrainingSessions(formData: FormData) {
-  const employee = await requireEmployee();
-  if (!canPreviewPersonalTraining(employee)) {
-    throw new Error("Brak uprawnień do oznaczania rozliczeń.");
-  }
+  await requireRecepcjaOrKiosk();
 
   const ids = formData.getAll("id").map(String).filter(Boolean);
   if (ids.length === 0) return;
@@ -468,10 +503,7 @@ export async function settlePersonalTrainingSessions(formData: FormData) {
 // zakresie dat jako rozliczone jednym kliknięciem — "cały miesiąc" w
 // Rozliczeniach, bez ręcznego zaznaczania każdego osobno.
 export async function settleAllPersonalTrainingForRange(formData: FormData) {
-  const employee = await requireEmployee();
-  if (!canPreviewPersonalTraining(employee)) {
-    throw new Error("Brak uprawnień do oznaczania rozliczeń.");
-  }
+  await requireRecepcjaOrKiosk();
 
   const trainerId = String(formData.get("trainer_employee_id") ?? "");
   const startDate = String(formData.get("start_date") ?? "");
@@ -543,11 +575,14 @@ export async function deleteRoomHoursWindow(formData: FormData) {
 // Blokuje salkę na wybrany fragment dnia (np. wynajem komuś innemu, własne
 // potrzeby klubu) — od tej pory żaden trening (bez względu na liczbę osób)
 // nie zmieści się w tym oknie, patrz getRoomBlocksAsFullSessions wyżej. Jeśli
-// w tym czasie jest już zaplanowany trening, blokada się NIE zakłada — admin
-// musi go najpierw przenieść albo usunąć, żeby nie zostawić potwierdzonego
+// w tym czasie jest już zaplanowany trening, blokada się NIE zakłada — trzeba
+// go najpierw przenieść albo usunąć, żeby nie zostawić potwierdzonego
 // treningu w niespójnym stanie (zaplanowany, a sala "zajęta na coś innego").
+// Dostępne dla recepcji, admina i kiosku recepcyjnego (patrz
+// requireRecepcjaOrKiosk) — nie tylko admina, bo to typowa, bieżąca czynność
+// przy okienku, nie ustawienie klubowe.
 export async function addRoomBlock(formData: FormData) {
-  const employee = await requireAdmin();
+  const actorEmployeeId = await requireRecepcjaOrKiosk();
 
   const date = String(formData.get("date") ?? "");
   const startTime = String(formData.get("start_time") ?? "");
@@ -579,7 +614,7 @@ export async function addRoomBlock(formData: FormData) {
     start_time: startTime,
     end_time: endTime,
     reason,
-    created_by_employee_id: employee.id,
+    created_by_employee_id: actorEmployeeId,
   });
   if (error) throw new Error(dbErrorMessage(error));
 
@@ -587,7 +622,7 @@ export async function addRoomBlock(formData: FormData) {
 }
 
 export async function deleteRoomBlock(formData: FormData) {
-  await requireAdmin();
+  await requireRecepcjaOrKiosk();
 
   const id = String(formData.get("id") ?? "");
   const supabase = createServerSupabaseClient();

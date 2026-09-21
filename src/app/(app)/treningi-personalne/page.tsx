@@ -85,7 +85,7 @@ export default async function PersonalTrainingPage({
       .order("start_time"),
     supabase.from("personal_training_room_hours").select("weekday, start_time, end_time"),
     supabase.from("personal_training_settings").select("room_capacity, rate_per_person").eq("id", 1).single(),
-    isAdmin
+    isAdmin || canPreview
       ? supabase.from("employee").select("id, name, employee_role!inner(role)").eq("active", true).eq("employee_role.role", "trener_personalny").order("name")
       : Promise.resolve({ data: null }),
     supabase.from("personal_training_room_block").select("id, date, start_time, end_time, reason").in("date", weekDates).order("start_time"),
@@ -189,7 +189,7 @@ export default async function PersonalTrainingPage({
                       </span>{" "}
                       Sala zablokowana{b.reason ? ` — ${b.reason}` : ""}
                     </span>
-                    {isAdmin && (
+                    {(isAdmin || canPreview) && (
                       <form action={deleteRoomBlock}>
                         <input type="hidden" name="id" value={b.id} />
                         <button type="submit" className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">
@@ -251,7 +251,7 @@ export default async function PersonalTrainingPage({
                 {daySessions.length === 0 && dayBlocks.length === 0 && <p className="text-xs text-zinc-400">Brak treningów tego dnia.</p>}
               </div>
 
-              {canManage && (
+              {(canManage || canPreview) && (
                 <details className="group mt-2 border-t border-zinc-200 pt-2">
                   <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange marker:content-none">
                     <span>+ Nowy trening</span>
@@ -263,13 +263,13 @@ export default async function PersonalTrainingPage({
                       action={createPersonalTrainingSession}
                       defaultDate={date}
                       roomCapacity={roomCapacity}
-                      trainerOptions={isAdmin ? trainerOptions : undefined}
+                      trainerOptions={isAdmin || canPreview ? trainerOptions : undefined}
                     />
                   </div>
                 </details>
               )}
 
-              {isAdmin && (
+              {(isAdmin || canPreview) && (
                 <details className="group mt-2 border-t border-zinc-200 pt-2">
                   <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-600 marker:content-none">
                     <span>🔒 Zablokuj salę</span>
