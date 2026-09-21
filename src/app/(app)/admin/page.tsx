@@ -64,6 +64,16 @@ export default function AdminHomePage() {
           </CardLink>
         </div>
       </div>
+
+      <div>
+        <h2 className={SECTION_LABEL}>Recepcja</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <CardLink href="/admin/podglad-ogolny">
+            <h2 className="font-semibold text-zinc-900">Ogólny podgląd (PIN)</h2>
+            <p className="mt-1 text-sm text-zinc-500">PIN dostępu do wspólnego stanowiska recepcyjnego.</p>
+          </CardLink>
+        </div>
+      </div>
     </div>
   );
 }
