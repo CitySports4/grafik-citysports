@@ -45,6 +45,23 @@ async function getRoomWindows(supabase: Supabase, weekday: number): Promise<Room
   return data ?? [];
 }
 
+// Blokady sali tego konkretnego dnia (np. wynajem, własne potrzeby klubu) —
+// przedstawione dalej jako "treningi" zajmujące CAŁĄ salę (client_count =
+// limit), żeby wpuścić je do tego samego sprawdzenia obłożenia co zwykłe
+// treningi bez osobnej ścieżki kodu — patrz checkAvailability.
+async function getRoomBlocksAsFullSessions(
+  supabase: Supabase,
+  date: string,
+  roomCapacity: number
+): Promise<{ start_time: string; duration_minutes: number; client_count: number }[]> {
+  const { data } = await supabase.from("personal_training_room_block").select("start_time, end_time").eq("date", date);
+  return (data ?? []).map((b) => ({
+    start_time: b.start_time,
+    duration_minutes: timeToMinutes(b.end_time) - timeToMinutes(b.start_time),
+    client_count: roomCapacity,
+  }));
+}
+
 async function getSettings(supabase: Supabase) {
   const { data } = await supabase.from("personal_training_settings").select("room_capacity, rate_per_person").eq("id", 1).single();
   return data ?? { room_capacity: 0, rate_per_person: 0 };
@@ -81,12 +98,14 @@ async function checkAvailability(
     if (excludeSessionId) query = query.neq("id", excludeSessionId);
     if (excludeSeriesId) query = query.or(`series_id.is.null,series_id.neq.${excludeSeriesId}`);
     const { data: existing } = await query;
+    const blocks = await getRoomBlocksAsFullSessions(supabase, date, roomCapacity);
+    const existingWithBlocks = [...(existing ?? []), ...blocks];
 
     const fits = fitsInRoomHours(startMin, startMin + durationMin, windows);
-    const concurrent = fits ? maxConcurrentClients(startMin, startMin + durationMin, existing ?? []) : Infinity;
+    const concurrent = fits ? maxConcurrentClients(startMin, startMin + durationMin, existingWithBlocks) : Infinity;
     if (fits && concurrent + clientCount <= roomCapacity) continue;
 
-    const suggestionMin = findAvailableStart(startMin, durationMin, clientCount, roomCapacity, windows, existing ?? []);
+    const suggestionMin = findAvailableStart(startMin, durationMin, clientCount, roomCapacity, windows, existingWithBlocks);
     return { ok: false, conflictDate: date, suggestion: suggestionMin === null ? null : minutesToTime(suggestionMin) };
   }
   return { ok: true };
@@ -519,4 +538,61 @@ export async function deleteRoomHoursWindow(formData: FormData) {
   if (error) throw new Error(dbErrorMessage(error));
 
   revalidatePath("/admin/treningi-personalne");
+}
+
+// Blokuje salkę na wybrany fragment dnia (np. wynajem komuś innemu, własne
+// potrzeby klubu) — od tej pory żaden trening (bez względu na liczbę osób)
+// nie zmieści się w tym oknie, patrz getRoomBlocksAsFullSessions wyżej. Jeśli
+// w tym czasie jest już zaplanowany trening, blokada się NIE zakłada — admin
+// musi go najpierw przenieść albo usunąć, żeby nie zostawić potwierdzonego
+// treningu w niespójnym stanie (zaplanowany, a sala "zajęta na coś innego").
+export async function addRoomBlock(formData: FormData) {
+  const employee = await requireAdmin();
+
+  const date = String(formData.get("date") ?? "");
+  const startTime = String(formData.get("start_time") ?? "");
+  const endTime = String(formData.get("end_time") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  if (!date || !startTime || !endTime) throw new Error("Podaj dzień i godziny blokady.");
+  if (timeToMinutes(endTime) <= timeToMinutes(startTime)) throw new Error("Godzina końca musi być późniejsza niż start.");
+
+  const supabase = createServerSupabaseClient();
+  const { data: existing } = await supabase
+    .from("personal_training_session")
+    .select("start_time, duration_minutes")
+    .eq("date", date)
+    .eq("status", "scheduled");
+
+  const startMin = timeToMinutes(startTime);
+  const endMin = timeToMinutes(endTime);
+  const hasConflict = (existing ?? []).some((s) => {
+    const sStart = timeToMinutes(s.start_time);
+    const sEnd = sStart + s.duration_minutes;
+    return sStart < endMin && startMin < sEnd;
+  });
+  if (hasConflict) {
+    throw new Error("W tym czasie jest już zaplanowany trening — najpierw go przenieś albo usuń, zanim zablokujesz salę.");
+  }
+
+  const { error } = await supabase.from("personal_training_room_block").insert({
+    date,
+    start_time: startTime,
+    end_time: endTime,
+    reason,
+    created_by_employee_id: employee.id,
+  });
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/treningi-personalne");
+}
+
+export async function deleteRoomBlock(formData: FormData) {
+  await requireAdmin();
+
+  const id = String(formData.get("id") ?? "");
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("personal_training_room_block").delete().eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/treningi-personalne");
 }
