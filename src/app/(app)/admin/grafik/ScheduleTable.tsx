@@ -61,6 +61,7 @@ export function ScheduleTable({
   classByEmployee,
   unavailableByDayAndSlot,
   unavailableWholeDay,
+  unavailablePartialDay,
 }: {
   scheduleMonthId: string;
   scheduleMonthStatus: "draft" | "published";
@@ -69,6 +70,7 @@ export function ScheduleTable({
   classByEmployee: Record<string, ClassEntry[]>;
   unavailableByDayAndSlot: Record<string, Record<number, string[]>>;
   unavailableWholeDay: Record<string, string[]>;
+  unavailablePartialDay: Record<string, string[]>;
 }) {
   const [days, setDays] = useState(initialDays);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -365,6 +367,7 @@ export function ScheduleTable({
                   month: "short",
                 });
                 const wholeDayUnavailable = (unavailableWholeDay[day.date] ?? []).map((id) => employeeById.get(id)?.name).filter(Boolean);
+                const partialDayUnavailable = (unavailablePartialDay[day.date] ?? []).map((id) => employeeById.get(id)?.name).filter(Boolean);
                 const isExpanded = expanded.has(day.id);
 
                 return (
@@ -377,6 +380,14 @@ export function ScheduleTable({
                             <span
                               className="cursor-help text-xs text-red-500"
                               title={`Cały dzień niedostępni: ${wholeDayUnavailable.join(", ")}`}
+                            >
+                              ⚠
+                            </span>
+                          )}
+                          {partialDayUnavailable.length > 0 && (
+                            <span
+                              className="cursor-help text-xs text-amber-500"
+                              title={`Niedostępni na część zmian: ${partialDayUnavailable.join(", ")}`}
                             >
                               ⚠
                             </span>

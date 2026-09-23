@@ -84,6 +84,7 @@ export default async function ScheduleBuilderPage({
 
   const unavailableByDayAndSlot: Record<string, Record<number, string[]>> = {};
   const unavailableWholeDay: Record<string, string[]> = {};
+  const unavailablePartialDay: Record<string, string[]> = {};
 
   if (hasStructure) {
     const constraints = (allConstraints ?? []).filter((c) => c.type === "unavailable");
@@ -139,6 +140,20 @@ export default async function ScheduleBuilderPage({
         bySlotIds[shift.slot_index] = ids;
       }
       unavailableByDayAndSlot[day.date] = bySlotIds;
+
+      // Ostrzeżenie przy dacie ma pokazywać nie tylko "cały dzień
+      // niedostępny", ale też "niedostępny na część zmian" — inaczej admin
+      // widział niedostępność tylko wtedy, gdy akurat przypisał na tę zmianę
+      // kogoś, kto ją zgłosił (patrz ostrzeżenie w komórce zmiany niżej), a
+      // przy jeszcze nieprzypisanych zmianach częściowa niedostępność ginęła
+      // całkowicie z widoku.
+      const partialIds = new Set<string>();
+      for (const ids of Object.values(bySlotIds)) {
+        for (const id of ids) {
+          if (!wholeDayIds.includes(id)) partialIds.add(id);
+        }
+      }
+      unavailablePartialDay[day.date] = Array.from(partialIds);
     }
   }
 
@@ -219,6 +234,7 @@ export default async function ScheduleBuilderPage({
           classByEmployee={classByEmployee}
           unavailableByDayAndSlot={unavailableByDayAndSlot}
           unavailableWholeDay={unavailableWholeDay}
+          unavailablePartialDay={unavailablePartialDay}
         />
       )}
     </div>
