@@ -70,7 +70,7 @@ export function ScheduleTable({
   classByEmployee: Record<string, ClassEntry[]>;
   unavailableByDayAndSlot: Record<string, Record<number, string[]>>;
   unavailableWholeDay: Record<string, string[]>;
-  unavailablePartialDay: Record<string, string[]>;
+  unavailablePartialDay: Record<string, { employeeId: string; start_time: string; end_time: string }[]>;
 }) {
   const [days, setDays] = useState(initialDays);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -367,7 +367,20 @@ export function ScheduleTable({
                   month: "short",
                 });
                 const wholeDayUnavailable = (unavailableWholeDay[day.date] ?? []).map((id) => employeeById.get(id)?.name).filter(Boolean);
-                const partialDayUnavailable = (unavailablePartialDay[day.date] ?? []).map((id) => employeeById.get(id)?.name).filter(Boolean);
+                // Samo imię nie mówi KTÓREJ zmiany to dotyczy — grupujemy po
+                // pracowniku i dopisujemy godziny każdej zmiany, na którą jest
+                // niedostępny (np. "Karol (14:30–21:00)").
+                const partialByEmployee = new Map<string, string[]>();
+                for (const p of unavailablePartialDay[day.date] ?? []) {
+                  const name = employeeById.get(p.employeeId)?.name;
+                  if (!name) continue;
+                  const label = `${formatHm(p.start_time)}–${formatHm(p.end_time)}`;
+                  if (!partialByEmployee.has(name)) partialByEmployee.set(name, []);
+                  if (!partialByEmployee.get(name)!.includes(label)) partialByEmployee.get(name)!.push(label);
+                }
+                const partialDayUnavailable = Array.from(partialByEmployee.entries()).map(
+                  ([name, windows]) => `${name} (${windows.join(", ")})`
+                );
                 const isExpanded = expanded.has(day.id);
 
                 return (

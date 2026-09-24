@@ -180,10 +180,14 @@ export default async function MyGrafikPage({
   // razu widoczne na górze, a miniony tydzień schowany za przyciskiem
   // "Pokaż ostatnie 7 dni". Nawigacja do INNEGO miesiąca (poprzedni/następny)
   // pokazuje wszystko normalnie, bez podziału — tam "dziś" nie ma znaczenia.
+  // Celowo BEZ dolnej granicy dat w pastDays: dla tracksHours i tak nic
+  // starszego niż cutoffKey tu nie ma (patrz visibleDays wyżej), a dla osoby
+  // bez tej roli (pełny grafik, patrz komentarz przy tracksHours) dodanie tu
+  // dolnego odcięcia po prostu gubiłoby początek miesiąca bez żadnego
+  // miejsca, w którym dałoby się go jeszcze zobaczyć.
   const now = new Date();
   const isCurrentMonthView = year === now.getFullYear() && month === now.getMonth() + 1;
-  const past7Key = toDateKey(new Date(now.getTime() - EDIT_WINDOW_DAYS * 86400000));
-  const pastDays = isCurrentMonthView ? visibleDays.filter((d) => d.date < today && d.date >= past7Key) : [];
+  const pastDays = isCurrentMonthView ? visibleDays.filter((d) => d.date < today) : [];
   const upcomingDays = isCurrentMonthView ? visibleDays.filter((d) => d.date >= today) : visibleDays;
 
   // Wyciągnięte do osobnej funkcji, bo ta sama karta dnia renderuje się teraz
