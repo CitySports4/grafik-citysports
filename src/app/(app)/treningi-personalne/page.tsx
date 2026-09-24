@@ -284,6 +284,12 @@ export default async function PersonalTrainingPage({
                       defaultDate={date}
                       roomCapacity={roomCapacity}
                       trainerOptions={isAdmin || canPreview ? trainerOptions : undefined}
+                      dayWindows={windows}
+                      daySessions={daySessions.map((s) => ({
+                        start_time: s.start_time,
+                        duration_minutes: s.duration_minutes,
+                        client_count: s.client_count,
+                      }))}
                     />
                   </div>
                 </details>
