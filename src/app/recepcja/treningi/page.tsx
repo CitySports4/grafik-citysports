@@ -118,20 +118,40 @@ export default async function RecepcjaTreningiPage({
 
           return (
             <Card key={date} className={`!p-3 ${isToday ? "ring-2 ring-brand-blue" : ""}`}>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-sm font-semibold capitalize text-zinc-900">
-                  {weekdayLabel(weekday)}, {dateLabel}
-                  {isToday && (
-                    <span className="rounded-full bg-brand-blue px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                      Dziś
+              <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold capitalize text-zinc-900">
+                {weekdayLabel(weekday)}, {dateLabel}
+                {isToday && (
+                  <span className="rounded-full bg-brand-blue px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    Dziś
+                  </span>
+                )}
+              </div>
+              {/* Osobny wiersz zamiast jednej długiej, stłoczonej linijki po
+                  prawej stronie daty — godziny okien i obłożenie jako osobne,
+                  czytelne plakietki zamiast zdania ze zbitym "Sala:". */}
+              <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="font-semibold text-zinc-500">Dostępność:</span>
+                {windows.length === 0 ? (
+                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-400">niedostępna</span>
+                ) : (
+                  <>
+                    {windows.map((w) => (
+                      <span
+                        key={`${w.start_time}-${w.end_time}`}
+                        className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600"
+                      >
+                        {formatHm(w.start_time)}–{formatHm(w.end_time)}
+                      </span>
+                    ))}
+                    <span
+                      className={`rounded-full px-2 py-0.5 font-semibold ${
+                        peak >= roomCapacity ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700"
+                      }`}
+                    >
+                      {peak}/{roomCapacity} osób naraz
                     </span>
-                  )}
-                </div>
-                <span className="text-xs text-zinc-500">
-                  {windows.length === 0
-                    ? "Sala niedostępna"
-                    : `Sala: ${windows.map((w) => `${formatHm(w.start_time)}–${formatHm(w.end_time)}`).join(", ")} · najwięcej osób naraz: ${peak}/${roomCapacity}`}
-                </span>
+                  </>
+                )}
               </div>
 
               <div className="flex flex-col gap-2">
