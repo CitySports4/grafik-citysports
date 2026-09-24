@@ -93,11 +93,11 @@ export default async function RecepcjaTreningiPage({
           Treningi personalne <span className="text-sm font-normal text-zinc-400">— limit sali: {roomCapacity} osób naraz</span>
         </h1>
         <div className="flex items-center gap-2 text-sm">
-          <Link href={`?monday=${prevMonday}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+          <Link href={`?monday=${prevMonday}`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             ← poprzedni tydzień
           </Link>
-          <Link href={`?monday=${nextMonday}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
-            następny →
+          <Link href={`?monday=${nextMonday}`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+            następny tydzień →
           </Link>
         </div>
       </div>
