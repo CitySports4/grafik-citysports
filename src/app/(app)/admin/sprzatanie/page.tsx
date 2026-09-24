@@ -88,7 +88,17 @@ export default async function CleaningConfigPage({
       )
       .order("sort_order"),
     supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
-    supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
+    // Sprzątanie przydziela się WYŁĄCZNIE na podstawie zmian recepcji (patrz
+    // resolveDaySlots — schedule_shift ma tylko recepcję, ten sam filtr co w
+    // admin/grafik) — trener personalny czy sam admin bez tej roli nigdy nie
+    // dostanie zadania sprzątania, więc pokazywanie ich tu (kompetencje,
+    // budżety) było czystym szumem, niezależnie od tego, co by im zaznaczyć.
+    supabase
+      .from("employee")
+      .select("id, name, color_hex, employee_role!inner(role)")
+      .eq("active", true)
+      .eq("employee_role.role", "recepcja")
+      .order("name"),
     supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
     supabase.from("cleaning_checklist_template").select("id, name").order("name"),
     supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
@@ -535,7 +545,14 @@ export default async function CleaningConfigPage({
             da się zrealizować.
           </p>
           <div className="flex flex-col gap-3">
-            {(employees ?? []).map((emp) => (
+            {/* Budżet ma sens tylko dla kogoś, kto realnie może dostać
+                zadanie sprzątania — czyli ma zaznaczoną choć jedną strefę w
+                zakładce "Kompetencje". Bez tego filtru lista pokazywała
+                wszystkich z recepcji, łącznie z kimś, kto jeszcze nigdy nie
+                dostał żadnej strefy. */}
+            {(employees ?? [])
+              .filter((emp) => (zoneIdsByEmployee.get(emp.id)?.size ?? 0) > 0)
+              .map((emp) => (
               <div key={emp.id} className="rounded-lg border border-zinc-200 p-2.5">
                 <span className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-zinc-900">
                   <ColorDot color={emp.color_hex} />
