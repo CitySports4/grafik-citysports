@@ -39,6 +39,7 @@ export async function createEmployee(formData: FormData) {
   await requireAdmin();
 
   const name = String(formData.get("name") ?? "").trim();
+  const short_name = String(formData.get("short_name") ?? "").trim() || null;
   const phone = normalizePhone(String(formData.get("phone") ?? ""));
   // Przy TWORZENIU nowego pracownika brak zaznaczonej roli to niemal na
   // pewno przeoczenie w formularzu (nie ma tu jeszcze żadnego kontekstu,
@@ -66,6 +67,7 @@ export async function createEmployee(formData: FormData) {
     .from("employee")
     .insert({
       name,
+      short_name,
       phone,
       color_hex,
       is_instructor,
@@ -92,6 +94,7 @@ export async function updateEmployee(formData: FormData) {
 
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
+  const short_name = String(formData.get("short_name") ?? "").trim() || null;
   const phone = normalizePhone(String(formData.get("phone") ?? ""));
   const roles = parseRoles(formData);
   const color_hex = String(formData.get("color_hex") ?? "#3b82f6");
@@ -112,6 +115,7 @@ export async function updateEmployee(formData: FormData) {
     .from("employee")
     .update({
       name,
+      short_name,
       phone,
       color_hex,
       is_instructor,

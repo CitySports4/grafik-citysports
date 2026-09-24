@@ -13,6 +13,7 @@ import { EVENT_TYPE_LABELS } from "@/lib/event-types";
 import { SwapButton } from "./SwapButton";
 import { respondSwapRequest, cancelSwapRequest } from "../zamiany/actions";
 import { countAcceptedSwapsThisMonth, SOFT_SWAP_LIMIT_PER_MONTH } from "@/lib/swap-limits";
+import { scheduleDisplayName } from "@/lib/employee-name";
 import { BTN_GHOST_DANGER } from "@/components/button-styles";
 import { DayTimeEntryEditor } from "../godziny/DayTimeEntryEditor";
 import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "../godziny/actions";
@@ -109,7 +110,7 @@ export default async function MyGrafikPage({
       .select("id, date, actual_start, actual_end, note, is_remote")
       .eq("employee_id", employee.id)
       .in("date", monthDateKeys),
-    supabase.from("employee").select("id, name, color_hex"),
+    supabase.from("employee").select("id, name, short_name, color_hex"),
     supabase
       .from("shift_swap_request")
       .select("id, status, hour_delta, requested_at, requester_employee_id, target_employee_id, requester_shift_id, target_shift_id")
@@ -239,7 +240,7 @@ export default async function MyGrafikPage({
                 </span>
                 {emp && <ColorDot color={emp.color_hex} />}
                 <span>
-                  {shift.is_closed ? "NIECZYNNE" : emp ? emp.name : "— nieprzypisane —"}
+                  {shift.is_closed ? "NIECZYNNE" : emp ? scheduleDisplayName(emp) : "— nieprzypisane —"}
                 </span>
                 {canSwap && <SwapButton shiftId={shift.id} />}
               </div>

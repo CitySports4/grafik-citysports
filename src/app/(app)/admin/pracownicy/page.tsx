@@ -39,8 +39,15 @@ export default async function EmployeesPage() {
         <h2 className="mb-3 font-semibold text-zinc-900">Dodaj pracownika</h2>
         <form action={createEmployee} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <label className={LABEL}>Imię</label>
+            <label className={LABEL}>Imię i nazwisko</label>
             <input name="name" required className={INPUT} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Imię skrócone (do grafiku)</label>
+            <input name="short_name" className={INPUT} placeholder="np. Ania K. — puste = pełne imię i nazwisko" />
+            <p className="text-xs text-zinc-500">
+              Tylko etykieta w siatce grafiku — archiwum godzin, wynagrodzenia i wydruki zawsze pokazują pełne imię i nazwisko.
+            </p>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Numer telefonu</label>
