@@ -11,10 +11,10 @@ const LABEL = "text-xs font-semibold text-zinc-600";
 type ExistingSession = { start_time: string; duration_minutes: number; client_count: number };
 
 // Krok siatki godzin do wyboru — grubszy niż PT_SLOT_STEP_MIN (5 min, do
-// precyzyjnego szukania wolnego terminu na serwerze), bo tu chodzi o czytelną
-// listę klikalnych godzin, nie o wypisanie dziesiątek prawie identycznych
-// przycisków co 5 minut.
-const GRID_STEP_MIN = 30;
+// precyzyjnego szukania wolnego terminu na serwerze), żeby nie wypisywać
+// dziesiątek prawie identycznych przycisków co 5 minut, ale wciąż dość
+// drobny, żeby nie zmuszać do sztywnych "pełnych godzin".
+const GRID_STEP_MIN = 10;
 
 // Trener wcześniej musiał sam wpisać godzinę startu i "liczbę osób" bez
 // żadnej podpowiedzi, ile miejsc w sali jest akurat wolne — łatwo było
@@ -62,24 +62,31 @@ export function NewPersonalTrainingForm({
   // zamiast pokazywać obłożenie z niewłaściwego dnia.
   const hasGridData = date === defaultDate && !!dayWindows && !!daySessions;
 
+  // Siatka zależy od WYBRANEGO czasu trwania — dlatego "Czas trwania" jest w
+  // formularzu wyżej niż "Godzina" (trener najpierw mówi, na jak długo, a
+  // dopiero potem widzi, o której faktycznie może zacząć). Warunek pętli
+  // (t + durationMinutes <= endMin) gwarantuje, że żaden pokazany przycisk
+  // nie pozwoli treningowi wystawać poza koniec okna dostępności sali —
+  // to nie tylko kolor/disabled, taki przycisk w ogóle się nie pojawia.
   const slotsByWindow = useMemo(() => {
     if (!hasGridData || !dayWindows) return [];
     return dayWindows.map((w) => {
       const startMin = timeToMinutes(w.start_time);
       const endMin = timeToMinutes(w.end_time);
       const slots: { time: string; free: number }[] = [];
-      for (let t = startMin; t + GRID_STEP_MIN <= endMin; t += GRID_STEP_MIN) {
-        const occupied = maxConcurrentClients(t, t + GRID_STEP_MIN, daySessions ?? []);
+      for (let t = startMin; t + durationMinutes <= endMin; t += GRID_STEP_MIN) {
+        const occupied = maxConcurrentClients(t, t + durationMinutes, daySessions ?? []);
         slots.push({ time: minutesToTime(t), free: Math.max(0, roomCapacity - occupied) });
       }
       return { window: w, slots };
     });
-  }, [hasGridData, dayWindows, daySessions, roomCapacity]);
+  }, [hasGridData, dayWindows, daySessions, roomCapacity, durationMinutes]);
 
-  // Ile miejsc naprawdę zostało wolnych DLA WYBRANEJ godziny i czasu trwania
-  // — dokładniejsze niż siatka (ta liczy w krokach po 30 min), bo uwzględnia
-  // realny czas trwania treningu. Serwer i tak przelicza to jeszcze raz przy
-  // zapisie (patrz obsługa błędu niżej) — to tylko podpowiedź w formularzu.
+  // Ile miejsc naprawdę zostało wolnych DLA WYBRANEJ godziny — to samo, co
+  // liczy siatka dla godzin z jej kroku (GRID_STEP_MIN), ale działa też dla
+  // "Dokładnej godziny" wpisanej ręcznie poza tym krokiem. Serwer i tak
+  // przelicza to jeszcze raz przy zapisie (patrz obsługa błędu niżej) — to
+  // tylko podpowiedź w formularzu.
   const freeAtSelection = useMemo(() => {
     if (!hasGridData || !startTime) return null;
     const startMin = timeToMinutes(startTime);
@@ -152,7 +159,18 @@ export function NewPersonalTrainingForm({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className={LABEL}>Godzina — wybierz wolny termin</label>
+        <label className={LABEL}>Czas trwania</label>
+        <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} className={`${INPUT} w-[100px]`}>
+          {PT_DURATIONS_MIN.map((d) => (
+            <option key={d} value={d}>
+              {d} min
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label className={LABEL}>Godzina — wybierz wolny termin (co {GRID_STEP_MIN} min)</label>
         {hasGridData ? (
           slotsByWindow.length === 0 ? (
             <p className="text-xs text-zinc-400">Sala niedostępna tego dnia.</p>
@@ -200,16 +218,6 @@ export function NewPersonalTrainingForm({
             <input type="time" step={300} value={startTime} onChange={(e) => setStartTime(e.target.value)} className={`${INPUT} w-[110px]`} />
           </div>
         )}
-        <div className="flex flex-col gap-1">
-          <label className={LABEL}>Czas trwania</label>
-          <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} className={`${INPUT} w-[100px]`}>
-            {PT_DURATIONS_MIN.map((d) => (
-              <option key={d} value={d}>
-                {d} min
-              </option>
-            ))}
-          </select>
-        </div>
         <div className="flex flex-col gap-1">
           <label className={LABEL}>Liczba osób{freeAtSelection !== null && ` (wolne: ${freeAtSelection})`}</label>
           <select value={effectiveClientCount} onChange={(e) => setClientCount(Number(e.target.value))} className={`${INPUT} w-[90px]`}>
