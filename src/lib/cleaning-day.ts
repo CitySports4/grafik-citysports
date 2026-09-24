@@ -74,7 +74,7 @@ type RawStaticRows = {
   templateItems: { id: string; template_id: string; label: string }[] | null;
   employees: { id: string; name: string; color_hex: string }[] | null;
   employeeZones: { employee_id: string; zone_id: string }[] | null;
-  timeBudgets: { employee_id: string; slot: string; budget_minutes: number }[] | null;
+  timeBudgets: { employee_id: string; slot: string; day_type: string; budget_minutes: number }[] | null;
   zones: { id: string; name: string; sort_order: number }[] | null;
 };
 
@@ -87,7 +87,9 @@ function assembleContext(cycleStart: string | null, raw: RawStaticRows, historyC
   const tasks = (raw.tasksData ?? []) as CleaningTask[];
   const allActiveNonDaily = tasks.filter((t) => t.frequency !== "daily");
 
-  const budgetBySlotAndEmployee = new Map((raw.timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}`, b.budget_minutes]));
+  // Klucz zawiera też day_type (weekday/weekend) — patrz effectiveBudgetBySlotAndEmployee
+  // w getCleaningDayItems, gdzie budżet dobierany jest wg dnia tygodnia KONKRETNEJ daty.
+  const budgetBySlotAndEmployee = new Map((raw.timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}|${b.day_type}`, b.budget_minutes]));
   const timeMinutesByTaskId = new Map<string, number>(tasks.map((t) => [t.id, t.time_minutes]));
   const employeeById = new Map((raw.employees ?? []).map((e) => [e.id, e]));
   const zoneNameById = new Map((raw.zones ?? []).map((z) => [z.id, z.name]));
@@ -144,7 +146,7 @@ function staticRowQueries(supabase: ReturnType<typeof createServerSupabaseClient
     templateItems: supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
     employees: supabase.from("employee").select("id, name, color_hex"),
     employeeZones: supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
-    timeBudgets: supabase.from("cleaning_time_budget").select("employee_id, slot, budget_minutes"),
+    timeBudgets: supabase.from("cleaning_time_budget").select("employee_id, slot, day_type, budget_minutes"),
     zones: supabase.from("cleaning_zone").select("id, name, sort_order"),
   };
 }
@@ -288,18 +290,21 @@ export async function getCleaningDayItems(
 
   const daySlots = windowDaySlotsByDate.get(dateKey)!.daySlots;
 
-  // Budżet "efektywny" na TĘ konkretną datę — skonfigurowany budżet
-  // przycięty do realnego wolnego czasu TEJ osoby na TĘ zmianę tego dnia
-  // (patrz resolveDaySlotFreeMinutes), nie do sztywnego szablonu
-  // poniedziałku jak dotąd tylko w panelu admina. Krótsza/dłuższa niż
-  // zwykle zmiana od razu zmienia, ile realnie się zmieści.
+  // Budżet "efektywny" na TĘ konkretną datę — skonfigurowany budżet (osobny
+  // dla pon-pt i osobny dla weekendu, patrz day_type niżej — więcej wolnego
+  // czasu w weekend NIE oznacza automatycznie więcej możliwości, jest wtedy
+  // więcej rezerwacji/ruchu na recepcji, więc to nadal ręcznie ustawiona
+  // "norma", nie sama długość zmiany) przycięty do realnego wolnego czasu
+  // TEJ osoby na TĘ zmianę tego dnia (patrz resolveDaySlotFreeMinutes), nie
+  // do sztywnego szablonu poniedziałku jak dotąd tylko w panelu admina.
+  const dayType = weekday === 0 || weekday === 6 ? "weekend" : "weekday";
   const todayShifts = (windowDays ?? []).find((wd) => wd.date === dateKey)?.schedule_shift ?? [];
   const todayFreeMinutesBySlot = resolveDaySlotFreeMinutes(todayShifts, weekday);
   const effectiveBudgetBySlotAndEmployee = new Map<string, number>();
   for (const slot of ALL_SLOTS) {
     const empId = daySlots[slot];
     if (!empId) continue;
-    const configured = budgetBySlotAndEmployee.get(`${empId}|${slot}`) ?? DEFAULT_BUDGET_MINUTES;
+    const configured = budgetBySlotAndEmployee.get(`${empId}|${slot}|${dayType}`) ?? DEFAULT_BUDGET_MINUTES;
     const real = todayFreeMinutesBySlot[slot];
     effectiveBudgetBySlotAndEmployee.set(`${empId}|${slot}`, real !== null ? Math.min(configured, real) : configured);
   }
