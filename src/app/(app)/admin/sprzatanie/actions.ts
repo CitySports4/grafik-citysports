@@ -190,12 +190,13 @@ export async function setTimeBudget(formData: FormData) {
   await requireAdmin();
   const employee_id = String(formData.get("employee_id") ?? "");
   const slot = String(formData.get("slot") ?? "");
+  const day_type = String(formData.get("day_type") ?? "");
   const budget_minutes = parseNumber(formData.get("budget_minutes"), 60);
-  if (!employee_id || !slot) throw new Error("Brak danych.");
+  if (!employee_id || !slot || !day_type) throw new Error("Brak danych.");
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("cleaning_time_budget")
-    .upsert({ employee_id, slot, budget_minutes }, { onConflict: "employee_id,slot" });
+    .upsert({ employee_id, slot, day_type, budget_minutes }, { onConflict: "employee_id,slot,day_type" });
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/admin/sprzatanie");
 }
