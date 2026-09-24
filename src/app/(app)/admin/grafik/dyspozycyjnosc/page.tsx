@@ -269,7 +269,9 @@ export default async function AdminAvailabilityOverviewPage({
                     )}
                     {wholeRanges.length > 0 && (
                       <div>
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-red-500">Cały dzień niedostępny/a</div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-red-500">
+                          🚫 Cały dzień niedostępny/a
+                        </div>
                         <div className="flex flex-wrap gap-1.5">
                           {wholeRanges.map((r) => (
                             <span
@@ -284,7 +286,9 @@ export default async function AdminAvailabilityOverviewPage({
                     )}
                     {partialDays.length > 0 && (
                       <div>
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-500">Częściowo niedostępny/a</div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-500">
+                          ◐ Częściowo niedostępny/a
+                        </div>
                         <div className="flex flex-wrap gap-1.5">
                           {partialDays.map((p) => (
                             <span key={p.date} className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">

@@ -373,27 +373,22 @@ export function ScheduleTable({
                 return (
                   <Fragment key={day.id}>
                     <tr className="border-t border-zinc-100 align-top hover:bg-zinc-50/60">
-                      <td className="whitespace-nowrap px-2 py-2">
-                        <div className="flex items-center gap-1">
-                          <span className="font-semibold capitalize text-zinc-900">{dateLabel}</span>
-                          {wholeDayUnavailable.length > 0 && (
-                            <span
-                              className="cursor-help text-xs text-red-500"
-                              title={`Cały dzień niedostępni: ${wholeDayUnavailable.join(", ")}`}
-                            >
-                              ⚠
-                            </span>
-                          )}
-                          {partialDayUnavailable.length > 0 && (
-                            <span
-                              className="cursor-help text-xs text-amber-500"
-                              title={`Niedostępni na część zmian: ${partialDayUnavailable.join(", ")}`}
-                            >
-                              ⚠
-                            </span>
-                          )}
-                        </div>
+                      <td className="whitespace-nowrap px-2 py-2 align-top">
+                        <span className="font-semibold capitalize text-zinc-900">{dateLabel}</span>
                         <div className="text-xs capitalize text-zinc-500">{weekdayLabel(day.weekday)}</div>
+                        {/* Zawsze widoczny tekst zamiast ikonki pod hover — na
+                            grafiku ma się dać wyłapać wzrokiem "kto niedostępny"
+                            bez najeżdżania myszką na każdą datę z osobna. */}
+                        {wholeDayUnavailable.length > 0 && (
+                          <div className="mt-1 text-[11px] font-semibold leading-tight text-red-600">
+                            🚫 cały dzień: {wholeDayUnavailable.join(", ")}
+                          </div>
+                        )}
+                        {partialDayUnavailable.length > 0 && (
+                          <div className="mt-0.5 text-[11px] font-semibold leading-tight text-amber-600">
+                            ◐ część zmian: {partialDayUnavailable.join(", ")}
+                          </div>
+                        )}
                       </td>
                       {Array.from({ length: maxShifts }).map((_, slotIndex) => {
                         const shift = day.shifts.find((s) => s.slot_index === slotIndex);
@@ -428,17 +423,9 @@ export function ScheduleTable({
                         const selectValue = shift.is_closed ? "__closed__" : shift.employee_id ?? "";
                         const currentEmployee = shift.employee_id ? employeeById.get(shift.employee_id) : null;
                         return (
-                          <td key={shift.id} className="px-2 py-2">
-                            <div className="flex items-center gap-1 text-[11px] font-semibold text-zinc-500">
+                          <td key={shift.id} className={`px-2 py-2 ${assignedIsUnavailable ? "rounded-lg bg-red-50" : ""}`}>
+                            <div className="text-[11px] font-semibold text-zinc-500">
                               {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
-                              {assignedIsUnavailable && currentEmployee && (
-                                <span
-                                  className="cursor-help text-red-500"
-                                  title={`${currentEmployee.name} zgłosił(a) niedostępność na tę zmianę`}
-                                >
-                                  ⚠
-                                </span>
-                              )}
                             </div>
                             <div className="mt-0.5 flex items-center gap-1.5">
                               {currentEmployee && <ColorDot color={currentEmployee.color_hex} />}
@@ -457,6 +444,15 @@ export function ScheduleTable({
                                 <option value="__closed__">NIECZYNNE</option>
                               </select>
                             </div>
+                            {/* Zamiast ikonki pod hover: podświetlenie tła
+                                komórki (wyżej) + czytelny podpis wprost pod
+                                selectem — konflikt widać od razu, bez
+                                najeżdżania myszką na małą ikonkę. */}
+                            {assignedIsUnavailable && currentEmployee && (
+                              <div className="mt-1 text-[10px] font-bold leading-tight text-red-600">
+                                ⚠ {currentEmployee.name} zgłosił(a) niedostępność
+                              </div>
+                            )}
                           </td>
                         );
                       })}
