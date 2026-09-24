@@ -83,7 +83,7 @@ export default async function PersonalTrainingPage({
       .in("date", weekDates)
       .eq("status", "scheduled")
       .order("start_time"),
-    supabase.from("personal_training_room_hours").select("weekday, start_time, end_time"),
+    supabase.from("personal_training_room_hours").select("weekday, start_time, end_time").order("start_time"),
     supabase.from("personal_training_settings").select("room_capacity, rate_per_person").eq("id", 1).single(),
     isAdmin || canPreview
       ? supabase.from("employee").select("id, name, employee_role!inner(role)").eq("active", true).eq("employee_role.role", "trener_personalny").order("name")
