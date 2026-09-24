@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ConfirmButton";
 import { ColorDot } from "@/components/ColorDot";
 import { BackLink } from "@/components/BackLink";
 import { freeMinutesOutsideWeekdayBlackout, WEEKDAY_CLEANING_BLACKOUT } from "@/lib/cleaning";
+import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import {
   addZone,
   deleteZone,
@@ -102,13 +103,12 @@ export default async function CleaningConfigPage({
     supabase.from("employee_cleaning_zone").select("employee_id, zone_id"),
     supabase.from("cleaning_checklist_template").select("id, name").order("name"),
     supabase.from("cleaning_checklist_template_item").select("id, template_id, label, sort_order").order("sort_order"),
-    supabase.from("cleaning_time_budget").select("employee_id, slot, day_type, budget_minutes"),
-    // Poniedziałek jako reprezentatywny dzień powszedni i sobota jako
-    // reprezentatywny dzień weekendowy (ten sam uproszczony wzorzec co w
-    // /print/grafik) — do ostrzeżenia o realnie wolnym czasie przy budżetach
-    // niżej, osobno dla pon-pt (obowiązuje blokada 16:30-21:10) i weekendu
-    // (nie obowiązuje).
-    supabase.from("shift_template").select("weekday, slot_index, default_start_time, default_end_time").in("weekday", [1, 6]),
+    supabase.from("cleaning_time_budget").select("employee_id, slot, weekday, budget_minutes"),
+    // Szablon zmian dla WSZYSTKICH 7 dni tygodnia — budżety są teraz per
+    // dzień tygodnia, dokładnie tak samo granularnie jak sama konfiguracja
+    // zmian (różne godziny pon-pt/sob/nd, patrz freeMinutesFor niżej) — do
+    // ostrzeżenia o realnie wolnym czasie przy budżetach.
+    supabase.from("shift_template").select("weekday, slot_index, default_start_time, default_end_time"),
   ]);
 
   const tasksByZone = new Map<string, typeof tasks>();
@@ -132,11 +132,11 @@ export default async function CleaningConfigPage({
     if (!templateItemsByTemplate.has(it.template_id)) templateItemsByTemplate.set(it.template_id, []);
     templateItemsByTemplate.get(it.template_id)!.push(it);
   }
-  const budgetByEmpSlot = new Map((timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}|${b.day_type}`, b.budget_minutes]));
+  const budgetByEmpSlot = new Map((timeBudgets ?? []).map((b) => [`${b.employee_id}|${b.slot}|${b.weekday}`, b.budget_minutes]));
 
-  // Realny wolny czas per slot, poza blokadą 16:30-21:10 (pon-pt) — liczony
-  // osobno z poniedziałkowego (dzień powszedni) i sobotniego (weekend, bez
-  // blokady) szablonu zmian, posortowanego wg godziny startu (ta sama
+  // Realny wolny czas per slot, poza blokadą 16:30-21:10 (pon-pt, nie
+  // obowiązuje w weekend) — liczony OSOBNO dla każdego z 7 dni tygodnia z
+  // jego własnego szablonu zmian, posortowanego wg godziny startu (ta sama
   // kolejność co resolveDaySlots: pierwsza = otwarcie, ostatnia = zamknięcie/
   // po zamknięciu, środkowa = środek, jeśli jest).
   function freeMinutesFor(weekday: number): Partial<Record<string, number>> {
@@ -154,11 +154,10 @@ export default async function CleaningConfigPage({
     }
     return free;
   }
-  const freeMinutesByDayType: Record<"weekday" | "weekend", Partial<Record<string, number>>> = {
-    weekday: freeMinutesFor(1),
-    weekend: freeMinutesFor(6),
-  };
-  const DAY_TYPE_LABELS: Record<"weekday" | "weekend", string> = { weekday: "pon–pt", weekend: "weekend" };
+  // WEEK_DISPLAY_ORDER: pon..nd (wartości Date#getDay(), 0=niedziela) — ta
+  // sama kolejność wyświetlania co gdzie indziej w apce.
+  const freeMinutesByWeekday = new Map(WEEK_DISPLAY_ORDER.map((wd) => [wd, freeMinutesFor(wd)]));
+  const WEEKDAY_SHORT_LABELS = new Map(WEEK_DISPLAY_ORDER.map((wd) => [wd, weekdayLabel(wd).slice(0, 2).replace(/^./, (c) => c.toUpperCase())]));
 
   return (
     <div className="flex flex-col gap-6">
@@ -545,19 +544,34 @@ export default async function CleaningConfigPage({
         <Card>
           <h2 className="mb-1 font-semibold text-zinc-900">Budżety czasowe</h2>
           <p className="mb-1.5 text-sm text-zinc-500">
-            Ile minut sprzątania na daną porę dnia jest &quot;normą&quot; dla danej osoby — osobno dla
-            pon–pt i dla weekendu, bo więcej wolnego czasu w weekend (patrz niżej) nie znaczy więcej
-            możliwości — w weekend zwykle jest więcej rezerwacji/ruchu na recepcji. Używane do
-            auto-wyrównywania obciążenia w dni, gdy w tym samym slocie pracuje więcej niż jedna osoba, i do
-            ostrzeżenia na widoku dnia, gdy komuś przydzieli się więcej niż ta norma.
+            Ile minut sprzątania na daną porę dnia jest &quot;normą&quot; dla danej osoby — osobno na
+            KAŻDY dzień tygodnia, dopasowane do konfiguracji zmian (patrz Grafik → Godziny otwarcia — piątek,
+            sobota i niedziela mają inne godziny, nie tylko &quot;pon-pt vs weekend&quot;). Więcej wolnego
+            czasu danego dnia (patrz podpowiedź po najechaniu na pole) nie znaczy automatycznie więcej
+            możliwości — w weekend zwykle jest więcej rezerwacji/ruchu na recepcji, więc to nadal ręcznie
+            ustawiona norma. Używane do auto-wyrównywania obciążenia w dni, gdy w tym samym slocie pracuje
+            więcej niż jedna osoba, i do ostrzeżenia na widoku dnia, gdy komuś przydzieli się więcej niż ta
+            norma.
           </p>
           <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <span className="font-bold">Twarda zasada:</span> pon–pt sprzątanie nie może się odbywać między{" "}
             {WEEKDAY_CLEANING_BLACKOUT.start} a {WEEKDAY_CLEANING_BLACKOUT.end} (klub zbyt zajęty), w weekend
-            nie obowiązuje. Budżet wyższy niż realnie wolny czas zmiany tego dnia (patrz ostrzeżenia przy
-            polach niżej) i tak nie da się zrealizować.
+            nie obowiązuje. Budżet wyższy niż realnie wolny czas zmiany tego dnia (pole na czerwono, najedź
+            po szczegóły) i tak nie da się zrealizować.
           </p>
           <div className="flex flex-col gap-3">
+            {/* Nagłówek kolumn dni tygodnia raz, nad wszystkimi pracownikami —
+                szerokości pól muszą się zgadzać z wierszami niżej, żeby kolumny
+                się wyrównały. */}
+            <div className="flex items-center gap-1 px-2.5 text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+              <span className="w-[150px] shrink-0" />
+              {WEEK_DISPLAY_ORDER.map((wd) => (
+                <span key={wd} className="w-[42px] shrink-0 text-center">
+                  {WEEKDAY_SHORT_LABELS.get(wd)}
+                </span>
+              ))}
+              <span className="w-[36px] shrink-0" />
+            </div>
             {/* Budżet ma sens tylko dla kogoś, kto realnie może dostać
                 zadanie sprzątania — czyli ma zaznaczoną choć jedną strefę w
                 zakładce "Kompetencje". Bez tego filtru lista pokazywała
@@ -571,39 +585,43 @@ export default async function CleaningConfigPage({
                   <ColorDot color={emp.color_hex} />
                   {emp.name}
                 </span>
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1">
                   {Object.entries(SLOT_LABELS).map(([slot, label]) => (
-                    <div key={slot} className="flex flex-wrap items-center gap-3">
-                      <span className="w-[190px] shrink-0 text-xs font-semibold text-zinc-600">{label}</span>
-                      {(["weekday", "weekend"] as const).map((dayType) => {
-                        const value = budgetByEmpSlot.get(`${emp.id}|${slot}|${dayType}`) ?? 60;
-                        const freeMinutes = freeMinutesByDayType[dayType][slot];
+                    // Jeden formularz = cały tydzień naraz dla tej pory dnia —
+                    // 7 osobnych "Zapisz" (jeden per dzień) byłoby nie do
+                    // ogarnięcia, patrz setTimeBudget w actions.ts.
+                    <form key={slot} action={setTimeBudget} className="flex items-center gap-1">
+                      <input type="hidden" name="employee_id" value={emp.id} />
+                      <input type="hidden" name="slot" value={slot} />
+                      <span className="w-[150px] shrink-0 truncate text-xs font-semibold text-zinc-600">{label}</span>
+                      {WEEK_DISPLAY_ORDER.map((wd) => {
+                        const value = budgetByEmpSlot.get(`${emp.id}|${slot}|${wd}`) ?? 60;
+                        const freeMinutes = freeMinutesByWeekday.get(wd)?.[slot];
                         const exceeds = freeMinutes !== undefined && value > freeMinutes;
                         return (
-                          <form key={dayType} action={setTimeBudget} className="flex items-center gap-1.5">
-                            <input type="hidden" name="employee_id" value={emp.id} />
-                            <input type="hidden" name="slot" value={slot} />
-                            <input type="hidden" name="day_type" value={dayType} />
-                            <label
-                              className="text-xs text-zinc-500"
-                              title={freeMinutes !== undefined ? `Realnie wolne (${DAY_TYPE_LABELS[dayType]}): ${freeMinutes} min` : undefined}
-                            >
-                              {DAY_TYPE_LABELS[dayType]}
-                              {exceeds && <span className="ml-1 text-red-500">⚠ &gt;{freeMinutes} min wolnego</span>}
-                            </label>
-                            <input
-                              type="number"
-                              name="budget_minutes"
-                              defaultValue={value}
-                              className={`w-[64px] rounded-lg border px-2 py-1 text-xs ${exceeds ? "border-red-300" : "border-zinc-300"}`}
-                            />
-                            <button type="submit" className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold hover:bg-zinc-100">
-                              ✓
-                            </button>
-                          </form>
+                          <input
+                            key={wd}
+                            type="number"
+                            name={`budget_${wd}`}
+                            defaultValue={value}
+                            title={
+                              freeMinutes !== undefined
+                                ? `${weekdayLabel(wd)} — realnie wolne: ${freeMinutes} min${exceeds ? " (budżet to przekracza)" : ""}`
+                                : undefined
+                            }
+                            className={`w-[42px] shrink-0 rounded-lg border px-1 py-1 text-center text-xs ${
+                              exceeds ? "border-red-300 bg-red-50 text-red-700" : "border-zinc-300"
+                            }`}
+                          />
                         );
                       })}
-                    </div>
+                      <button
+                        type="submit"
+                        className="w-[36px] shrink-0 rounded-lg border border-zinc-300 px-1 py-1 text-xs font-semibold hover:bg-zinc-100"
+                      >
+                        ✓
+                      </button>
+                    </form>
                   ))}
                 </div>
               </div>
