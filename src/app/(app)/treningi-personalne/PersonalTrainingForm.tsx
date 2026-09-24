@@ -68,17 +68,26 @@ export function NewPersonalTrainingForm({
   // (t + durationMinutes <= endMin) gwarantuje, że żaden pokazany przycisk
   // nie pozwoli treningowi wystawać poza koniec okna dostępności sali —
   // to nie tylko kolor/disabled, taki przycisk w ogóle się nie pojawia.
+  // Płaska ściana kilkudziesięciu przycisków ("09:10 09:20 09:30…") była
+  // trudna do ogarnięcia wzrokiem — pogrupowane po godzinie (wspólna etykieta
+  // z lewej, np. "09:xx"), więc oko od razu wyłapuje właściwą godzinę zamiast
+  // liczyć przyciski.
   const slotsByWindow = useMemo(() => {
     if (!hasGridData || !dayWindows) return [];
     return dayWindows.map((w) => {
       const startMin = timeToMinutes(w.start_time);
       const endMin = timeToMinutes(w.end_time);
-      const slots: { time: string; free: number }[] = [];
+      const hourGroups: { hour: string; slots: { time: string; free: number }[] }[] = [];
       for (let t = startMin; t + durationMinutes <= endMin; t += GRID_STEP_MIN) {
         const occupied = maxConcurrentClients(t, t + durationMinutes, daySessions ?? []);
-        slots.push({ time: minutesToTime(t), free: Math.max(0, roomCapacity - occupied) });
+        const time = minutesToTime(t);
+        const slot = { time, free: Math.max(0, roomCapacity - occupied) };
+        const hour = time.slice(0, 2);
+        const lastGroup = hourGroups[hourGroups.length - 1];
+        if (lastGroup && lastGroup.hour === hour) lastGroup.slots.push(slot);
+        else hourGroups.push({ hour, slots: [slot] });
       }
-      return { window: w, slots };
+      return { window: w, hourGroups };
     });
   }, [hasGridData, dayWindows, daySessions, roomCapacity, durationMinutes]);
 
@@ -175,33 +184,40 @@ export function NewPersonalTrainingForm({
           slotsByWindow.length === 0 ? (
             <p className="text-xs text-zinc-400">Sala niedostępna tego dnia.</p>
           ) : (
-            <div className="flex flex-col gap-1.5">
-              {slotsByWindow.map(({ window, slots }) => (
-                <div key={`${window.start_time}-${window.end_time}`} className="flex flex-wrap gap-1">
-                  {slots.map((slot) => {
-                    const isFull = slot.free === 0;
-                    const isSelected = slot.time === startTime;
-                    return (
-                      <button
-                        key={slot.time}
-                        type="button"
-                        disabled={isFull}
-                        title={isFull ? "Brak wolnych miejsc o tej porze" : `Wolne miejsca: ${slot.free}/${roomCapacity}`}
-                        onClick={() => setStartTime(slot.time)}
-                        className={`rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
-                          isSelected
-                            ? "bg-brand-orange text-white"
-                            : isFull
-                              ? "cursor-not-allowed bg-red-50 text-red-300 line-through"
-                              : slot.free < roomCapacity
-                                ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
-                                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                        }`}
-                      >
-                        {slot.time}
-                      </button>
-                    );
-                  })}
+            <div className="flex flex-col gap-2.5">
+              {slotsByWindow.map(({ window, hourGroups }) => (
+                <div key={`${window.start_time}-${window.end_time}`} className="flex flex-col gap-1">
+                  {hourGroups.map(({ hour, slots }) => (
+                    <div key={hour} className="flex items-start gap-2">
+                      <span className="mt-1 w-9 shrink-0 text-[11px] font-semibold text-zinc-400">{hour}:xx</span>
+                      <div className="flex flex-wrap gap-1">
+                        {slots.map((slot) => {
+                          const isFull = slot.free === 0;
+                          const isSelected = slot.time === startTime;
+                          return (
+                            <button
+                              key={slot.time}
+                              type="button"
+                              disabled={isFull}
+                              title={isFull ? "Brak wolnych miejsc o tej porze" : `Wolne miejsca: ${slot.free}/${roomCapacity}`}
+                              onClick={() => setStartTime(slot.time)}
+                              className={`rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
+                                isSelected
+                                  ? "bg-brand-orange text-white"
+                                  : isFull
+                                    ? "cursor-not-allowed bg-red-50 text-red-300 line-through"
+                                    : slot.free < roomCapacity
+                                      ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                      : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              }`}
+                            >
+                              {slot.time}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
