@@ -395,6 +395,30 @@ export function resolveCarryOverrides(
   });
 }
 
+// Piątek wieczorem (zamknięcie) NIE sprząta się wcale — zamiast tego jest
+// duże sprzątanie w sobotę, 1-1,5h przed otwarciem, zaplanowane jako osobne
+// wydarzenie w grafiku (typ "sprzatanie", patrz lib/event-types.ts) — to NIE
+// część tego systemu stref/zadań, tylko odrębny mechanizm (schedule_event).
+// Warunkowo, jak resolveCarryOverrides wyżej: jeśli takie wydarzenie jest
+// faktycznie zaplanowane na NASTĘPNY dzień, wszystkie zamykające zadania
+// (zamkniecie/po_zamknieciu) dziś są oznaczone jako pokryte — widoczne, ale
+// nieobowiązkowe. Bez zaplanowanego wydarzenia (np. akurat go nie będzie)
+// zadania zamykające zostają normalnie wymagane — to nie sztywny wyjątek na
+// "piątek", tylko odzwierciedla to, co faktycznie jest w grafiku. Działa dla
+// dowolnego dnia, nie tylko piątku — jeśli kiedyś to samo ustawi się przed
+// innym dniem, zadziała tak samo bez zmian w kodzie.
+export function applyNextDayCleaningEventCoverage(
+  resolved: ResolvedCleaningTask[],
+  nextDayHasCleaningEvent: boolean
+): ResolvedCleaningTask[] {
+  if (!nextDayHasCleaningEvent) return resolved;
+  return resolved.map((r) => {
+    if (r.autoCovered) return r;
+    if (r.task.slot !== "zamkniecie" && r.task.slot !== "po_zamknieciu") return r;
+    return { ...r, autoCovered: true };
+  });
+}
+
 export type OverdueTask = { task: CleaningTask; daysLate: number; alert: boolean };
 
 // Zadania niedzienne, które powinny były zostać zrobione ponownie już jakiś

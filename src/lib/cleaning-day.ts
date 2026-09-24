@@ -5,6 +5,7 @@ import {
   resolveDaySlotFreeMinutes,
   resolveTasksForDate,
   resolveCarryOverrides,
+  applyNextDayCleaningEventCoverage,
   computeOverdueTasks,
   computeCoverageGaps,
   balanceSlotAssignments,
@@ -204,6 +205,7 @@ export async function getCleaningDayItems(
   const dateObj = new Date(dateKey + "T00:00:00");
   const weekday = dateObj.getDay();
   const yesterdayKey = toDateKey(new Date(dateObj.getTime() - 86400000));
+  const tomorrowKey = toDateKey(new Date(dateObj.getTime() + 86400000));
   const recentStartKey = toDateKey(new Date(dateObj.getTime() - RECENT_LOAD_DAYS * 86400000));
 
   const supabase = createServerSupabaseClient();
@@ -338,18 +340,30 @@ export async function getCleaningDayItems(
   );
 
   const carryPairIds = [...new Set(resolved.map((r) => r.task.carry_pair_task_id).filter((x): x is string => !!x))];
-  const { data: carryCompletions } =
+  const [{ data: carryCompletions }, { data: nextDayCleaningEvent }] = await Promise.all([
     carryPairIds.length > 0
-      ? await supabase
+      ? supabase
           .from("cleaning_completion")
           .select("task_id, date, completed_at")
           .in("task_id", carryPairIds)
           .in("date", [dateKey, yesterdayKey])
-      : { data: [] };
+      : Promise.resolve({ data: [] }),
+    // Wieczorem (zamknięcie/po zamknięciu) nie sprząta się wcale, jeśli
+    // NASTĘPNEGO dnia jest zaplanowane osobne wydarzenie "sprzątanie" w
+    // grafiku (typowo: duże sprzątanie w sobotę przed otwarciem) — patrz
+    // applyNextDayCleaningEventCoverage w cleaning.ts.
+    supabase
+      .from("schedule_event")
+      .select("id, schedule_day!inner(date)")
+      .eq("type", "sprzatanie")
+      .eq("schedule_day.date", tomorrowKey)
+      .limit(1),
+  ]);
   const completedTaskDateKeys = new Set(
     (carryCompletions ?? []).filter((c) => c.completed_at).map((c) => `${c.task_id}|${c.date}`)
   );
   resolved = resolveCarryOverrides(resolved, dateKey, completedTaskDateKeys);
+  resolved = applyNextDayCleaningEventCoverage(resolved, (nextDayCleaningEvent ?? []).length > 0);
   resolved = balanceSlotAssignments(resolved, competencyByEmployee, effectiveBudgetBySlotAndEmployee);
 
   const resolvedIds = new Set(resolved.map((r) => r.task.id));
