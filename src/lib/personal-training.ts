@@ -1,7 +1,7 @@
 import { timeToMinutes } from "./time";
 import { toDateKey } from "./schedule-month";
 
-export const PT_DURATIONS_MIN = [30, 45, 60, 90] as const;
+export const PT_DURATIONS_MIN = [30, 40, 50, 60, 70, 90] as const;
 export type PtDuration = (typeof PT_DURATIONS_MIN)[number];
 
 export const PT_SLOT_STEP_MIN = 5;
