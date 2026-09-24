@@ -156,8 +156,47 @@ export default async function CleaningConfigPage({
   }
   // WEEK_DISPLAY_ORDER: pon..nd (wartości Date#getDay(), 0=niedziela) — ta
   // sama kolejność wyświetlania co gdzie indziej w apce.
-  const freeMinutesByWeekday = new Map(WEEK_DISPLAY_ORDER.map((wd) => [wd, freeMinutesFor(wd)]));
-  const WEEKDAY_SHORT_LABELS = new Map(WEEK_DISPLAY_ORDER.map((wd) => [wd, weekdayLabel(wd).slice(0, 2).replace(/^./, (c) => c.toUpperCase())]));
+  const freeMinutesByWeekday = new Map<number, Partial<Record<string, number>>>(WEEK_DISPLAY_ORDER.map((wd) => [wd, freeMinutesFor(wd)]));
+  const WEEKDAY_SHORT_LABELS = new Map<number, string>(
+    WEEK_DISPLAY_ORDER.map((wd) => [wd, weekdayLabel(wd).slice(0, 2).replace(/^./, (c) => c.toUpperCase())])
+  );
+
+  // Siatka 4 pory × 7 dni naraz była nieczytelna — w praktyce dni tygodnia
+  // dzielą się na kilka grup o IDENTYCZNYM układzie zmian (np. pon–czw: 3
+  // zmiany + po zamknięciu; pt–nd: 2 zmiany + po zamknięciu) i wewnątrz
+  // takiej grupy jedna "norma" ma sens dla wszystkich jej dni naraz — nie
+  // trzeba osobnego pola na każdy dzień z osobna. Grupowanie po "sygnaturze"
+  // (który zestaw pór dnia w ogóle występuje tego dnia) zamiast sztywnego
+  // podziału pon-pt/weekend — samo dopasowuje się do realnej konfiguracji
+  // zmian, którakolwiek by nie była.
+  const SLOT_KEYS = Object.keys(SLOT_LABELS);
+  type BudgetGroup = { weekdays: number[]; label: string; freeMinutes: Partial<Record<string, number>> };
+  const budgetGroups: BudgetGroup[] = [];
+  {
+    const bySignature = new Map<string, number[]>();
+    for (const wd of WEEK_DISPLAY_ORDER) {
+      const sig = SLOT_KEYS.filter((slot) => freeMinutesByWeekday.get(wd)?.[slot] !== undefined).join(",");
+      if (!sig) continue; // dzień bez żadnej zmiany (zamknięte) — nic do budżetowania
+      if (!bySignature.has(sig)) bySignature.set(sig, []);
+      bySignature.get(sig)!.push(wd);
+    }
+    for (const weekdays of bySignature.values()) {
+      const idxs = weekdays.map((wd) => (WEEK_DISPLAY_ORDER as readonly number[]).indexOf(wd));
+      const isContiguousRange = weekdays.length > 1 && idxs.every((idx, i) => i === 0 || idx === idxs[i - 1] + 1);
+      const label = isContiguousRange
+        ? `${WEEKDAY_SHORT_LABELS.get(weekdays[0])}–${WEEKDAY_SHORT_LABELS.get(weekdays[weekdays.length - 1])}`
+        : weekdays.map((wd) => WEEKDAY_SHORT_LABELS.get(wd)).join(", ");
+      // Realnie wolne dla grupy = MINIMUM po jej dniach (ostrożniej — dzień w
+      // grupie z najkrótszą zmianą decyduje o ostrzeżeniu), nawet jeśli
+      // konkretne godziny między dniami tej samej grupy się nieco różnią.
+      const freeMinutes: Partial<Record<string, number>> = {};
+      for (const slot of SLOT_KEYS) {
+        const values = weekdays.map((wd) => freeMinutesByWeekday.get(wd)?.[slot]).filter((v): v is number => v !== undefined);
+        if (values.length > 0) freeMinutes[slot] = Math.min(...values);
+      }
+      budgetGroups.push({ weekdays, label, freeMinutes });
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -544,10 +583,10 @@ export default async function CleaningConfigPage({
         <Card>
           <h2 className="mb-1 font-semibold text-zinc-900">Budżety czasowe</h2>
           <p className="mb-1.5 text-sm text-zinc-500">
-            Ile minut sprzątania na daną porę dnia jest &quot;normą&quot; dla danej osoby — osobno na
-            KAŻDY dzień tygodnia, dopasowane do konfiguracji zmian (patrz Grafik → Godziny otwarcia — piątek,
-            sobota i niedziela mają inne godziny, nie tylko &quot;pon-pt vs weekend&quot;). Więcej wolnego
-            czasu danego dnia (patrz podpowiedź po najechaniu na pole) nie znaczy automatycznie więcej
+            Ile minut sprzątania na daną porę dnia jest &quot;normą&quot; dla danej osoby — jedna wartość na
+            grupę dni o tym samym układzie zmian (np. pon–czw: 3 zmiany + po zamknięciu; pt–nd: 2 zmiany + po
+            zamknięciu — dopasowuje się samo do tego, co jest w Grafik → Godziny otwarcia). Więcej wolnego
+            czasu w danej grupie (patrz podpowiedź po najechaniu na pole) nie znaczy automatycznie więcej
             możliwości — w weekend zwykle jest więcej rezerwacji/ruchu na recepcji, więc to nadal ręcznie
             ustawiona norma. Używane do auto-wyrównywania obciążenia w dni, gdy w tym samym slocie pracuje
             więcej niż jedna osoba, i do ostrzeżenia na widoku dnia, gdy komuś przydzieli się więcej niż ta
@@ -556,18 +595,18 @@ export default async function CleaningConfigPage({
           <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <span className="font-bold">Twarda zasada:</span> pon–pt sprzątanie nie może się odbywać między{" "}
             {WEEKDAY_CLEANING_BLACKOUT.start} a {WEEKDAY_CLEANING_BLACKOUT.end} (klub zbyt zajęty), w weekend
-            nie obowiązuje. Budżet wyższy niż realnie wolny czas zmiany tego dnia (pole na czerwono, najedź
-            po szczegóły) i tak nie da się zrealizować.
+            nie obowiązuje. Budżet wyższy niż realnie wolny czas najkrótszego dnia w grupie (pole na
+            czerwono, najedź po szczegóły) i tak nie da się zrealizować.
           </p>
           <div className="flex flex-col gap-3">
-            {/* Nagłówek kolumn dni tygodnia raz, nad wszystkimi pracownikami —
+            {/* Nagłówek kolumn grup dni raz, nad wszystkimi pracownikami —
                 szerokości pól muszą się zgadzać z wierszami niżej, żeby kolumny
                 się wyrównały. */}
-            <div className="flex items-center gap-1 px-2.5 text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+            <div className="flex items-center gap-2 px-2.5 text-[10px] font-bold uppercase tracking-wide text-zinc-400">
               <span className="w-[150px] shrink-0" />
-              {WEEK_DISPLAY_ORDER.map((wd) => (
-                <span key={wd} className="w-[42px] shrink-0 text-center">
-                  {WEEKDAY_SHORT_LABELS.get(wd)}
+              {budgetGroups.map((g) => (
+                <span key={g.weekdays.join(",")} className="w-[70px] shrink-0 text-center">
+                  {g.label}
                 </span>
               ))}
               <span className="w-[36px] shrink-0" />
@@ -592,38 +631,45 @@ export default async function CleaningConfigPage({
                     // żaden dzień nie ma 3. zmiany) — budżet ma pokazywać
                     // dokładnie układ zmian, nie wymyślone pory, które nigdy
                     // się nie zdarzą.
-                    .filter(([slot]) => WEEK_DISPLAY_ORDER.some((wd) => freeMinutesByWeekday.get(wd)?.[slot] !== undefined))
+                    .filter(([slot]) => budgetGroups.some((g) => g.freeMinutes[slot] !== undefined))
                     .map(([slot, label]) => (
-                    // Jeden formularz = cały tydzień naraz dla tej pory dnia —
-                    // 7 osobnych "Zapisz" (jeden per dzień) byłoby nie do
-                    // ogarnięcia, patrz setTimeBudget w actions.ts.
-                    <form key={slot} action={setTimeBudget} className="flex items-center gap-1">
+                    // Jeden formularz = wszystkie grupy dni naraz dla tej pory
+                    // dnia — osobny "Zapisz" na każdą grupę z osobna byłby
+                    // niepotrzebnym rozdrobnieniem, patrz setTimeBudget w
+                    // actions.ts (jedna wartość rozlewa się na wszystkie dni
+                    // danej grupy).
+                    <form key={slot} action={setTimeBudget} className="flex items-center gap-2">
                       <input type="hidden" name="employee_id" value={emp.id} />
                       <input type="hidden" name="slot" value={slot} />
                       <span className="w-[150px] shrink-0 truncate text-xs font-semibold text-zinc-600">{label}</span>
-                      {WEEK_DISPLAY_ORDER.map((wd) => {
-                        const freeMinutes = freeMinutesByWeekday.get(wd)?.[slot];
-                        // Ta pora dnia w tym KONKRETNYM dniu tygodnia nie
-                        // istnieje w konfiguracji zmian (np. piątek ma tylko
-                        // 2 zmiany, więc nie ma "Środka") — puste miejsce
-                        // zamiast pola, żeby nie sugerować budżetu na coś,
-                        // co się tego dnia w ogóle nie zdarza.
+                      {budgetGroups.map((g, gi) => {
+                        const freeMinutes = g.freeMinutes[slot];
+                        // Ta pora dnia w ogóle nie istnieje w żadnym dniu tej
+                        // grupy (np. "Środek" dla grupy pt–nd) — puste miejsce
+                        // zamiast pola, żeby nie sugerować budżetu na coś, co
+                        // się w tej grupie nigdy nie zdarza.
                         if (freeMinutes === undefined) {
-                          return <span key={wd} className="w-[42px] shrink-0 text-center text-xs text-zinc-300">—</span>;
+                          return (
+                            <span key={gi} className="w-[70px] shrink-0 text-center text-xs text-zinc-300">
+                              —
+                            </span>
+                          );
                         }
-                        const value = budgetByEmpSlot.get(`${emp.id}|${slot}|${wd}`) ?? 60;
+                        const value = budgetByEmpSlot.get(`${emp.id}|${slot}|${g.weekdays[0]}`) ?? 60;
                         const exceeds = value > freeMinutes;
                         return (
-                          <input
-                            key={wd}
-                            type="number"
-                            name={`budget_${wd}`}
-                            defaultValue={value}
-                            title={`${weekdayLabel(wd)} — realnie wolne: ${freeMinutes} min${exceeds ? " (budżet to przekracza)" : ""}`}
-                            className={`w-[42px] shrink-0 rounded-lg border px-1 py-1 text-center text-xs ${
-                              exceeds ? "border-red-300 bg-red-50 text-red-700" : "border-zinc-300"
-                            }`}
-                          />
+                          <span key={gi} className="flex w-[70px] shrink-0 items-center gap-0.5">
+                            <input type="hidden" name={`group_${gi}_weekdays`} value={g.weekdays.join(",")} />
+                            <input
+                              type="number"
+                              name={`budget_group_${gi}`}
+                              defaultValue={value}
+                              title={`${g.label} — realnie wolne: ${freeMinutes} min${exceeds ? " (budżet to przekracza)" : ""}`}
+                              className={`w-full rounded-lg border px-1 py-1 text-center text-xs ${
+                                exceeds ? "border-red-300 bg-red-50 text-red-700" : "border-zinc-300"
+                              }`}
+                            />
+                          </span>
                         );
                       })}
                       <button

@@ -186,27 +186,25 @@ export async function deleteChecklistTemplateItem(formData: FormData) {
   revalidatePath("/admin/sprzatanie");
 }
 
-// Jeden formularz = jedna pora dnia (slot) dla jednej osoby, ale WSZYSTKIE 7
-// dni tygodnia naraz (patrz admin/sprzatanie/page.tsx — tabela pon..nd w
-// jednym wierszu) — osobny "Zapisz" na każdy dzień z osobna (28 przycisków
-// na osobę: 4 sloty × 7 dni) byłby nie do ogarnięcia.
+// Jeden formularz = jedna pora dnia (slot) dla jednej osoby, ale WSZYSTKIE
+// grupy dni o tym samym układzie zmian naraz (patrz admin/sprzatanie/page.tsx
+// — grupowanie po "sygnaturze" zmian, np. pon–czw / pt–nd) — jedna wpisana
+// wartość rozlewa się na KAŻDY dzień tygodnia należący do tej grupy (patrz
+// hidden `group_N_weekdays`, lista dni tej grupy oddzielona przecinkami).
 export async function setTimeBudget(formData: FormData) {
   await requireAdmin();
   const employee_id = String(formData.get("employee_id") ?? "");
   const slot = String(formData.get("slot") ?? "");
   if (!employee_id || !slot) throw new Error("Brak danych.");
-  // Strona nie renderuje pola dla dnia tygodnia, w którym ta pora dnia w
-  // ogóle nie występuje w konfiguracji zmian (patrz filtrowanie w
-  // page.tsx) — `has()` pomija taki dzień zamiast zapisywać zmyślony budżet
-  // 60 min na coś, co się w tym dniu nigdy nie zdarza.
-  const rows = Array.from({ length: 7 }, (_, weekday) => weekday)
-    .filter((weekday) => formData.has(`budget_${weekday}`))
-    .map((weekday) => ({
-      employee_id,
-      slot,
-      weekday,
-      budget_minutes: parseNumber(formData.get(`budget_${weekday}`), 60),
-    }));
+  const rows: { employee_id: string; slot: string; weekday: number; budget_minutes: number }[] = [];
+  for (let gi = 0; formData.has(`group_${gi}_weekdays`); gi++) {
+    const weekdays = String(formData.get(`group_${gi}_weekdays`) ?? "")
+      .split(",")
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+    const budget_minutes = parseNumber(formData.get(`budget_group_${gi}`), 60);
+    for (const weekday of weekdays) rows.push({ employee_id, slot, weekday, budget_minutes });
+  }
   if (rows.length === 0) return;
   const supabase = createServerSupabaseClient();
   const { error } = await supabase.from("cleaning_time_budget").upsert(rows, { onConflict: "employee_id,slot,weekday" });
