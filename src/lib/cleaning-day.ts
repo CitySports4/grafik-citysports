@@ -2,17 +2,22 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { toDateKey } from "@/lib/schedule-month";
 import {
   resolveDaySlots,
+  resolveDaySlotFreeMinutes,
   resolveTasksForDate,
   resolveCarryOverrides,
   computeOverdueTasks,
   computeCoverageGaps,
   balanceSlotAssignments,
+  flagBudgetOverflow,
   allCycleWindows,
+  DEFAULT_BUDGET_MINUTES,
   type CleaningTask,
   type WindowDay,
   type OverdueTask,
   type CleaningSlot,
 } from "@/lib/cleaning";
+
+const ALL_SLOTS: CleaningSlot[] = ["otwarcie", "srodek", "zamkniecie", "po_zamknieciu"];
 
 export type CleaningDayItem = {
   taskId: string;
@@ -27,6 +32,13 @@ export type CleaningDayItem = {
   coverageGap: boolean;
   checklist: { id: string; label: string; done: boolean }[];
   done: boolean;
+  // Budżet minut przypisanej osoby na tę porę dnia, przycięty do realnego
+  // wolnego czasu JEJ zmiany tego konkretnego dnia (patrz
+  // resolveDaySlotFreeMinutes) — null gdy zadanie nieprzypisane. exceedsBudget
+  // — czy to zadanie jest tym, które tę osobę pcha ponad budżet (patrz
+  // flagBudgetOverflow).
+  budgetMinutes: number | null;
+  exceedsBudget: boolean;
 };
 
 // Ile dni wstecz liczymy "ostatnie obciążenie" osoby minutami sprzątania na
@@ -205,7 +217,7 @@ export async function getCleaningDayItems(
   const sortedWindowDates = [...allWindowDates].sort();
   let windowDaysQuery = supabase
     .from("schedule_day")
-    .select("date, schedule_shift(start_time, employee_id), schedule_month!inner(status)")
+    .select("date, schedule_shift(start_time, end_time, employee_id), schedule_month!inner(status)")
     .gte("date", sortedWindowDates[0])
     .lte("date", sortedWindowDates[sortedWindowDates.length - 1]);
   if (!opts?.includeDraft) windowDaysQuery = windowDaysQuery.eq("schedule_month.status", "published");
@@ -218,7 +230,7 @@ export async function getCleaningDayItems(
     .not("employee_id", "is", null);
 
   let ctx: CleaningStaticContext;
-  let windowDays: { date: string; schedule_shift: { start_time: string; employee_id: string | null }[] }[] | null;
+  let windowDays: { date: string; schedule_shift: { start_time: string; end_time: string; employee_id: string | null }[] }[] | null;
   let recentCompletions: { employee_id: string | null; task_id: string; date: string }[] | null;
 
   if (opts?.staticContext) {
@@ -276,6 +288,22 @@ export async function getCleaningDayItems(
 
   const daySlots = windowDaySlotsByDate.get(dateKey)!.daySlots;
 
+  // Budżet "efektywny" na TĘ konkretną datę — skonfigurowany budżet
+  // przycięty do realnego wolnego czasu TEJ osoby na TĘ zmianę tego dnia
+  // (patrz resolveDaySlotFreeMinutes), nie do sztywnego szablonu
+  // poniedziałku jak dotąd tylko w panelu admina. Krótsza/dłuższa niż
+  // zwykle zmiana od razu zmienia, ile realnie się zmieści.
+  const todayShifts = (windowDays ?? []).find((wd) => wd.date === dateKey)?.schedule_shift ?? [];
+  const todayFreeMinutesBySlot = resolveDaySlotFreeMinutes(todayShifts, weekday);
+  const effectiveBudgetBySlotAndEmployee = new Map<string, number>();
+  for (const slot of ALL_SLOTS) {
+    const empId = daySlots[slot];
+    if (!empId) continue;
+    const configured = budgetBySlotAndEmployee.get(`${empId}|${slot}`) ?? DEFAULT_BUDGET_MINUTES;
+    const real = todayFreeMinutesBySlot[slot];
+    effectiveBudgetBySlotAndEmployee.set(`${empId}|${slot}`, real !== null ? Math.min(configured, real) : configured);
+  }
+
   // Wybory AI (patrz cleaning-generator-ai.ts) dla okien cyklicznych zadań
   // dotykających tego dnia — tylko konkretne window_start z `windows`
   // wyliczone dla `dateKey`, nie szeroki zakres dat. Zawsze rewalidowane w
@@ -317,7 +345,7 @@ export async function getCleaningDayItems(
     (carryCompletions ?? []).filter((c) => c.completed_at).map((c) => `${c.task_id}|${c.date}`)
   );
   resolved = resolveCarryOverrides(resolved, dateKey, completedTaskDateKeys);
-  resolved = balanceSlotAssignments(resolved, competencyByEmployee, budgetBySlotAndEmployee);
+  resolved = balanceSlotAssignments(resolved, competencyByEmployee, effectiveBudgetBySlotAndEmployee);
 
   const resolvedIds = new Set(resolved.map((r) => r.task.id));
   const overdue = computeOverdueTasks(allActiveNonDaily, lastDoneByTask, dateKey).filter((o) => !resolvedIds.has(o.task.id));
@@ -328,7 +356,7 @@ export async function getCleaningDayItems(
   for (const o of overdue) {
     const candidate = daySlots[o.task.slot];
     const competent = candidate ? (competencyByEmployee.get(candidate)?.has(o.task.zone_id) ?? false) : false;
-    resolved.push({ task: o.task, employeeId: competent ? candidate : null, autoCovered: false });
+    resolved.push({ task: o.task, employeeId: competent ? candidate : null, autoCovered: false, exceedsBudget: false });
   }
   const overdueByTask = new Map(overdue.map((o) => [o.task.id, o]));
 
@@ -341,7 +369,7 @@ export async function getCleaningDayItems(
     (g) => !resolvedIds2.has(g.task.id)
   );
   for (const g of coverageGaps) {
-    resolved.push({ task: g.task, employeeId: null, autoCovered: false });
+    resolved.push({ task: g.task, employeeId: null, autoCovered: false, exceedsBudget: false });
   }
   const coverageGapIds = new Set(coverageGaps.map((g) => g.task.id));
 
@@ -352,6 +380,12 @@ export async function getCleaningDayItems(
   // dopiero `items`), bo CleaningDayList grupuje po slocie zachowując
   // kolejność z tej tablicy.
   resolved.sort((a, b) => (zoneSortById.get(a.task.zone_id) ?? 0) - (zoneSortById.get(b.task.zone_id) ?? 0));
+
+  // Twardy sygnał przeciążenia — działa też, gdy w slocie jest tylko jedna
+  // osoba (balanceSlotAssignments wtedy nic nie robi, patrz komentarz przy
+  // flagBudgetOverflow). Po sortowaniu, żeby "co się nie zmieściło" liczyło
+  // się w tej samej kolejności, w jakiej dana osoba faktycznie by to robiła.
+  resolved = flagBudgetOverflow(resolved, effectiveBudgetBySlotAndEmployee);
 
   const taskIds = resolved.map((r) => r.task.id);
   const { data: completions } =
@@ -371,6 +405,8 @@ export async function getCleaningDayItems(
     autoCovered: r.autoCovered,
     overdue: overdueByTask.get(r.task.id) ?? null,
     coverageGap: coverageGapIds.has(r.task.id),
+    budgetMinutes: r.employeeId ? effectiveBudgetBySlotAndEmployee.get(`${r.employeeId}|${r.task.slot}`) ?? null : null,
+    exceedsBudget: r.exceedsBudget,
     checklist: checklistFor(r.task).map((c) => ({
       id: c.id,
       label: c.label,
