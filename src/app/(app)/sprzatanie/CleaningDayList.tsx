@@ -18,6 +18,8 @@ type Item = {
   coverageGap: boolean;
   checklist: ChecklistItem[];
   done: boolean;
+  budgetMinutes: number | null;
+  exceedsBudget: boolean;
 };
 
 const SLOT_LABELS: Record<Item["slot"], string> = {
@@ -74,9 +76,38 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
       {SLOT_ORDER.map((slot) => {
         const slotItems = state.filter((it) => it.slot === slot);
         if (slotItems.length === 0) return null;
+
+        // Suma minut per przypisana osoba w tym slocie (bez autoCovered — nie
+        // wymaga realnej pracy) względem jej budżetu na tę porę dnia — widoczne
+        // od razu na widoku dnia, nie tylko przy edycji budżetu w panelu.
+        const totalsByAssignee = new Map<string, { name: string; color: string; minutes: number; budget: number | null }>();
+        for (const it of slotItems) {
+          if (!it.assignee || it.autoCovered) continue;
+          const key = it.assignee.name;
+          const entry = totalsByAssignee.get(key) ?? { name: it.assignee.name, color: it.assignee.color_hex, minutes: 0, budget: it.budgetMinutes };
+          entry.minutes += it.timeMinutes;
+          totalsByAssignee.set(key, entry);
+        }
+
         return (
           <div key={slot}>
-            <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-zinc-400">{SLOT_LABELS[slot]}</h3>
+            <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-400">{SLOT_LABELS[slot]}</h3>
+              {[...totalsByAssignee.values()].map((t) => {
+                const over = t.budget !== null && t.minutes > t.budget;
+                return (
+                  <span
+                    key={t.name}
+                    className={`flex items-center gap-1 text-[11px] font-semibold ${over ? "text-red-600" : "text-zinc-400"}`}
+                  >
+                    <ColorDot color={t.color} />
+                    {t.name}: {t.minutes}
+                    {t.budget !== null ? `/${t.budget}` : ""} min
+                    {over && " ⚠"}
+                  </span>
+                );
+              })}
+            </div>
             <div className="flex flex-col gap-2">
               {slotItems.map((it) => (
                 <div
@@ -126,6 +157,14 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                       {it.coverageGap && (
                         <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
                           brak kompetentnej osoby w cyklu
+                        </span>
+                      )}
+                      {it.exceedsBudget && (
+                        <span
+                          className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700"
+                          title="Suma minut tej osoby na tę porę dnia przekracza jej budżet czasowy"
+                        >
+                          ⚠ ponad budżet
                         </span>
                       )}
                     </div>

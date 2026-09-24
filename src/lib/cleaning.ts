@@ -6,10 +6,10 @@ import { timeToMinutes } from "./time";
 // obowiązków i sprzątał. Sobota/niedziela — nie obowiązuje. To NIE zmienia
 // PRZYDZIAŁU (kto sprząta nadal wynika wyłącznie z grafiku — patrz
 // resolveDaySlots), tylko realny czas, jaki dana osoba ma na sprzątanie w
-// ciągu swojej zmiany tego dnia. Dziś używane tylko jako ostrzeżenie przy
-// ustawianiu budżetów czasowych (patrz admin/sprzatanie) — punkt wyjścia dla
-// każdej przyszłej "mądrzejszej" reguły balansowania/AI, która operuje na
-// realnych godzinach zmian, nie tylko na nazwie slotu.
+// ciągu swojej zmiany tego dnia. Używane jako ostrzeżenie przy ustawianiu
+// budżetów czasowych (admin/sprzatanie) ORAZ, per resolveDaySlotFreeMinutes
+// niżej, żeby budżet respektowany przy przydziale (flagBudgetOverflow) liczył
+// się z REALNEJ zmiany danego dnia, nie ze sztywnego szablonu poniedziałku.
 export const WEEKDAY_CLEANING_BLACKOUT = { start: "16:30", end: "21:10" } as const;
 
 // Ile minut zmiany (start-end, dany dzień tygodnia) realnie NIE wpada w
@@ -65,6 +65,39 @@ export function resolveDaySlots(
   return {
     otwarcie: assigned[0].employee_id,
     srodek: assigned[Math.floor(assigned.length / 2)].employee_id,
+    zamkniecie: closer,
+    po_zamknieciu: closer,
+  };
+}
+
+// Ten sam wybór "kto jest na której porze dnia" co resolveDaySlots wyżej —
+// MUSI się z nim zgadzać, więc zmieniając tamtą logikę zmień i tę — ale
+// zamiast samego employee_id zwraca realny wolny czas TEJ osoby na TĘ
+// konkretną zmianę TEGO dnia (poza blokadą WEEKDAY_CLEANING_BLACKOUT).
+// Dotąd budżety czasowe liczyły "realnie wolne" tylko raz, ze sztywnego
+// szablonu zmian z poniedziałku (patrz admin/sprzatanie) — krótsza sobotnia
+// albo ręcznie skrócona zmiana dostawała dokładnie tyle samo zadań co zwykły
+// dzień. To pozwala liczyć efektywny budżet (patrz flagBudgetOverflow) z
+// rzeczywistej zmiany danego dnia.
+export function resolveDaySlotFreeMinutes(
+  shifts: { start_time: string; end_time: string; employee_id: string | null }[],
+  weekday: number
+): Record<CleaningSlot, number | null> {
+  const assigned = shifts.filter((s) => s.employee_id).slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const free = (s: { start_time: string; end_time: string }) => freeMinutesOutsideWeekdayBlackout(s.start_time, s.end_time, weekday);
+  if (assigned.length === 0) return { otwarcie: null, srodek: null, zamkniecie: null, po_zamknieciu: null };
+  if (assigned.length === 1) {
+    const f = free(assigned[0]);
+    return { otwarcie: f, srodek: null, zamkniecie: f, po_zamknieciu: f };
+  }
+  if (assigned.length === 2) {
+    const closer = free(assigned[assigned.length - 1]);
+    return { otwarcie: free(assigned[0]), srodek: null, zamkniecie: closer, po_zamknieciu: closer };
+  }
+  const closer = free(assigned[assigned.length - 1]);
+  return {
+    otwarcie: free(assigned[0]),
+    srodek: free(assigned[Math.floor(assigned.length / 2)]),
     zamkniecie: closer,
     po_zamknieciu: closer,
   };
@@ -175,12 +208,21 @@ export const OCCURRENCES_PER_WINDOW: Partial<Record<CleaningFrequency, number>> 
 // wszystkich wystąpień jednej, akurat najmniej obciążonej osobie. Brak
 // danych o obciążeniu (`recentMinutesByEmployee` nieprzekazane) — dawne
 // zachowanie: maksymalizacja odstępu w czasie między wybranymi dniami.
+//
+// `dayLoadByDate` (opcjonalne, patrz resolveTasksForDate) — ile minut INNYCH
+// zadań cyklicznych już wylądowało na danym dniu w TEJ SAMEJ turze
+// rozstrzygania. Bez tego dwa osobne rzadkie zadania (np. dwa kwartalne)
+// mogły niezależnie od siebie wybrać dokładnie ten sam, i tak już zajęty
+// dzień — każde z osobna wyglądało na "uczciwy wybór", razem dawały
+// nierealny stos na jeden dzień. Doliczane do obciążenia osoby w tych samych
+// jednostkach (minuty), więc nie trzeba osobnej wagi do strojenia.
 export function resolveCyclicDueDates(
   task: CleaningTask,
   windowDays: WindowDay[],
   competencyByEmployee: Map<string, Set<string>>,
   recentMinutesByEmployee?: Map<string, number>,
-  aiChosenDates?: Set<string>
+  aiChosenDates?: Set<string>,
+  dayLoadByDate?: Map<string, number>
 ): Set<string> {
   const needed = OCCURRENCES_PER_WINDOW[task.frequency] ?? 1;
   const qualifying = windowDays.filter((d) => qualifiesForTask(task, d, competencyByEmployee)).map((d) => d.dateKey);
@@ -205,7 +247,8 @@ export function resolveCyclicDueDates(
       let bestLoad = Infinity;
       for (const dk of remaining) {
         const emp = employeeOfDay.get(dk);
-        const load = emp ? running.get(emp) ?? 0 : Infinity;
+        const employeeLoad = emp ? running.get(emp) ?? 0 : Infinity;
+        const load = employeeLoad === Infinity ? Infinity : employeeLoad + (dayLoadByDate?.get(dk) ?? 0);
         if (load < bestLoad) {
           bestLoad = load;
           best = dk;
@@ -271,6 +314,10 @@ export type ResolvedCleaningTask = {
   task: CleaningTask;
   employeeId: string | null;
   autoCovered: boolean;
+  // Ustawiane dopiero przez flagBudgetOverflow (po balansowaniu) — czy TO
+  // zadanie jest tym, które u swojego przypisanego pracownika przekracza
+  // budżet minut na tę porę dnia. false na tym etapie zawsze.
+  exceedsBudget: boolean;
 };
 
 // Dla zadań aktywnych danego dnia: przydziel osobę, która i tak pracuje na
@@ -292,20 +339,33 @@ export function resolveTasksForDate(
   recentMinutesByEmployee?: Map<string, number>,
   aiChosenDatesByTaskWindow?: Map<string, Set<string>>
 ): ResolvedCleaningTask[] {
-  const due = tasks.filter((task) => {
-    if (!task.active) return false;
-    if (task.frequency === "daily") return isDailyTaskDueOnDate(task, weekday);
+  // Pętla zamiast .filter(), żeby dayLoadByDate mogło rosnąć z każdym kolejno
+  // rozstrzygniętym zadaniem cyklicznym w TEJ SAMEJ turze — patrz komentarz
+  // przy resolveCyclicDueDates (Fix na dwa rzadkie zadania lądujące tego
+  // samego dnia).
+  const dayLoadByDate = new Map<string, number>();
+  const due: CleaningTask[] = [];
+  for (const task of tasks) {
+    if (!task.active) continue;
+    if (task.frequency === "daily") {
+      if (isDailyTaskDueOnDate(task, weekday)) due.push(task);
+      continue;
+    }
     const window = cycleWindowDates(task, dateKey, cycleStart);
-    if (!window) return false;
+    if (!window) continue;
     const windowDays = window.map((dk) => windowDaySlotsByDate.get(dk)).filter((d): d is WindowDay => !!d);
     const aiChosenDates = aiChosenDatesByTaskWindow?.get(`${task.id}|${window[0]}`);
-    return resolveCyclicDueDates(task, windowDays, competencyByEmployee, recentMinutesByEmployee, aiChosenDates).has(dateKey);
-  });
+    const chosenDates = resolveCyclicDueDates(task, windowDays, competencyByEmployee, recentMinutesByEmployee, aiChosenDates, dayLoadByDate);
+    for (const dk of chosenDates) {
+      dayLoadByDate.set(dk, (dayLoadByDate.get(dk) ?? 0) + task.time_minutes);
+    }
+    if (chosenDates.has(dateKey)) due.push(task);
+  }
   const afterSkip = applySkipWith(due);
   return afterSkip.map((task) => {
     const candidate = daySlots[task.slot];
     const competent = candidate ? (competencyByEmployee.get(candidate)?.has(task.zone_id) ?? false) : false;
-    return { task, employeeId: competent ? candidate : null, autoCovered: false };
+    return { task, employeeId: competent ? candidate : null, autoCovered: false, exceedsBudget: false };
   });
 }
 
@@ -362,7 +422,7 @@ export function computeOverdueTasks(
   return result;
 }
 
-const DEFAULT_BUDGET_MINUTES = 60;
+export const DEFAULT_BUDGET_MINUTES = 60;
 
 // Dla dni, gdy w tym samym slocie pracuje więcej niż jedna osoba (rzadkie —
 // głównie soboty z dodatkową obsadą), przenosi zadania tak, by każdy był
@@ -429,4 +489,30 @@ export function balanceSlotAssignments(
     out.push(...working);
   }
   return out;
+}
+
+// Twardy sygnał — w odróżnieniu od balanceSlotAssignments wyżej (które tylko
+// wyrównuje MIĘDZY kilkoma ludźmi w tym samym slocie i nic nie robi, gdy jest
+// tam TYLKO jedna osoba — najczęstszy przypadek, jeden otwiera/jeden
+// zamyka), to działa zawsze: gdy suma minut jednej osoby w danym slocie
+// przekracza jej budżet, zadania które to przekroczenie powodują (i
+// wszystkie po nich w kolejności `resolved` — ma odzwierciedlać kolejność
+// pracy, patrz sortowanie po zoneSortById w cleaning-day.ts) są oznaczane
+// jako `exceedsBudget`. Nic nie usuwa ani nie przydziela na nowo — praca
+// nadal musi zostać zrobiona, to tylko widoczne ostrzeżenie do ręcznej
+// reakcji. Zadania `autoCovered` (już pokryte przez parujące zadanie) nie
+// liczą się do sumy — nie wymagają realnej pracy.
+export function flagBudgetOverflow(
+  resolved: ResolvedCleaningTask[],
+  budgetBySlotAndEmployee: Map<string, number>
+): ResolvedCleaningTask[] {
+  const runningBySlotEmployee = new Map<string, number>();
+  return resolved.map((r) => {
+    if (!r.employeeId || r.autoCovered) return r;
+    const key = `${r.employeeId}|${r.task.slot}`;
+    const budget = budgetBySlotAndEmployee.get(key) ?? DEFAULT_BUDGET_MINUTES;
+    const runningAfter = (runningBySlotEmployee.get(key) ?? 0) + r.task.time_minutes;
+    runningBySlotEmployee.set(key, runningAfter);
+    return { ...r, exceedsBudget: runningAfter > budget };
+  });
 }

@@ -86,6 +86,7 @@ export default async function CleaningMonthPreviewPage({
             const unassignedCount = day.items.filter((i) => !i.assignee && !i.autoCovered).length;
             const overdueCount = day.items.filter((i) => i.overdue).length;
             const gapCount = day.items.filter((i) => i.coverageGap).length;
+            const overBudgetCount = day.items.filter((i) => i.exceedsBudget).length;
 
             if (day.items.length === 0) return null;
 
@@ -99,17 +100,20 @@ export default async function CleaningMonthPreviewPage({
                     {unassignedCount > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 font-bold text-red-700">{unassignedCount} bez przypisania</span>}
                     {overdueCount > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-700">{overdueCount} zaległych</span>}
                     {gapCount > 0 && <span className="rounded-full bg-violet-100 px-2 py-0.5 font-bold text-violet-700">{gapCount} luk kompetencji</span>}
+                    {overBudgetCount > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 font-bold text-red-700">{overBudgetCount} ponad budżet</span>}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-4">
                   {SLOT_ORDER.filter((s) => bySlot.has(s)).map((slot) => {
                     const items = bySlot.get(slot)!;
-                    const byAssignee = new Map<string, { name: string; color_hex: string; minutes: number; count: number }>();
+                    const byAssignee = new Map<string, { name: string; color_hex: string; minutes: number; count: number; budget: number | null }>();
                     const unassignedItems = items.filter((i) => !i.assignee);
                     for (const i of items) {
-                      if (!i.assignee) continue;
+                      if (!i.assignee || i.autoCovered) continue;
                       const key = i.assignee.name;
-                      if (!byAssignee.has(key)) byAssignee.set(key, { name: i.assignee.name, color_hex: i.assignee.color_hex, minutes: 0, count: 0 });
+                      if (!byAssignee.has(key)) {
+                        byAssignee.set(key, { name: i.assignee.name, color_hex: i.assignee.color_hex, minutes: 0, count: 0, budget: i.budgetMinutes });
+                      }
                       const entry = byAssignee.get(key)!;
                       entry.minutes += i.timeMinutes;
                       entry.count += 1;
@@ -118,12 +122,19 @@ export default async function CleaningMonthPreviewPage({
                       <div key={slot} className="min-w-[160px]">
                         <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-zinc-400">{SLOT_LABELS[slot]}</p>
                         <div className="flex flex-col gap-1">
-                          {[...byAssignee.values()].map((a) => (
-                            <span key={a.name} className="flex items-center gap-1.5 text-xs text-zinc-700">
-                              <ColorDot color={a.color_hex} />
-                              {a.name} <span className="text-zinc-400">({a.count} zad., {a.minutes} min)</span>
-                            </span>
-                          ))}
+                          {[...byAssignee.values()].map((a) => {
+                            const over = a.budget !== null && a.minutes > a.budget;
+                            return (
+                              <span key={a.name} className={`flex items-center gap-1.5 text-xs ${over ? "font-semibold text-red-600" : "text-zinc-700"}`}>
+                                <ColorDot color={a.color_hex} />
+                                {a.name}{" "}
+                                <span className={over ? "" : "text-zinc-400"}>
+                                  ({a.count} zad., {a.minutes}
+                                  {a.budget !== null ? `/${a.budget}` : ""} min{over ? " ⚠" : ""})
+                                </span>
+                              </span>
+                            );
+                          })}
                           {unassignedItems.length > 0 && (
                             <span className="text-xs font-semibold text-red-500">⚠ {unassignedItems.length} bez przypisania</span>
                           )}
