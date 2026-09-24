@@ -141,8 +141,11 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                       <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">{it.zoneName}</span>
                       <span className="text-xs text-zinc-400">{it.timeMinutes} min</span>
                       {it.autoCovered && (
-                        <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
-                          pokryte wcześniej
+                        <span
+                          className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold text-zinc-600"
+                          title="Pokryte parującym zadaniem (rano/wieczór) albo zaplanowanym sprzątaniem następnego dnia — niewymagane dziś"
+                        >
+                          niewymagane dziś
                         </span>
                       )}
                       {it.overdue && (
