@@ -212,6 +212,12 @@ export default async function RecepcjaTreningiPage({
                     defaultDate={date}
                     roomCapacity={roomCapacity}
                     trainerOptions={trainerOptions}
+                    dayWindows={windows}
+                    daySessions={daySessions.map((s) => ({
+                      start_time: s.start_time,
+                      duration_minutes: s.duration_minutes,
+                      client_count: s.client_count,
+                    }))}
                   />
                 </div>
               </details>
