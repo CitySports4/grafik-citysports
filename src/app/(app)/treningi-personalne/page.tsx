@@ -4,7 +4,7 @@ import { requireEmployee, canPreviewPersonalTraining, isPersonalTrainerOnly } fr
 import { toDateKey, mondayOfWeek } from "@/lib/schedule-month";
 import { weekdayLabel } from "@/lib/weekdays";
 import { formatHm, timeToMinutes } from "@/lib/time";
-import { sessionAmount, maxConcurrentClients, minutesToTime } from "@/lib/personal-training";
+import { sessionAmount, minutesToTime } from "@/lib/personal-training";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
 import { BackLink } from "@/components/BackLink";
@@ -150,11 +150,6 @@ export default async function PersonalTrainingPage({
           const windows = roomHoursByWeekday.get(weekday) ?? [];
           const daySessions = (sessionsByDate.get(date) ?? []).slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
           const dayBlocks = (blocksByDate.get(date) ?? []).slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
-          const peak = maxConcurrentClients(
-            0,
-            24 * 60,
-            daySessions.map((s) => ({ start_time: s.start_time, duration_minutes: s.duration_minutes, client_count: s.client_count }))
-          );
           const dateLabel = new Date(date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
           const isToday = date === today;
 
@@ -169,30 +164,26 @@ export default async function PersonalTrainingPage({
                 )}
               </div>
               {/* Osobny wiersz zamiast jednej długiej, stłoczonej linijki po
-                  prawej stronie daty — godziny okien i obłożenie jako osobne,
-                  czytelne plakietki zamiast zdania ze zbitym "Sala:". */}
+                  prawej stronie daty — godziny okien jako osobne, czytelne
+                  plakietki zamiast zdania ze zbitym "Sala:". Bez zbiorczego
+                  "X/Y osób naraz" dla całego dnia — taka liczba wygląda, jakby
+                  dotyczyła całego dnia naraz, a w rzeczywistości to szczyt z
+                  jednej konkretnej chwili; realne obłożenie widać już przy
+                  konkretnej godzinie w siatce "+ Nowy trening" niżej i przy
+                  każdym treningu z osobna ("n/limit zajęte"). */}
               <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
                 <span className="font-semibold text-zinc-500">Dostępność:</span>
                 {windows.length === 0 ? (
                   <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-400">niedostępna</span>
                 ) : (
-                  <>
-                    {windows.map((w) => (
-                      <span
-                        key={`${w.start_time}-${w.end_time}`}
-                        className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600"
-                      >
-                        {formatHm(w.start_time)}–{formatHm(w.end_time)}
-                      </span>
-                    ))}
+                  windows.map((w) => (
                     <span
-                      className={`rounded-full px-2 py-0.5 font-semibold ${
-                        peak >= roomCapacity ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700"
-                      }`}
+                      key={`${w.start_time}-${w.end_time}`}
+                      className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600"
                     >
-                      {peak}/{roomCapacity} osób naraz
+                      {formatHm(w.start_time)}–{formatHm(w.end_time)}
                     </span>
-                  </>
+                  ))
                 )}
               </div>
 
