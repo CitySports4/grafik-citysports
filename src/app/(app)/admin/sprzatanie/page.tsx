@@ -586,7 +586,14 @@ export default async function CleaningConfigPage({
                   {emp.name}
                 </span>
                 <div className="flex flex-col gap-1">
-                  {Object.entries(SLOT_LABELS).map(([slot, label]) => (
+                  {Object.entries(SLOT_LABELS)
+                    // Zupełnie pomijamy porę dnia, która w CAŁYM tygodniu nigdy
+                    // nie występuje w konfiguracji zmian (np. "Środek", gdy
+                    // żaden dzień nie ma 3. zmiany) — budżet ma pokazywać
+                    // dokładnie układ zmian, nie wymyślone pory, które nigdy
+                    // się nie zdarzą.
+                    .filter(([slot]) => WEEK_DISPLAY_ORDER.some((wd) => freeMinutesByWeekday.get(wd)?.[slot] !== undefined))
+                    .map(([slot, label]) => (
                     // Jeden formularz = cały tydzień naraz dla tej pory dnia —
                     // 7 osobnych "Zapisz" (jeden per dzień) byłoby nie do
                     // ogarnięcia, patrz setTimeBudget w actions.ts.
@@ -595,20 +602,24 @@ export default async function CleaningConfigPage({
                       <input type="hidden" name="slot" value={slot} />
                       <span className="w-[150px] shrink-0 truncate text-xs font-semibold text-zinc-600">{label}</span>
                       {WEEK_DISPLAY_ORDER.map((wd) => {
-                        const value = budgetByEmpSlot.get(`${emp.id}|${slot}|${wd}`) ?? 60;
                         const freeMinutes = freeMinutesByWeekday.get(wd)?.[slot];
-                        const exceeds = freeMinutes !== undefined && value > freeMinutes;
+                        // Ta pora dnia w tym KONKRETNYM dniu tygodnia nie
+                        // istnieje w konfiguracji zmian (np. piątek ma tylko
+                        // 2 zmiany, więc nie ma "Środka") — puste miejsce
+                        // zamiast pola, żeby nie sugerować budżetu na coś,
+                        // co się tego dnia w ogóle nie zdarza.
+                        if (freeMinutes === undefined) {
+                          return <span key={wd} className="w-[42px] shrink-0 text-center text-xs text-zinc-300">—</span>;
+                        }
+                        const value = budgetByEmpSlot.get(`${emp.id}|${slot}|${wd}`) ?? 60;
+                        const exceeds = value > freeMinutes;
                         return (
                           <input
                             key={wd}
                             type="number"
                             name={`budget_${wd}`}
                             defaultValue={value}
-                            title={
-                              freeMinutes !== undefined
-                                ? `${weekdayLabel(wd)} — realnie wolne: ${freeMinutes} min${exceeds ? " (budżet to przekracza)" : ""}`
-                                : undefined
-                            }
+                            title={`${weekdayLabel(wd)} — realnie wolne: ${freeMinutes} min${exceeds ? " (budżet to przekracza)" : ""}`}
                             className={`w-[42px] shrink-0 rounded-lg border px-1 py-1 text-center text-xs ${
                               exceeds ? "border-red-300 bg-red-50 text-red-700" : "border-zinc-300"
                             }`}

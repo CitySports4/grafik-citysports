@@ -195,12 +195,19 @@ export async function setTimeBudget(formData: FormData) {
   const employee_id = String(formData.get("employee_id") ?? "");
   const slot = String(formData.get("slot") ?? "");
   if (!employee_id || !slot) throw new Error("Brak danych.");
-  const rows = Array.from({ length: 7 }, (_, weekday) => ({
-    employee_id,
-    slot,
-    weekday,
-    budget_minutes: parseNumber(formData.get(`budget_${weekday}`), 60),
-  }));
+  // Strona nie renderuje pola dla dnia tygodnia, w którym ta pora dnia w
+  // ogóle nie występuje w konfiguracji zmian (patrz filtrowanie w
+  // page.tsx) — `has()` pomija taki dzień zamiast zapisywać zmyślony budżet
+  // 60 min na coś, co się w tym dniu nigdy nie zdarza.
+  const rows = Array.from({ length: 7 }, (_, weekday) => weekday)
+    .filter((weekday) => formData.has(`budget_${weekday}`))
+    .map((weekday) => ({
+      employee_id,
+      slot,
+      weekday,
+      budget_minutes: parseNumber(formData.get(`budget_${weekday}`), 60),
+    }));
+  if (rows.length === 0) return;
   const supabase = createServerSupabaseClient();
   const { error } = await supabase.from("cleaning_time_budget").upsert(rows, { onConflict: "employee_id,slot,weekday" });
   if (error) throw new Error(dbErrorMessage(error));
