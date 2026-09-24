@@ -175,6 +175,131 @@ export default async function MyGrafikPage({
   const cutoffKey = toDateKey(new Date(new Date().getTime() - EDIT_WINDOW_DAYS * 86400000));
   const visibleDays = tracksHours ? (days ?? []).filter((d) => d.date >= cutoffKey) : days ?? [];
 
+  // "Dziś" potrafiło wypaść nisko na liście (dopiero po kilkunastu minionych
+  // dniach miesiąca) — na BIEŻĄCYM miesiącu dziś i kolejne dni mają być od
+  // razu widoczne na górze, a miniony tydzień schowany za przyciskiem
+  // "Pokaż ostatnie 7 dni". Nawigacja do INNEGO miesiąca (poprzedni/następny)
+  // pokazuje wszystko normalnie, bez podziału — tam "dziś" nie ma znaczenia.
+  const now = new Date();
+  const isCurrentMonthView = year === now.getFullYear() && month === now.getMonth() + 1;
+  const past7Key = toDateKey(new Date(now.getTime() - EDIT_WINDOW_DAYS * 86400000));
+  const pastDays = isCurrentMonthView ? visibleDays.filter((d) => d.date < today && d.date >= past7Key) : [];
+  const upcomingDays = isCurrentMonthView ? visibleDays.filter((d) => d.date >= today) : visibleDays;
+
+  // Wyciągnięte do osobnej funkcji, bo ta sama karta dnia renderuje się teraz
+  // w dwóch miejscach: w zwijanym "ostatnie 7 dni" i w zawsze widocznej
+  // liście "dziś i dalej" (patrz pastDays/upcomingDays wyżej).
+  const renderDay = (day: (typeof visibleDays)[number]) => {
+    const shifts = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
+    const events = day.schedule_event ?? [];
+    const isMyDay = shifts.some((s) => s.employee_id === employee.id);
+    const myShiftsOnly = shifts.filter((s) => s.employee_id === employee.id).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
+    // Do porównania z wpisanymi godzinami (odbiega od grafiku?) liczy się
+    // też udział w wydarzeniach tego dnia (np. sprzątanie przed zmianą) —
+    // patrz shiftsAndEventWindows.
+    const myEventsToday = events.filter((ev) => ev.participant_employee_ids?.includes(employee.id));
+    const myShiftsRaw = shiftsAndEventWindows(myShiftsOnly, myEventsToday);
+    const isToday = day.date === today;
+    const dateLabelStr = new Date(day.date + "T00:00:00").toLocaleDateString("pl-PL", {
+      day: "numeric",
+      month: "short",
+    });
+    return (
+      <Card
+        key={day.id}
+        className={`!p-3 ${isMyDay ? "border-brand-orange bg-brand-orange/5" : ""} ${isToday ? "ring-2 ring-brand-blue" : ""}`}
+      >
+        <div className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold capitalize text-zinc-900">
+          {dateLabelStr} — {weekdayLabel(day.weekday)}
+          {isToday && (
+            <span className="rounded-full bg-brand-blue px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+              Dziś
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {shifts.map((shift) => {
+            const emp = shift.employee_id ? employeeById.get(shift.employee_id) : null;
+            const isMe = shift.employee_id === employee.id;
+            const canSwap = isMe && !shift.is_closed && day.date >= today;
+            return (
+              <div
+                key={shift.id}
+                style={isMe && emp ? { backgroundColor: `${emp.color_hex}2e`, borderLeft: `3px solid ${emp.color_hex}` } : undefined}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs ${
+                  isMe ? "text-zinc-900" : "bg-zinc-50 text-zinc-600"
+                } ${shift.is_closed ? "opacity-50" : ""}`}
+              >
+                <span className="font-semibold">
+                  {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
+                </span>
+                {emp && <ColorDot color={emp.color_hex} />}
+                <span>
+                  {shift.is_closed ? "NIECZYNNE" : emp ? emp.name : "— nieprzypisane —"}
+                </span>
+                {canSwap && <SwapButton shiftId={shift.id} />}
+              </div>
+            );
+          })}
+          {shifts.length === 0 && <span className="text-xs text-zinc-400">Zamknięte.</span>}
+        </div>
+        {events.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {events.map((ev) => (
+              <span key={ev.id} className="flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                {ev.start_time ? `${formatHm(ev.start_time)}${ev.end_time ? `–${formatHm(ev.end_time)}` : ""} ` : ""}
+                {EVENT_TYPE_LABELS[ev.type] ?? ev.type}
+                {ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}
+                {(ev.participant_employee_ids ?? []).map((id: string) => {
+                  const p = employeeById.get(id);
+                  return p ? <ColorDot key={id} color={p.color_hex} /> : null;
+                })}
+              </span>
+            ))}
+          </div>
+        )}
+        {(isMyDay || employee.allowRemoteWork) &&
+          tracksHours &&
+          (() => {
+            const dayEntries = timeEntriesByDate.get(day.date) ?? [];
+            const entriesLabel = [...dayEntries]
+              .sort((a, b) => timeToMinutes(a.actualStart) - timeToMinutes(b.actualStart))
+              .map((e) => `${e.actualStart}–${e.actualEnd}${e.isRemote ? " 🏠" : ""}`)
+              .join(", ");
+            if (!isWithinEditWindow(day.date)) {
+              return dayEntries.length > 0 ? (
+                <p className="mt-2 border-t border-zinc-200 pt-2 text-xs text-zinc-500">Godziny: {entriesLabel}</p>
+              ) : null;
+            }
+            // Dzień bez własnej zmiany pokazuje ten sam wpis tylko dla
+            // osoby ze zgodą na pracę zdalną (allowRemoteWork) — inaczej
+            // sekcja w ogóle by się tu nie pojawiła (patrz warunek wyżej).
+            const label = dayEntries.length > 0 ? `Godziny: ${entriesLabel}` : isMyDay ? "Wpisz godziny" : "Wpisz godziny (zdalnie)";
+            return (
+              <details className="group mt-2 border-t border-zinc-200 pt-2">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange marker:content-none">
+                  <span>{label}</span>
+                  <span className="font-normal text-zinc-400 group-open:hidden">{dayEntries.length > 0 ? "— edytuj ▸" : "▸"}</span>
+                  <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
+                </summary>
+                <div className="mt-2">
+                  <DayTimeEntryEditor
+                    dateKey={day.date}
+                    initialEntries={dayEntries}
+                    scheduled={myShiftsRaw}
+                    allowUnscheduled={employee.allowRemoteWork}
+                    addAction={addTimeEntry}
+                    updateAction={updateTimeEntry}
+                    deleteAction={deleteTimeEntry}
+                  />
+                </div>
+              </details>
+            );
+          })()}
+      </Card>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {header}
@@ -202,116 +327,17 @@ export default async function MyGrafikPage({
         </p>
       )}
       <div className="flex flex-col gap-3">
-        {visibleDays.map((day) => {
-          const shifts = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
-          const events = day.schedule_event ?? [];
-          const isMyDay = shifts.some((s) => s.employee_id === employee.id);
-          const myShiftsOnly = shifts.filter((s) => s.employee_id === employee.id).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
-          // Do porównania z wpisanymi godzinami (odbiega od grafiku?) liczy się
-          // też udział w wydarzeniach tego dnia (np. sprzątanie przed zmianą) —
-          // patrz shiftsAndEventWindows.
-          const myEventsToday = events.filter((ev) => ev.participant_employee_ids?.includes(employee.id));
-          const myShiftsRaw = shiftsAndEventWindows(myShiftsOnly, myEventsToday);
-          const isToday = day.date === today;
-          const dateLabelStr = new Date(day.date + "T00:00:00").toLocaleDateString("pl-PL", {
-            day: "numeric",
-            month: "short",
-          });
-          return (
-            <Card
-              key={day.id}
-              className={`!p-3 ${isMyDay ? "border-brand-orange bg-brand-orange/5" : ""} ${isToday ? "ring-2 ring-brand-blue" : ""}`}
-            >
-              <div className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold capitalize text-zinc-900">
-                {dateLabelStr} — {weekdayLabel(day.weekday)}
-                {isToday && (
-                  <span className="rounded-full bg-brand-blue px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                    Dziś
-                  </span>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {shifts.map((shift) => {
-                  const emp = shift.employee_id ? employeeById.get(shift.employee_id) : null;
-                  const isMe = shift.employee_id === employee.id;
-                  const canSwap = isMe && !shift.is_closed && day.date >= today;
-                  return (
-                    <div
-                      key={shift.id}
-                      style={isMe && emp ? { backgroundColor: `${emp.color_hex}2e`, borderLeft: `3px solid ${emp.color_hex}` } : undefined}
-                      className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs ${
-                        isMe ? "text-zinc-900" : "bg-zinc-50 text-zinc-600"
-                      } ${shift.is_closed ? "opacity-50" : ""}`}
-                    >
-                      <span className="font-semibold">
-                        {formatHm(shift.start_time)}–{formatHm(shift.end_time)}
-                      </span>
-                      {emp && <ColorDot color={emp.color_hex} />}
-                      <span>
-                        {shift.is_closed ? "NIECZYNNE" : emp ? emp.name : "— nieprzypisane —"}
-                      </span>
-                      {canSwap && <SwapButton shiftId={shift.id} />}
-                    </div>
-                  );
-                })}
-                {shifts.length === 0 && <span className="text-xs text-zinc-400">Zamknięte.</span>}
-              </div>
-              {events.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {events.map((ev) => (
-                    <span key={ev.id} className="flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-700">
-                      {ev.start_time ? `${formatHm(ev.start_time)}${ev.end_time ? `–${formatHm(ev.end_time)}` : ""} ` : ""}
-                      {EVENT_TYPE_LABELS[ev.type] ?? ev.type}
-                      {ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}
-                      {(ev.participant_employee_ids ?? []).map((id: string) => {
-                        const p = employeeById.get(id);
-                        return p ? <ColorDot key={id} color={p.color_hex} /> : null;
-                      })}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {(isMyDay || employee.allowRemoteWork) &&
-                tracksHours &&
-                (() => {
-                  const dayEntries = timeEntriesByDate.get(day.date) ?? [];
-                  const entriesLabel = [...dayEntries]
-                    .sort((a, b) => timeToMinutes(a.actualStart) - timeToMinutes(b.actualStart))
-                    .map((e) => `${e.actualStart}–${e.actualEnd}${e.isRemote ? " 🏠" : ""}`)
-                    .join(", ");
-                  if (!isWithinEditWindow(day.date)) {
-                    return dayEntries.length > 0 ? (
-                      <p className="mt-2 border-t border-zinc-200 pt-2 text-xs text-zinc-500">Godziny: {entriesLabel}</p>
-                    ) : null;
-                  }
-                  // Dzień bez własnej zmiany pokazuje ten sam wpis tylko dla
-                  // osoby ze zgodą na pracę zdalną (allowRemoteWork) — inaczej
-                  // sekcja w ogóle by się tu nie pojawiła (patrz warunek wyżej).
-                  const label = dayEntries.length > 0 ? `Godziny: ${entriesLabel}` : isMyDay ? "Wpisz godziny" : "Wpisz godziny (zdalnie)";
-                  return (
-                    <details className="group mt-2 border-t border-zinc-200 pt-2">
-                      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange marker:content-none">
-                        <span>{label}</span>
-                        <span className="font-normal text-zinc-400 group-open:hidden">{dayEntries.length > 0 ? "— edytuj ▸" : "▸"}</span>
-                        <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
-                      </summary>
-                      <div className="mt-2">
-                        <DayTimeEntryEditor
-                          dateKey={day.date}
-                          initialEntries={dayEntries}
-                          scheduled={myShiftsRaw}
-                          allowUnscheduled={employee.allowRemoteWork}
-                          addAction={addTimeEntry}
-                          updateAction={updateTimeEntry}
-                          deleteAction={deleteTimeEntry}
-                        />
-                      </div>
-                    </details>
-                  );
-                })()}
-            </Card>
-          );
-        })}
+        {pastDays.length > 0 && (
+          <details className="group rounded-2xl border border-dashed border-zinc-300 p-3">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-500 marker:content-none">
+              <span>Pokaż ostatnie 7 dni</span>
+              <span className="group-open:hidden">▸</span>
+              <span className="hidden group-open:inline">— zwiń ▾</span>
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">{pastDays.map(renderDay)}</div>
+          </details>
+        )}
+        {upcomingDays.map(renderDay)}
       </div>
 
       {requests && requests.length > 0 && (
