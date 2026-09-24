@@ -3,6 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining } from "@/lib/session";
 import { NavDropdown } from "@/components/NavDropdown";
+import { MainContainer } from "@/components/MainContainer";
 import { logout } from "./actions";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -82,7 +83,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </nav>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
+      <MainContainer>{children}</MainContainer>
     </div>
   );
 }
