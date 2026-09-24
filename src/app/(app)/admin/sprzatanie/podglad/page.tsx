@@ -109,7 +109,7 @@ export default async function CleaningMonthPreviewPage({
                     const byAssignee = new Map<string, { name: string; color_hex: string; minutes: number; count: number; budget: number | null }>();
                     const unassignedItems = items.filter((i) => !i.assignee);
                     for (const i of items) {
-                      if (!i.assignee || i.autoCovered) continue;
+                      if (!i.assignee || i.autoCovered || i.pool) continue;
                       const key = i.assignee.name;
                       if (!byAssignee.has(key)) {
                         byAssignee.set(key, { name: i.assignee.name, color_hex: i.assignee.color_hex, minutes: 0, count: 0, budget: i.budgetMinutes });

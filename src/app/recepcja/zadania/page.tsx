@@ -28,6 +28,9 @@ export default async function RecepcjaZadaniaPage() {
                 <span className="flex flex-wrap items-center gap-2">
                   <span className={`font-semibold ${it.done ? "text-emerald-700 line-through" : "text-zinc-900"}`}>{it.name}</span>
                   <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">{it.zoneName}</span>
+                  {it.pool && (
+                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">do wyboru</span>
+                  )}
                   {it.exceedsBudget && (
                     <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">⚠ ponad budżet</span>
                   )}

@@ -43,6 +43,7 @@ export async function addTask(formData: FormData) {
   const carry_pair_task_id = String(formData.get("carry_pair_task_id") ?? "") || null;
   const skip_with_task_id = String(formData.get("skip_with_task_id") ?? "") || null;
   const checklist_template_id = String(formData.get("checklist_template_id") ?? "") || null;
+  const optional = formData.get("optional") === "on";
 
   if (!zone_id || !name) throw new Error("Podaj nazwę zadania.");
 
@@ -58,6 +59,7 @@ export async function addTask(formData: FormData) {
     carry_pair_task_id,
     skip_with_task_id,
     checklist_template_id,
+    optional,
   });
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/admin/sprzatanie");
@@ -69,6 +71,18 @@ export async function toggleTaskActive(formData: FormData) {
   const active = String(formData.get("active") ?? "true") === "true";
   const supabase = createServerSupabaseClient();
   const { error } = await supabase.from("cleaning_task").update({ active: !active }).eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/admin/sprzatanie");
+}
+
+// "Do wyboru" zamiast obowiązkowe — patrz cleaning_task.optional (migracja
+// 0037) i pole `pool` w ResolvedCleaningTask (cleaning.ts).
+export async function toggleTaskOptional(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const optional = String(formData.get("optional") ?? "false") === "true";
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("cleaning_task").update({ optional: !optional }).eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/admin/sprzatanie");
 }

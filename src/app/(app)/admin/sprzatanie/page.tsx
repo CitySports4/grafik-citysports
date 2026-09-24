@@ -13,6 +13,7 @@ import {
   deleteZone,
   addTask,
   toggleTaskActive,
+  toggleTaskOptional,
   deleteTask,
   addChecklistItem,
   deleteChecklistItem,
@@ -85,7 +86,7 @@ export default async function CleaningConfigPage({
     supabase
       .from("cleaning_task")
       .select(
-        "id, zone_id, name, time_minutes, frequency, slot, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+        "id, zone_id, name, time_minutes, frequency, slot, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id, optional"
       )
       .order("sort_order"),
     supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
@@ -210,7 +211,10 @@ export default async function CleaningConfigPage({
             od tego, kto ma tego dnia zmianę (otwarcie/środek/zamknięcie/po zamknięciu) — patrz{" "}
             <span className="font-semibold">/sprzatanie</span>. Zadania nie-codzienne (co tydzień i
             rzadziej) nie mają ustalonego dnia tygodnia — system sam wybiera dzień w danym okresie, w
-            którym kompetentna osoba faktycznie pracuje; zmiana w grafiku sama zmienia ten wybór.
+            którym kompetentna osoba faktycznie pracuje; zmiana w grafiku sama zmienia ten wybór. Zadanie
+            oznaczone jako &quot;do wyboru&quot; nie jest wymagane wprost — trafia do puli kilku kandydatów na
+            widoku dnia, a pracownik sam wybiera i robi tyle, ile zmieści się w jego budżecie czasowym;
+            niewybrane wraca do puli następnego dnia.
           </p>
         </div>
         <Link href="/admin/sprzatanie/podglad" className="shrink-0 rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-900">
@@ -307,6 +311,14 @@ export default async function CleaningConfigPage({
                                     {SLOT_LABELS[task.slot]}
                                     {task.day_constraint ? ` · ${DAY_CONSTRAINT_LABELS[task.day_constraint]}` : ""}
                                   </span>
+                                  {task.optional && (
+                                    <span
+                                      className="ml-1.5 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700"
+                                      title="Nieobowiązkowe — trafia do puli do wyboru na widoku dnia"
+                                    >
+                                      do wyboru
+                                    </span>
+                                  )}
                                   {task.note && <div className="text-xs italic text-zinc-500">{task.note}</div>}
                                   {(carryPair || skipWith) && (
                                     <div className="text-xs text-zinc-400">
@@ -316,6 +328,17 @@ export default async function CleaningConfigPage({
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5">
+                                  <form action={toggleTaskOptional}>
+                                    <input type="hidden" name="id" value={task.id} />
+                                    <input type="hidden" name="optional" value={String(task.optional)} />
+                                    <button
+                                      type="submit"
+                                      className="rounded-lg px-2 py-0.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-200"
+                                      title="Obowiązkowe = zawsze wymagane. Do wyboru = trafia do puli, pracownik wybiera 1-2 z kilku kandydatów."
+                                    >
+                                      {task.optional ? "Ustaw obowiązkowe" : "Ustaw do wyboru"}
+                                    </button>
+                                  </form>
                                   <form action={toggleTaskActive}>
                                     <input type="hidden" name="id" value={task.id} />
                                     <input type="hidden" name="active" value={String(task.active)} />
@@ -447,6 +470,10 @@ export default async function CleaningConfigPage({
                             <label className={LABEL}>Notatka (opcjonalnie)</label>
                             <input name="note" className={`${INPUT} min-w-[160px]`} placeholder="np. Przed pierwszymi zajęciami" />
                           </div>
+                          <label className="mb-1.5 flex items-center gap-1.5 text-xs text-zinc-600">
+                            <input type="checkbox" name="optional" className="h-3.5 w-3.5" />
+                            Do wyboru (nieobowiązkowe)
+                          </label>
                           <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
                             Dodaj zadanie
                           </SubmitButton>

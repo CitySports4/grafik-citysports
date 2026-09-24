@@ -42,6 +42,11 @@ export type CleaningTask = {
   carry_pair_task_id: string | null;
   skip_with_task_id: string | null;
   checklist_template_id: string | null;
+  // Zadanie trafia do "puli do wyboru" (patrz ResolvedCleaningTask.pool)
+  // zamiast być sztywno obowiązkowe — domyślnie true dla zadań "carry"
+  // (mają już siatkę bezpieczeństwa, patrz migracja 0037), ale admin może
+  // to ustawić ręcznie na dowolnym zadaniu.
+  optional: boolean;
 };
 
 // Który pracownik ma którą "rolę dnia" (otwarcie/środek/zamknięcie/po
@@ -318,6 +323,12 @@ export type ResolvedCleaningTask = {
   // zadanie jest tym, które u swojego przypisanego pracownika przekracza
   // budżet minut na tę porę dnia. false na tym etapie zawsze.
   exceedsBudget: boolean;
+  // "Do wyboru", nie obowiązkowe — patrz task.optional. Zadania długo
+  // odkładane (computeOverdueTasks z alert=true) są WYJĄTKOWO wymuszane z
+  // powrotem na obowiązkowe nawet jeśli task.optional — patrz
+  // getCleaningDayItems w cleaning-day.ts, gdzie ustawiane jest to pole dla
+  // wstrzykniętych zaległości.
+  pool: boolean;
 };
 
 // Dla zadań aktywnych danego dnia: przydziel osobę, która i tak pracuje na
@@ -365,7 +376,7 @@ export function resolveTasksForDate(
   return afterSkip.map((task) => {
     const candidate = daySlots[task.slot];
     const competent = candidate ? (competencyByEmployee.get(candidate)?.has(task.zone_id) ?? false) : false;
-    return { task, employeeId: competent ? candidate : null, autoCovered: false, exceedsBudget: false };
+    return { task, employeeId: competent ? candidate : null, autoCovered: false, exceedsBudget: false, pool: task.optional };
   });
 }
 
@@ -525,18 +536,41 @@ export function balanceSlotAssignments(
 // jako `exceedsBudget`. Nic nie usuwa ani nie przydziela na nowo — praca
 // nadal musi zostać zrobiona, to tylko widoczne ostrzeżenie do ręcznej
 // reakcji. Zadania `autoCovered` (już pokryte przez parujące zadanie) nie
-// liczą się do sumy — nie wymagają realnej pracy.
+// liczą się do sumy — nie wymagają realnej pracy. Zadania `pool` (do
+// wyboru) też nie liczą się do sumy — budżet dotyczy WYŁĄCZNIE zadań
+// obowiązkowych; pula celowo oferuje więcej niż się zmieści (patrz
+// capPoolCandidates), więc nie miałoby sensu liczyć ją tą samą miarą.
 export function flagBudgetOverflow(
   resolved: ResolvedCleaningTask[],
   budgetBySlotAndEmployee: Map<string, number>
 ): ResolvedCleaningTask[] {
   const runningBySlotEmployee = new Map<string, number>();
   return resolved.map((r) => {
-    if (!r.employeeId || r.autoCovered) return r;
+    if (!r.employeeId || r.autoCovered || r.pool) return r;
     const key = `${r.employeeId}|${r.task.slot}`;
     const budget = budgetBySlotAndEmployee.get(key) ?? DEFAULT_BUDGET_MINUTES;
     const runningAfter = (runningBySlotEmployee.get(key) ?? 0) + r.task.time_minutes;
     runningBySlotEmployee.set(key, runningAfter);
     return { ...r, exceedsBudget: runningAfter > budget };
+  });
+}
+
+// Pula pokazuje CELOWO więcej zadań niż się zmieści w budżecie (3-5 do
+// wyboru, patrz ustalenia biznesowe) — żeby był realny wybór, nie tylko
+// jedna opcja. Bez limitu mogłaby jednak urosnąć do wszystkich zadań
+// oznaczonych jako `optional` naraz. Ogranicza do `maxPerSlot`
+// kandydatów per (pracownik, pora dnia) — bierze pierwsze w kolejności
+// wejściowej (w cleaning-day.ts wywoływane PO sortowaniu wg bliskości stref,
+// więc to i tak sensowna kolejność). Reszta nie znika z systemu — po prostu
+// nie mieści się w widoku dnia i (będąc nadal "due"/zaległa) naturalnie
+// wróci do puli następnego dnia.
+export function capPoolCandidates(resolved: ResolvedCleaningTask[], maxPerSlot = 5): ResolvedCleaningTask[] {
+  const seenCount = new Map<string, number>();
+  return resolved.filter((r) => {
+    if (!r.pool || !r.employeeId) return true;
+    const key = `${r.employeeId}|${r.task.slot}`;
+    const count = seenCount.get(key) ?? 0;
+    seenCount.set(key, count + 1);
+    return count < maxPerSlot;
   });
 }
