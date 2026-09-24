@@ -20,6 +20,7 @@ type Item = {
   done: boolean;
   budgetMinutes: number | null;
   exceedsBudget: boolean;
+  pool: boolean;
 };
 
 const SLOT_LABELS: Record<Item["slot"], string> = {
@@ -71,17 +72,141 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
     });
   }
 
+  // Wspólna karta zadania — używana zarówno dla obowiązkowych, jak i tych
+  // "do wyboru" (pool), żeby zaznaczanie/checklisty działały identycznie w
+  // obu miejscach zamiast duplikować tę logikę osobno dla puli.
+  function renderCard(it: Item) {
+    return (
+      <div
+        key={it.taskId}
+        className={`rounded-xl border p-3 ${
+          it.done
+            ? "border-emerald-200 bg-emerald-50"
+            : it.autoCovered
+              ? "border-zinc-100 bg-zinc-50 opacity-60"
+              : it.pool
+                ? "border-violet-200 bg-white"
+                : "border-zinc-200 bg-white"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {it.checklist.length === 0 && !it.autoCovered && (
+              // Widoczny kwadracik zostaje mały (h-5 w-5), ale
+              // obszar reagujący na dotyk jest większy (ujemny margines
+              // + padding) — na telefonie 20×20px to za mało, żeby
+              // wygodnie trafić palcem.
+              <button
+                type="button"
+                onClick={() => handleToggleDone(it.taskId)}
+                className="-m-2 flex shrink-0 items-center justify-center rounded p-2"
+              >
+                <span
+                  className={`flex h-5 w-5 items-center justify-center rounded border-2 ${
+                    it.done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
+                  }`}
+                >
+                  {it.done ? "✓" : ""}
+                </span>
+              </button>
+            )}
+            <span className={`text-sm font-semibold ${it.done ? "text-emerald-700 line-through" : "text-zinc-900"}`}>{it.name}</span>
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">{it.zoneName}</span>
+            <span className="text-xs text-zinc-400">{it.timeMinutes} min</span>
+            {it.autoCovered && (
+              <span
+                className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold text-zinc-600"
+                title="Pokryte parującym zadaniem (rano/wieczór) albo zaplanowanym sprzątaniem następnego dnia — niewymagane dziś"
+              >
+                niewymagane dziś
+              </span>
+            )}
+            {it.overdue && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  it.overdue.alert ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                zaległe {it.overdue.daysLate} dni
+              </span>
+            )}
+            {it.coverageGap && (
+              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                brak kompetentnej osoby w cyklu
+              </span>
+            )}
+            {it.exceedsBudget && (
+              <span
+                className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700"
+                title="Suma minut tej osoby na tę porę dnia przekracza jej budżet czasowy"
+              >
+                ⚠ ponad budżet
+              </span>
+            )}
+          </div>
+          {it.assignee ? (
+            <span className="flex items-center gap-1 text-xs text-zinc-600">
+              <ColorDot color={it.assignee.color_hex} />
+              {it.assignee.name}
+            </span>
+          ) : it.pool ? null : (
+            <span className="text-xs font-bold text-red-500">⚠ brak przypisania</span>
+          )}
+        </div>
+        {it.note && <p className="mt-1 text-xs italic text-zinc-500">{it.note}</p>}
+        {it.checklist.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1 border-t border-zinc-100 pt-2">
+            <div className="flex items-center justify-end gap-3 text-[11px] font-semibold">
+              <button type="button" onClick={() => handleSetAllChecklist(it.taskId, true)} className="text-emerald-600 hover:text-emerald-800">
+                Zaznacz wszystko
+              </button>
+              <button type="button" onClick={() => handleSetAllChecklist(it.taskId, false)} className="text-zinc-400 hover:text-zinc-600">
+                Odznacz wszystko
+              </button>
+            </div>
+            <ul className="flex flex-col gap-1">
+              {it.checklist.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleChecklist(it.taskId, c.id)}
+                    className="flex w-full items-center gap-2 rounded-lg px-1 py-2 text-left text-xs hover:bg-zinc-50"
+                  >
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${
+                        c.done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
+                      }`}
+                    >
+                      {c.done ? "✓" : ""}
+                    </span>
+                    <span className={c.done ? "text-zinc-400 line-through" : "text-zinc-700"}>{c.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5">
       {SLOT_ORDER.map((slot) => {
         const slotItems = state.filter((it) => it.slot === slot);
         if (slotItems.length === 0) return null;
+        // Obowiązkowe (widok jak dotąd) vs "do wyboru" — pula kandydatów, z
+        // których pracownik sam wybiera 1-2, ile mu się zmieści w budżecie
+        // (patrz pool w cleaning-day.ts / cleaning.ts).
+        const mandatoryItems = slotItems.filter((it) => !it.pool);
+        const poolItems = slotItems.filter((it) => it.pool);
 
         // Suma minut per przypisana osoba w tym slocie (bez autoCovered — nie
-        // wymaga realnej pracy) względem jej budżetu na tę porę dnia — widoczne
+        // wymaga realnej pracy, i bez puli — nie liczy się do budżetu, patrz
+        // flagBudgetOverflow) względem jej budżetu na tę porę dnia — widoczne
         // od razu na widoku dnia, nie tylko przy edycji budżetu w panelu.
         const totalsByAssignee = new Map<string, { name: string; color: string; minutes: number; budget: number | null }>();
-        for (const it of slotItems) {
+        for (const it of mandatoryItems) {
           if (!it.assignee || it.autoCovered) continue;
           const key = it.assignee.name;
           const entry = totalsByAssignee.get(key) ?? { name: it.assignee.name, color: it.assignee.color_hex, minutes: 0, budget: it.budgetMinutes };
@@ -108,114 +233,15 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
                 );
               })}
             </div>
-            <div className="flex flex-col gap-2">
-              {slotItems.map((it) => (
-                <div
-                  key={it.taskId}
-                  className={`rounded-xl border p-3 ${
-                    it.done ? "border-emerald-200 bg-emerald-50" : it.autoCovered ? "border-zinc-100 bg-zinc-50 opacity-60" : "border-zinc-200 bg-white"
-                  }`}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      {it.checklist.length === 0 && !it.autoCovered && (
-                        // Widoczny kwadracik zostaje mały (h-5 w-5), ale
-                        // obszar reagujący na dotyk jest większy (ujemny margines
-                        // + padding) — na telefonie 20×20px to za mało, żeby
-                        // wygodnie trafić palcem.
-                        <button
-                          type="button"
-                          onClick={() => handleToggleDone(it.taskId)}
-                          className="-m-2 flex shrink-0 items-center justify-center rounded p-2"
-                        >
-                          <span
-                            className={`flex h-5 w-5 items-center justify-center rounded border-2 ${
-                              it.done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
-                            }`}
-                          >
-                            {it.done ? "✓" : ""}
-                          </span>
-                        </button>
-                      )}
-                      <span className={`text-sm font-semibold ${it.done ? "text-emerald-700 line-through" : "text-zinc-900"}`}>{it.name}</span>
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">{it.zoneName}</span>
-                      <span className="text-xs text-zinc-400">{it.timeMinutes} min</span>
-                      {it.autoCovered && (
-                        <span
-                          className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold text-zinc-600"
-                          title="Pokryte parującym zadaniem (rano/wieczór) albo zaplanowanym sprzątaniem następnego dnia — niewymagane dziś"
-                        >
-                          niewymagane dziś
-                        </span>
-                      )}
-                      {it.overdue && (
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            it.overdue.alert ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
-                          }`}
-                        >
-                          zaległe {it.overdue.daysLate} dni
-                        </span>
-                      )}
-                      {it.coverageGap && (
-                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
-                          brak kompetentnej osoby w cyklu
-                        </span>
-                      )}
-                      {it.exceedsBudget && (
-                        <span
-                          className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700"
-                          title="Suma minut tej osoby na tę porę dnia przekracza jej budżet czasowy"
-                        >
-                          ⚠ ponad budżet
-                        </span>
-                      )}
-                    </div>
-                    {it.assignee ? (
-                      <span className="flex items-center gap-1 text-xs text-zinc-600">
-                        <ColorDot color={it.assignee.color_hex} />
-                        {it.assignee.name}
-                      </span>
-                    ) : (
-                      <span className="text-xs font-bold text-red-500">⚠ brak przypisania</span>
-                    )}
-                  </div>
-                  {it.note && <p className="mt-1 text-xs italic text-zinc-500">{it.note}</p>}
-                  {it.checklist.length > 0 && (
-                    <div className="mt-2 flex flex-col gap-1 border-t border-zinc-100 pt-2">
-                      <div className="flex items-center justify-end gap-3 text-[11px] font-semibold">
-                        <button type="button" onClick={() => handleSetAllChecklist(it.taskId, true)} className="text-emerald-600 hover:text-emerald-800">
-                          Zaznacz wszystko
-                        </button>
-                        <button type="button" onClick={() => handleSetAllChecklist(it.taskId, false)} className="text-zinc-400 hover:text-zinc-600">
-                          Odznacz wszystko
-                        </button>
-                      </div>
-                      <ul className="flex flex-col gap-1">
-                        {it.checklist.map((c) => (
-                          <li key={c.id}>
-                            <button
-                              type="button"
-                              onClick={() => handleToggleChecklist(it.taskId, c.id)}
-                              className="flex w-full items-center gap-2 rounded-lg px-1 py-2 text-left text-xs hover:bg-zinc-50"
-                            >
-                              <span
-                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${
-                                  c.done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
-                                }`}
-                              >
-                                {c.done ? "✓" : ""}
-                              </span>
-                              <span className={c.done ? "text-zinc-400 line-through" : "text-zinc-700"}>{c.label}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            <div className="flex flex-col gap-2">{mandatoryItems.map((it) => renderCard(it))}</div>
+            {poolItems.length > 0 && (
+              <div className="mt-3 rounded-xl border border-dashed border-violet-200 bg-violet-50/40 p-3">
+                <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-violet-500">
+                  Do wyboru — zrób 1-2, ile się zmieści w budżecie
+                </h4>
+                <div className="flex flex-col gap-2">{poolItems.map((it) => renderCard(it))}</div>
+              </div>
+            )}
           </div>
         );
       })}

@@ -10,6 +10,7 @@ import {
   computeCoverageGaps,
   balanceSlotAssignments,
   flagBudgetOverflow,
+  capPoolCandidates,
   allCycleWindows,
   DEFAULT_BUDGET_MINUTES,
   type CleaningTask,
@@ -40,6 +41,10 @@ export type CleaningDayItem = {
   // flagBudgetOverflow).
   budgetMinutes: number | null;
   exceedsBudget: boolean;
+  // "Do wyboru" (patrz cleaning_task.optional) — pracownik wybiera 1-2 z
+  // kilku takich kandydatów na daną porę dnia, reszta nie jest wymagana i
+  // (jeśli nadal due/zaległa) wraca do puli następnego dnia.
+  pool: boolean;
 };
 
 // Ile dni wstecz liczymy "ostatnie obciążenie" osoby minutami sprzątania na
@@ -140,7 +145,7 @@ function staticRowQueries(supabase: ReturnType<typeof createServerSupabaseClient
     tasks: supabase
       .from("cleaning_task")
       .select(
-        "id, zone_id, name, time_minutes, frequency, slot, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id"
+        "id, zone_id, name, time_minutes, frequency, slot, active, day_constraint, note, carry_pair_task_id, skip_with_task_id, checklist_template_id, optional"
       )
       .eq("active", true),
     checklistItems: supabase.from("cleaning_checklist_item").select("id, task_id, label, sort_order").order("sort_order"),
@@ -375,7 +380,13 @@ export async function getCleaningDayItems(
   for (const o of overdue) {
     const candidate = daySlots[o.task.slot];
     const competent = candidate ? (competencyByEmployee.get(candidate)?.has(o.task.zone_id) ?? false) : false;
-    resolved.push({ task: o.task, employeeId: competent ? candidate : null, autoCovered: false, exceedsBudget: false });
+    // Zadanie "do wyboru" długo odkładane (alert = spóźnione ≥2 dni ponad
+    // swoją częstotliwość) jest wymuszane z powrotem na obowiązkowe — patrz
+    // ustalenia: "Codzienne, albo długo odkładane [są obowiązkowe]". Dopóki
+    // nie jest jeszcze w alarmie, zostaje w puli (jeszcze jedna szansa na
+    // dobrowolny wybór, zanim stanie się wymuszone).
+    const pool = o.task.optional && !o.alert;
+    resolved.push({ task: o.task, employeeId: competent ? candidate : null, autoCovered: false, exceedsBudget: false, pool });
   }
   const overdueByTask = new Map(overdue.map((o) => [o.task.id, o]));
 
@@ -388,7 +399,7 @@ export async function getCleaningDayItems(
     (g) => !resolvedIds2.has(g.task.id)
   );
   for (const g of coverageGaps) {
-    resolved.push({ task: g.task, employeeId: null, autoCovered: false, exceedsBudget: false });
+    resolved.push({ task: g.task, employeeId: null, autoCovered: false, exceedsBudget: false, pool: false });
   }
   const coverageGapIds = new Set(coverageGaps.map((g) => g.task.id));
 
@@ -405,6 +416,7 @@ export async function getCleaningDayItems(
   // flagBudgetOverflow). Po sortowaniu, żeby "co się nie zmieściło" liczyło
   // się w tej samej kolejności, w jakiej dana osoba faktycznie by to robiła.
   resolved = flagBudgetOverflow(resolved, effectiveBudgetBySlotAndEmployee);
+  resolved = capPoolCandidates(resolved);
 
   const taskIds = resolved.map((r) => r.task.id);
   const { data: completions } =
@@ -426,6 +438,7 @@ export async function getCleaningDayItems(
     coverageGap: coverageGapIds.has(r.task.id),
     budgetMinutes: r.employeeId ? effectiveBudgetBySlotAndEmployee.get(`${r.employeeId}|${r.task.slot}`) ?? null : null,
     exceedsBudget: r.exceedsBudget,
+    pool: r.pool,
     checklist: checklistFor(r.task).map((c) => ({
       id: c.id,
       label: c.label,
