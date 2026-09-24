@@ -18,6 +18,7 @@ import {
   movePersonalTrainingSeries,
   cancelPersonalTrainingSession,
   cancelPersonalTrainingSeries,
+  extendPersonalTrainingSeries,
   togglePersonalTrainingSettled,
   addRoomBlock,
   deleteRoomBlock,
@@ -97,6 +98,26 @@ export default async function PersonalTrainingPage({
     if (!sessionsByDate.has(s.date)) sessionsByDate.set(s.date, []);
     sessionsByDate.get(s.date)!.push(s);
   }
+
+  // Żeby wiedzieć, czy trening widoczny w TYM tygodniu jest ostatnim
+  // zaplanowanym wystąpieniem swojej serii (i pokazać przy nim podpowiedź
+  // "przedłuż") — sam widok tygodnia tego nie wie, bo seria mogła zacząć się
+  // dawno temu i kończyć w innym tygodniu niż aktualnie oglądany.
+  const seriesIds = Array.from(
+    new Set((sessions ?? []).map((s) => s.series_id).filter((id): id is string => !!id))
+  );
+  const lastDateBySeriesId = new Map<string, string>();
+  if (seriesIds.length > 0) {
+    const { data: seriesRows } = await supabase
+      .from("personal_training_session")
+      .select("series_id, date")
+      .in("series_id", seriesIds)
+      .eq("status", "scheduled")
+      .order("date", { ascending: false });
+    for (const row of seriesRows ?? []) {
+      if (row.series_id && !lastDateBySeriesId.has(row.series_id)) lastDateBySeriesId.set(row.series_id, row.date);
+    }
+  }
   const blocksByDate = new Map<string, BlockRow[]>();
   for (const b of (blockRows ?? []) as BlockRow[]) {
     if (!blocksByDate.has(b.date)) blocksByDate.set(b.date, []);
@@ -135,11 +156,11 @@ export default async function PersonalTrainingPage({
           <Link href={`/treningi-personalne/rozliczenia`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             Rozliczenia
           </Link>
-          <Link href={`?monday=${prevMonday}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+          <Link href={`?monday=${prevMonday}`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             ← poprzedni tydzień
           </Link>
-          <Link href={`?monday=${nextMonday}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
-            następny →
+          <Link href={`?monday=${nextMonday}`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+            następny tydzień →
           </Link>
         </div>
       </div>
@@ -239,6 +260,8 @@ export default async function PersonalTrainingPage({
                         moveSeriesAction={movePersonalTrainingSeries}
                         cancelAction={cancelPersonalTrainingSession}
                         cancelSeriesAction={cancelPersonalTrainingSeries}
+                        extendSeriesAction={extendPersonalTrainingSeries}
+                        isLastInSeries={!!s.series_id && lastDateBySeriesId.get(s.series_id) === s.date}
                         toggleAction={canPreview ? togglePersonalTrainingSettled : undefined}
                       />
                     );

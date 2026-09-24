@@ -374,6 +374,82 @@ export async function movePersonalTrainingSeries(formData: FormData) {
   revalidatePath("/treningi-personalne");
 }
 
+// Dokłada kolejne cotygodniowe wystąpienia NA KOŃCU istniejącej serii —
+// ta sama godzina/czas trwania/liczba osób/imię klienta co ostatni już
+// zaplanowany trening tej serii, zaczynając tydzień po nim. Trener widzi
+// podpowiedź o przedłużeniu dokładnie wtedy, gdy patrzy na ostatni
+// zaplanowany trening serii (patrz lastDateBySeriesId w page.tsx) — to
+// samo sprawdzenie dostępności co przy zakładaniu nowej serii, żeby
+// przedłużenie nie wepchnęło treningu w już zajęty termin.
+export async function extendPersonalTrainingSeries(formData: FormData) {
+  const { trainerId } = await resolveTrainerActor(formData);
+
+  const seriesId = String(formData.get("series_id") ?? "");
+  const extendUntil = String(formData.get("extend_until") ?? "") || null;
+  const extendCountRaw = String(formData.get("extend_count") ?? "") || null;
+  const extendCount = extendCountRaw ? Number(extendCountRaw) : null;
+  if (!seriesId) throw new Error("Brak serii do przedłużenia.");
+  if (!extendUntil && !extendCount) {
+    throw new Error("Podaj nową datę końcową albo liczbę dodatkowych powtórzeń.");
+  }
+
+  const supabase = createServerSupabaseClient();
+  const { data: lastRows } = await supabase
+    .from("personal_training_session")
+    .select("date, start_time, duration_minutes, client_count, client_name")
+    .eq("series_id", seriesId)
+    .eq("trainer_employee_id", trainerId)
+    .eq("status", "scheduled")
+    .order("date", { ascending: false })
+    .limit(1);
+  const last = lastRows?.[0];
+  if (!last) throw new Error("Nie znaleziono serii.");
+
+  const nextDate = toDateKey(new Date(new Date(last.date + "T00:00:00").getTime() + 7 * 86400000));
+  const dates = weeklyOccurrenceDates(nextDate, extendUntil, extendCount);
+  if (dates.length === 0) throw new Error("Nieprawidłowy zakres przedłużenia.");
+
+  const weekday = new Date(nextDate + "T00:00:00").getDay();
+  const startMin = timeToMinutes(last.start_time);
+  const settings = await getSettings(supabase);
+
+  const availability = await checkAvailability(
+    supabase,
+    dates,
+    weekday,
+    startMin,
+    last.duration_minutes,
+    last.client_count,
+    settings.room_capacity,
+    undefined,
+    seriesId
+  );
+  if (!availability.ok) {
+    const suggestionText = availability.suggestion
+      ? ` Najbliższy wolny termin tego dnia: ${availability.suggestion}.`
+      : " Brak wolnego terminu tego dnia w godzinach otwarcia sali.";
+    const dateLabel = new Date(availability.conflictDate + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+    throw new Error(`Sala pełna o tej porze (${dateLabel}) — przekroczony limit osób lub poza godzinami otwarcia.${suggestionText}`);
+  }
+
+  const rows = dates.map((d) => ({
+    trainer_employee_id: trainerId,
+    series_id: seriesId,
+    date: d,
+    start_time: last.start_time,
+    duration_minutes: last.duration_minutes,
+    client_count: last.client_count,
+    client_name: last.client_name,
+    rate_per_person_snapshot: settings.rate_per_person,
+  }));
+
+  const { error } = await supabase.from("personal_training_session").insert(rows);
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/treningi-personalne");
+  revalidatePath("/treningi-personalne/rozliczenia");
+}
+
 // Odwołuje JEDNO wystąpienie — jeśli było opłacone z góry, kwota od razu
 // automatycznie próbuje przejść na najbliższy kolejny nierozliczony trening
 // tego trenera (patrz applyPendingCredits).

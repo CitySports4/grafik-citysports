@@ -35,6 +35,8 @@ export function EditableSessionRow({
   moveSeriesAction,
   cancelAction,
   cancelSeriesAction,
+  extendSeriesAction,
+  isLastInSeries,
   toggleAction,
 }: {
   session: EditableSession;
@@ -45,6 +47,11 @@ export function EditableSessionRow({
   moveSeriesAction: (formData: FormData) => Promise<void>;
   cancelAction: (formData: FormData) => Promise<void>;
   cancelSeriesAction: (formData: FormData) => Promise<void>;
+  extendSeriesAction?: (formData: FormData) => Promise<void>;
+  // true, gdy TO wystąpienie jest ostatnim zaplanowanym w swojej serii —
+  // liczone przez rodzica (patrz lastDateBySeriesId w page.tsx), bo sam ten
+  // komponent widzi tylko siebie, nie całą serię.
+  isLastInSeries?: boolean;
   // Podane tylko dla recepcji/admina — plain trener nie oznacza sam sobie
   // rozliczenia (patrz canPreviewPersonalTraining), widzi wtedy tylko
   // statyczną plakietkę.
@@ -54,7 +61,11 @@ export function EditableSessionRow({
   const [moveScope, setMoveScope] = useState<"single" | "series">("single");
   const [moveDate, setMoveDate] = useState(session.date);
   const [moveTime, setMoveTime] = useState(session.startTime);
-  const [pending, setPending] = useState<"move" | "delete" | "delete-series" | null>(null);
+  const [showExtend, setShowExtend] = useState(false);
+  const [extendMode, setExtendMode] = useState<"until" | "count">("until");
+  const [extendUntil, setExtendUntil] = useState("");
+  const [extendCount, setExtendCount] = useState("");
+  const [pending, setPending] = useState<"move" | "delete" | "delete-series" | "extend" | null>(null);
   const [error, setError] = useState("");
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -89,6 +100,32 @@ export function EditableSessionRow({
       setError(friendlyActionError(err));
       const match = raw.match(/(\d{2}:\d{2})\.?\s*$/);
       if (match) setSuggestion(match[1]);
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function handleExtend() {
+    if (!session.seriesId || !extendSeriesAction) return;
+    setPending("extend");
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.set("trainer_employee_id", trainerEmployeeId);
+      fd.set("series_id", session.seriesId);
+      if (extendMode === "until") fd.set("extend_until", extendUntil);
+      else fd.set("extend_count", extendCount);
+      await extendSeriesAction(fd);
+      setShowExtend(false);
+      setExtendUntil("");
+      setExtendCount("");
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2500);
+    } catch (err) {
+      // Bez podpowiedzi "zastosuj HH:MM" jak przy przenoszeniu — przedłużenie
+      // zawsze zachowuje tę samą godzinę co reszta serii, nie ma tu pola
+      // godziny do podstawienia.
+      setError(friendlyActionError(err));
     } finally {
       setPending(null);
     }
@@ -153,6 +190,65 @@ export function EditableSessionRow({
         <span>{session.amount.toFixed(2)} PLN</span>
         {session.settledNote && <span className="text-zinc-400">· {session.settledNote}</span>}
       </div>
+
+      {session.seriesId && isLastInSeries && extendSeriesAction && (
+        <div className="rounded-lg border border-dashed border-brand-orange/50 bg-brand-orange/5 p-2 text-xs">
+          <p className="font-semibold text-zinc-700">To ostatni zaplanowany trening tej serii.</p>
+          {!showExtend ? (
+            <button
+              type="button"
+              onClick={() => setShowExtend(true)}
+              className="mt-1.5 rounded-lg bg-brand-orange px-2.5 py-1 text-xs font-bold text-white hover:bg-brand-orange-dark"
+            >
+              Przedłuż serię
+            </button>
+          ) : (
+            <div className="mt-1.5 flex flex-col gap-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1 text-zinc-600">
+                  <input type="radio" checked={extendMode === "until"} onChange={() => setExtendMode("until")} /> do daty
+                </label>
+                <input
+                  type="date"
+                  disabled={extendMode !== "until"}
+                  value={extendUntil}
+                  onChange={(e) => setExtendUntil(e.target.value)}
+                  className={`${INPUT_SM} w-[140px] disabled:opacity-40`}
+                />
+                <label className="flex items-center gap-1 text-zinc-600">
+                  <input type="radio" checked={extendMode === "count"} onChange={() => setExtendMode("count")} /> o kolejne
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  disabled={extendMode !== "count"}
+                  value={extendCount}
+                  onChange={(e) => setExtendCount(e.target.value)}
+                  className={`${INPUT_SM} w-[70px] disabled:opacity-40`}
+                />
+                <span className="text-zinc-500">powtórzeń</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={pending !== null}
+                  onClick={handleExtend}
+                  className="rounded-lg bg-brand-orange px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+                >
+                  {pending === "extend" ? "Przedłużanie…" : "Zastosuj"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowExtend(false)}
+                  className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
+                >
+                  Anuluj
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {showMove && (
         <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-2.5">
