@@ -45,7 +45,7 @@ export default async function ScheduleBuilderPage({
     // nie powinny się tu pojawiać jako osoby do przypisania na zmianę.
     supabase
       .from("employee")
-      .select("id, name, color_hex, min_hours_month, target_hours_month, hourly_rate, employee_role!inner(role)")
+      .select("id, name, short_name, color_hex, min_hours_month, target_hours_month, hourly_rate, employee_role!inner(role)")
       .eq("active", true)
       .eq("employee_role.role", "recepcja")
       .order("name"),

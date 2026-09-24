@@ -21,6 +21,7 @@ import { weekdayLabel } from "@/lib/weekdays";
 import { ColorDot } from "@/components/ColorDot";
 import { EVENT_TYPE_LABELS } from "@/lib/event-types";
 import { Banner } from "@/components/Banner";
+import { scheduleDisplayName } from "@/lib/employee-name";
 
 type ShiftRow = {
   id: string;
@@ -43,6 +44,7 @@ type DayRow = { id: string; date: string; weekday: number; shifts: ShiftRow[]; e
 type Employee = {
   id: string;
   name: string;
+  short_name: string | null;
   color_hex: string;
   can_clean: boolean;
   min_hours_month: number;
@@ -450,7 +452,7 @@ export function ScheduleTable({
                                 <option value="">— nieprzypisane —</option>
                                 {options.map((e) => (
                                   <option key={e.id} value={e.id} style={{ color: e.color_hex }}>
-                                    {e.name}
+                                    {scheduleDisplayName(e)}
                                     {workingElsewhereTodayIds.has(e.id) && e.id !== shift.employee_id ? " (już dziś pracuje)" : ""}
                                   </option>
                                 ))}
