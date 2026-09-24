@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { assertCronSecret, getAiNoteAuthorId } from "@/lib/cron-auth";
+import { assertCronSecret } from "@/lib/cron-auth";
 import { toDateKey } from "@/lib/schedule-month";
 
 // Retencja danych — ustalone z adminem (nie jestem prawnikiem, to
@@ -108,29 +108,14 @@ export async function GET(request: Request) {
 
   const totalChanged =
     (completionsDeleted ?? 0) + (aiChoicesDeleted ?? 0) + archivedCount + (archivePurged ?? 0) + monthsDeleted;
-  if (totalChanged === 0) {
-    return NextResponse.json({ ok: true, changed: 0 });
-  }
 
-  const lines = [
-    `🧹 Automatyczne czyszczenie/archiwizacja danych (retencja):`,
-    `- Historia sprzątania starsza niż 3 mies. (przed ${threeMonthsAgoKey}) — usunięta: ${completionsDeleted ?? 0} wykonań zadań, ${aiChoicesDeleted ?? 0} wyborów AI dnia.`,
-    `- Ewidencja godzin starsza niż 3 mies. — przeniesiona do archiwum: ${archivedCount} wpisów.`,
-    `- Ewidencja godzin starsza niż 5 lat (przed ${fiveYearsAgoKey}) — usunięta trwale z archiwum: ${archivePurged ?? 0} wpisów.`,
-    `- Grafik starszy niż 5 lat — usunięty: ${monthsDeleted} miesięcy.`,
-  ];
-
-  const authorId = await getAiNoteAuthorId(supabase);
-  const { error } = await supabase.from("note").insert({
-    author_employee_id: authorId,
-    title: "🧹 Czyszczenie danych — cotygodniowa retencja",
-    body: lines.join("\n"),
-    status: "done",
-    source: "ai",
+  return NextResponse.json({
+    ok: true,
+    changed: totalChanged,
+    completionsDeleted: completionsDeleted ?? 0,
+    aiChoicesDeleted: aiChoicesDeleted ?? 0,
+    archivedCount,
+    archivePurged: archivePurged ?? 0,
+    monthsDeleted,
   });
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, changed: totalChanged });
 }

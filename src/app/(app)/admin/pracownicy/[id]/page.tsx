@@ -48,7 +48,6 @@ export default async function EmployeeDetailPage({
     { data: plannedAbsences },
     { count: futureShiftCount },
     { count: zoneCount },
-    { count: noteCount },
     { count: timeEntryCount },
     { count: absenceTotalCount },
   ] = await Promise.all([
@@ -77,7 +76,6 @@ export default async function EmployeeDetailPage({
       .eq("employee_id", id)
       .gte("schedule_day.date", today),
     supabase.from("employee_cleaning_zone").select("employee_id", { count: "exact", head: true }).eq("employee_id", id),
-    supabase.from("note").select("id", { count: "exact", head: true }).eq("author_employee_id", id),
     supabase.from("time_entry").select("id", { count: "exact", head: true }).eq("employee_id", id),
     supabase.from("planned_absence").select("id", { count: "exact", head: true }).eq("employee_id", id),
   ]);
@@ -388,7 +386,6 @@ export default async function EmployeeDetailPage({
           if (zoneCount) impacts.push(`${zoneCount} przypisanych stref sprzątania zostanie skasowanych`);
           if (timeEntryCount) impacts.push(`${timeEntryCount} zapisanych wpisów godzin pracy zostanie skasowanych`);
           if (absenceTotalCount) impacts.push(`${absenceTotalCount} zaplanowanych nieobecności zostanie skasowanych`);
-          if (noteCount) impacts.push(`${noteCount} zadań autorstwa tej osoby zostanie skasowanych`);
           return (
             <>
               {impacts.length > 0 ? (
