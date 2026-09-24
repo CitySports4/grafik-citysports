@@ -43,9 +43,11 @@ export type CleaningTask = {
   skip_with_task_id: string | null;
   checklist_template_id: string | null;
   // Zadanie trafia do "puli do wyboru" (patrz ResolvedCleaningTask.pool)
-  // zamiast być sztywno obowiązkowe — domyślnie true dla zadań "carry"
-  // (mają już siatkę bezpieczeństwa, patrz migracja 0037), ale admin może
-  // to ustawić ręcznie na dowolnym zadaniu.
+  // zamiast być sztywno obowiązkowe — domyślnie true tylko dla WIECZORNEJ
+  // strony pary "carry" (zamkniecie/po_zamknieciu), NIE dla porannej — patrz
+  // migracje 0037+0038: poranna strona musi zostać obowiązkowa, żeby była
+  // faktyczna siatka bezpieczeństwa, gdy wieczorem nikt tego nie wybrał.
+  // Admin może to ustawić ręcznie na dowolnym zadaniu.
   optional: boolean;
 };
 
