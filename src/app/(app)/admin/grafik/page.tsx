@@ -84,7 +84,7 @@ export default async function ScheduleBuilderPage({
 
   const unavailableByDayAndSlot: Record<string, Record<number, string[]>> = {};
   const unavailableWholeDay: Record<string, string[]> = {};
-  const unavailablePartialDay: Record<string, string[]> = {};
+  const unavailablePartialDay: Record<string, { employeeId: string; start_time: string; end_time: string }[]> = {};
 
   if (hasStructure) {
     const constraints = (allConstraints ?? []).filter((c) => c.type === "unavailable");
@@ -146,14 +146,15 @@ export default async function ScheduleBuilderPage({
       // widział niedostępność tylko wtedy, gdy akurat przypisał na tę zmianę
       // kogoś, kto ją zgłosił (patrz ostrzeżenie w komórce zmiany niżej), a
       // przy jeszcze nieprzypisanych zmianach częściowa niedostępność ginęła
-      // całkowicie z widoku.
-      const partialIds = new Set<string>();
-      for (const ids of Object.values(bySlotIds)) {
-        for (const id of ids) {
-          if (!wholeDayIds.includes(id)) partialIds.add(id);
+      // całkowicie z widoku. Samo imię bez godzin nie wystarcza — admin musi
+      // wiedzieć KTÓREJ zmiany to dotyczy, więc zapisujemy też jej godziny.
+      const partial: { employeeId: string; start_time: string; end_time: string }[] = [];
+      for (const shift of day.schedule_shift ?? []) {
+        for (const id of bySlotIds[shift.slot_index] ?? []) {
+          if (!wholeDayIds.includes(id)) partial.push({ employeeId: id, start_time: shift.start_time, end_time: shift.end_time });
         }
       }
-      unavailablePartialDay[day.date] = Array.from(partialIds);
+      unavailablePartialDay[day.date] = partial;
     }
   }
 
