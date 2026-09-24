@@ -4,6 +4,7 @@ import { findScheduleMonth, currentMonth, monthLabel } from "@/lib/schedule-mont
 import { formatHm } from "@/lib/time";
 import { weekdayLabel } from "@/lib/weekdays";
 import { EVENT_TYPE_LABELS } from "@/lib/event-types";
+import { scheduleDisplayName } from "@/lib/employee-name";
 import { PrintButton } from "./PrintButton";
 import { PrintScaler } from "./PrintScaler";
 
@@ -110,7 +111,7 @@ export default async function PrintGrafikPage({
       )
       .eq("schedule_month_id", scheduleMonth.id)
       .order("date"),
-    supabase.from("employee").select("id, name, color_hex").eq("active", true).order("name"),
+    supabase.from("employee").select("id, name, short_name, color_hex").eq("active", true).order("name"),
     // Poniedziałek jako reprezentatywny dzień powszedni do nagłówków kolumn —
     // rzeczywiste godziny per dzień (jeśli nadpisane) i tak są pokazane w komórce.
     supabase
@@ -233,7 +234,7 @@ export default async function PrintGrafikPage({
                         <Pill colors={[CLOSED_COLOR]}>Nieczynne</Pill>
                       ) : emp ? (
                         <Pill colors={[emp.color_hex]}>
-                          {emp.name}
+                          {scheduleDisplayName(emp)}
                           {!headerMatches && (
                             <span className="ml-1 font-normal normal-case">
                               ({formatHm(shift.start_time)}–{formatHm(shift.end_time)})
@@ -250,7 +251,7 @@ export default async function PrintGrafikPage({
                   <div className="flex flex-col gap-0.5">
                     {overflowShifts.map((shift) => {
                       const emp = shift.employee_id ? employeeById.get(shift.employee_id) : null;
-                      const label = `${timeRange(shift.start_time, shift.end_time)} ${shift.is_closed ? "Nieczynne" : emp ? emp.name : "— nieprzypisane —"}`;
+                      const label = `${timeRange(shift.start_time, shift.end_time)} ${shift.is_closed ? "Nieczynne" : emp ? scheduleDisplayName(emp) : "— nieprzypisane —"}`;
                       return (
                         <Pill key={shift.id} colors={[shift.is_closed ? CLOSED_COLOR : emp ? emp.color_hex : UNASSIGNED_COLOR]}>
                           {label}
@@ -283,13 +284,19 @@ export default async function PrintGrafikPage({
       </table>
 
       {legendEmployees.length > 0 && (
+        // W tabeli widać skrót (patrz scheduleDisplayName) — legenda musi
+        // wprost łączyć go z pełnym imieniem i nazwiskiem, nie tylko kolorem
+        // (wydruk pełni rolę dokumentu potwierdzenia, kolor sam nie wystarczy).
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-semibold text-zinc-700">
-          {legendEmployees.map((e) => (
-            <span key={e.id} className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: e.color_hex }} />
-              {e.name}
-            </span>
-          ))}
+          {legendEmployees.map((e) => {
+            const short = e.short_name?.trim();
+            return (
+              <span key={e.id} className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: e.color_hex }} />
+                {short ? `${short} — ${e.name}` : e.name}
+              </span>
+            );
+          })}
         </div>
       )}
       </div>
