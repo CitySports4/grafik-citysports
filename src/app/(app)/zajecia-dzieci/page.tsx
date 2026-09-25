@@ -23,6 +23,7 @@ import {
   toggleUsedTrial,
   scheduleGroupChange,
   toggleMonthPayment,
+  setFeeOverride,
   toggleAttendance,
   addGroup,
   updateGroup,
@@ -79,7 +80,14 @@ type EnrollmentRow = {
   effective_until: string | null;
   used_trial: boolean;
   paid_trial_fee: boolean;
-  kids_class_registration: { id: string; child_name: string; birth_date: string; parent_name: string; phone: string };
+  kids_class_registration: {
+    id: string;
+    child_name: string;
+    birth_date: string;
+    parent_name: string;
+    phone: string;
+    monthly_fee_override: number | null;
+  };
 };
 
 function nextMonthFirstDay(todayKey: string): string {
@@ -109,7 +117,7 @@ export default async function KidsClassesPage({
     supabase
       .from("kids_class_enrollment")
       .select(
-        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, kids_class_registration(id, child_name, birth_date, parent_name, phone)"
+        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, kids_class_registration(id, child_name, birth_date, parent_name, phone, monthly_fee_override)"
       )
       .order("created_at"),
     supabase.from("kids_class_payment").select("registration_id, months"),
@@ -298,14 +306,37 @@ export default async function KidsClassesPage({
                           // Suma opłat ze WSZYSTKICH grup, do których to
                           // dziecko aktualnie należy — nie tylko z tej
                           // jednej sekcji — bo płatność jest jedna, na całe
-                          // dziecko, nie osobno per grupa.
-                          const totalFee = currentEnrollments
+                          // dziecko, nie osobno per grupa. Admin może to
+                          // nadpisać ręcznie (np. zniżka za 2×/tydz.) —
+                          // patrz monthly_fee_override.
+                          const sumFee = currentEnrollments
                             .filter((oe) => oe.kids_class_registration.id === r.id && OCCUPYING_STATUSES.includes(oe.status))
                             .reduce((sum, oe) => sum + (groupById.get(oe.group_id)?.monthly_fee ?? 0), 0);
+                          const isOverridden = r.monthly_fee_override !== null;
                           return (
                             <tr key={e.id}>
                               <td className="py-1.5 pr-3 font-medium text-zinc-900">{r.child_name}</td>
-                              <td className="py-1.5 pr-3 text-xs text-zinc-500">{totalFee} zł</td>
+                              <td className="py-1.5 pr-3">
+                                <form action={setFeeOverride} className="flex items-center gap-1">
+                                  <input type="hidden" name="registration_id" value={r.id} />
+                                  <input
+                                    type="number"
+                                    name="monthly_fee_override"
+                                    min={0}
+                                    step="0.01"
+                                    defaultValue={r.monthly_fee_override ?? ""}
+                                    placeholder={`${sumFee} (suma)`}
+                                    title="Puste = automatyczna suma cen grup. Wpisz kwotę, żeby nadpisać (np. zniżka za 2×/tydz.)."
+                                    className={`w-20 rounded-lg border px-1.5 py-0.5 text-xs ${
+                                      isOverridden ? "border-brand-orange bg-orange-50 text-brand-navy" : "border-zinc-300 text-zinc-500"
+                                    }`}
+                                  />
+                                  <span className="text-xs text-zinc-400">zł</span>
+                                  <button type="submit" className="text-xs text-zinc-400 hover:text-zinc-700" title="Zapisz kwotę">
+                                    ✓
+                                  </button>
+                                </form>
+                              </td>
                               {SEASON_MONTHS.map((m, mi) => (
                                 <td key={m} className="py-1.5 px-1.5 text-center">
                                   <form action={toggleMonthPayment}>
