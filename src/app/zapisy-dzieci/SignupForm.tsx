@@ -17,7 +17,6 @@ const EMPTY: SignupInput = {
   birthDate: "",
   parentName: "",
   phone: "",
-  email: "",
   whatsappContact: false,
   groupChoice: "poniedzialek",
   hasExperience: false,
@@ -98,10 +97,6 @@ export function SignupForm() {
         <div className="flex flex-col gap-1.5">
           <label className={LABEL}>Telefon</label>
           <input required value={form.phone} onChange={(e) => set("phone", e.target.value)} className={INPUT} />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className={LABEL}>E-mail (opcjonalnie)</label>
-          <input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} className={INPUT} />
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-700">
           <input type="checkbox" checked={form.whatsappContact} onChange={(e) => set("whatsappContact", e.target.checked)} className="h-4 w-4" />

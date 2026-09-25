@@ -11,7 +11,6 @@ export type SignupInput = {
   birthDate: string;
   parentName: string;
   phone: string;
-  email: string;
   whatsappContact: boolean;
   groupChoice: KidsClassGroup;
   hasExperience: boolean;
@@ -57,7 +56,6 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     birth_date: input.birthDate,
     parent_name: parentName,
     phone,
-    email: input.email.trim() || null,
     whatsapp_contact: input.whatsappContact,
     group_choice: input.groupChoice,
     has_experience: input.hasExperience,
