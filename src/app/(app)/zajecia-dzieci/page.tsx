@@ -2,26 +2,40 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, canManageKidsClasses } from "@/lib/session";
 import { toDateKey } from "@/lib/schedule-month";
+import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import {
   ageOnDate,
-  computeOccupancy,
-  GROUP_LABELS,
+  computeGroupOccupancy,
+  groupLabel,
+  sessionDatesInMonth,
   STATUS_LABELS,
   SEASON_MONTHS,
   OCCUPYING_STATUSES,
+  isEnrollmentEffective,
   type KidsClassGroup,
   type KidsClassStatus,
 } from "@/lib/kids-classes";
-import { changeRegistrationStatus, toggleUsedTrial, toggleMonthPayment, setKidsClassLimits } from "./actions";
+import {
+  changeEnrollmentStatus,
+  toggleUsedTrial,
+  scheduleGroupChange,
+  toggleMonthPayment,
+  toggleAttendance,
+  addGroup,
+  updateGroup,
+  toggleGroupActive,
+} from "./actions";
+import { FrekwencjaFilters } from "./FrekwencjaFilters";
 
 const TABS = [
   { key: "zgloszenia", label: "Zgłoszenia" },
   { key: "platnosci", label: "Płatności" },
+  { key: "frekwencja", label: "Frekwencja" },
   { key: "oczekujacy", label: "Lista oczekujących" },
-  { key: "ustawienia", label: "Ustawienia" },
+  { key: "grupy", label: "Grupy" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -33,8 +47,6 @@ const STATUS_PILL: Record<KidsClassStatus, string> = {
   rezygnacja: "bg-zinc-100 text-zinc-500",
 };
 
-// Kolejne akcje statusu dostępne z danego statusu — 1:1 z dawnym
-// przyciskiAkcji w Admin.html.
 function statusActions(status: KidsClassStatus): { label: string; next: KidsClassStatus; variant: "green" | "red" }[] {
   if (status === "nowe") {
     return [
@@ -56,24 +68,30 @@ function statusActions(status: KidsClassStatus): { label: string; next: KidsClas
 
 const BTN_GREEN = "rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100";
 const BTN_RED = "rounded-lg bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700 hover:bg-red-100";
+const INPUT_SM = "rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-xs";
 
-type Registration = {
+type EnrollmentRow = {
   id: string;
-  created_at: string;
-  child_name: string;
-  birth_date: string;
-  parent_name: string;
-  phone: string;
-  group_choice: KidsClassGroup;
-  has_experience: boolean;
+  group_id: string;
   status: KidsClassStatus;
+  created_at: string;
+  effective_from: string;
+  effective_until: string | null;
   used_trial: boolean;
+  paid_trial_fee: boolean;
+  kids_class_registration: { id: string; child_name: string; birth_date: string; parent_name: string; phone: string };
 };
+
+function nextMonthFirstDay(todayKey: string): string {
+  const d = new Date(todayKey + "T00:00:00");
+  const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  return toDateKey(next);
+}
 
 export default async function KidsClassesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; frekwencja_grupa?: string; frekwencja_miesiac?: string }>;
 }) {
   const employee = await requireEmployee();
   if (!canManageKidsClasses(employee)) {
@@ -86,42 +104,49 @@ export default async function KidsClassesPage({
   const today = toDateKey(new Date());
 
   const supabase = createServerSupabaseClient();
-  const [{ data: settings }, { data: registrationsRaw }, { data: paymentsRaw }] = await Promise.all([
-    supabase.from("kids_class_settings").select("limit_poniedzialek, limit_czwartek").eq("id", true).single(),
+  const [{ data: groupsRaw }, { data: enrollmentsRaw }, { data: paymentsRaw }] = await Promise.all([
+    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").order("sort_order"),
     supabase
-      .from("kids_class_registration")
-      .select("id, created_at, child_name, birth_date, parent_name, phone, group_choice, has_experience, status, used_trial")
+      .from("kids_class_enrollment")
+      .select(
+        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, kids_class_registration(id, child_name, birth_date, parent_name, phone)"
+      )
       .order("created_at"),
     supabase.from("kids_class_payment").select("registration_id, months"),
   ]);
 
-  const registrations = (registrationsRaw ?? []) as Registration[];
-  const limits = settings ?? { limit_poniedzialek: 8, limit_czwartek: 8 };
-  const occupancy = computeOccupancy(registrations);
+  const groups = (groupsRaw ?? []) as KidsClassGroup[];
+  const activeGroups = groups.filter((g) => g.active);
+  const groupById = new Map(groups.map((g) => [g.id, g]));
+  const enrollments = (enrollmentsRaw ?? []) as unknown as EnrollmentRow[];
+  const occupancy = computeGroupOccupancy(enrollments, today);
   const paymentsByRegistration = new Map((paymentsRaw ?? []).map((p) => [p.registration_id, p.months as boolean[]]));
 
-  const waiting = registrations.filter((r) => r.status === "oczekuje");
-  const payable = registrations.filter((r) => OCCUPYING_STATUSES.includes(r.status));
-  const payableByGroup = new Map<KidsClassGroup, Registration[]>();
-  for (const r of payable) {
-    if (!payableByGroup.has(r.group_choice)) payableByGroup.set(r.group_choice, []);
-    payableByGroup.get(r.group_choice)!.push(r);
-  }
+  const currentEnrollments = enrollments.filter((e) => isEnrollmentEffective(e, today));
+  const waiting = currentEnrollments.filter((e) => e.status === "oczekuje");
+  const payableRegistrationIds = new Set(
+    currentEnrollments.filter((e) => OCCUPYING_STATUSES.includes(e.status)).map((e) => e.kids_class_registration.id)
+  );
+  const payableRegistrations = [...new Map(currentEnrollments.map((e) => [e.kids_class_registration.id, e.kids_class_registration])).values()].filter(
+    (r) => payableRegistrationIds.has(r.id)
+  );
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-zinc-900">🏸 Zajęcia dla dzieci</h1>
-          <p className="text-sm text-zinc-500">Zapisy, płatności i listy oczekujących na zajęcia badmintona dla dzieci.</p>
+          <p className="text-sm text-zinc-500">Zapisy, płatności, frekwencja i listy oczekujących na zajęcia badmintona dla dzieci.</p>
         </div>
-        <div className="flex items-center gap-2 text-xs font-bold">
-          <span className={`rounded-full px-3 py-1.5 ${occupancy.poniedzialek >= limits.limit_poniedzialek ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-700"}`}>
-            Pon. {occupancy.poniedzialek}/{limits.limit_poniedzialek}
-          </span>
-          <span className={`rounded-full px-3 py-1.5 ${occupancy.czwartek >= limits.limit_czwartek ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-700"}`}>
-            Czw. {occupancy.czwartek}/{limits.limit_czwartek}
-          </span>
+        <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+          {activeGroups.map((g) => {
+            const occ = occupancy.get(g.id) ?? 0;
+            return (
+              <span key={g.id} className={`rounded-full px-3 py-1.5 ${occ >= g.capacity ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-700"}`}>
+                {groupLabel(g)}: {occ}/{g.capacity}
+              </span>
+            );
+          })}
         </div>
       </div>
 
@@ -156,44 +181,77 @@ export default async function KidsClassesPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {registrations.map((r) => (
-                <tr key={r.id}>
-                  <td className="px-4 py-2.5 font-medium text-zinc-900">{r.child_name}</td>
-                  <td className="px-4 py-2.5 text-zinc-600">{ageOnDate(r.birth_date, today)}</td>
-                  <td className="px-4 py-2.5 text-zinc-600">{r.parent_name}</td>
-                  <td className="px-4 py-2.5 text-zinc-600">{r.phone}</td>
-                  <td className="px-4 py-2.5 text-zinc-600">{GROUP_LABELS[r.group_choice]}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_PILL[r.status]}`}>{STATUS_LABELS[r.status]}</span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <form action={toggleUsedTrial}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <input type="hidden" name="value" value={String(!r.used_trial)} />
-                      <button type="submit" className={`h-5 w-5 rounded border-2 ${r.used_trial ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"}`}>
-                        {r.used_trial ? "✓" : ""}
-                      </button>
-                    </form>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1.5">
-                      {statusActions(r.status).map((a) => (
-                        <form key={a.next + a.label} action={changeRegistrationStatus}>
-                          <input type="hidden" name="id" value={r.id} />
-                          <input type="hidden" name="status" value={a.next} />
-                          <ConfirmButton
-                            confirmText={`Zmienić status dla ${r.child_name} na "${STATUS_LABELS[a.next]}"?`}
-                            className={a.variant === "green" ? BTN_GREEN : BTN_RED}
-                          >
-                            {a.label}
-                          </ConfirmButton>
-                        </form>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {registrations.length === 0 && (
+              {enrollments.map((e) => {
+                const group = groupById.get(e.group_id);
+                const scheduled = e.effective_from > today;
+                const target = activeGroups.filter((g) => g.id !== e.group_id);
+                return (
+                  <tr key={e.id}>
+                    <td className="px-4 py-2.5 font-medium text-zinc-900">{e.kids_class_registration.child_name}</td>
+                    <td className="px-4 py-2.5 text-zinc-600">{ageOnDate(e.kids_class_registration.birth_date, today)}</td>
+                    <td className="px-4 py-2.5 text-zinc-600">{e.kids_class_registration.parent_name}</td>
+                    <td className="px-4 py-2.5 text-zinc-600">{e.kids_class_registration.phone}</td>
+                    <td className="px-4 py-2.5 text-zinc-600">
+                      {group ? groupLabel(group) : "?"}
+                      {scheduled && <div className="text-[11px] text-amber-600">od {e.effective_from}</div>}
+                      {e.effective_until && <div className="text-[11px] text-zinc-400">do {e.effective_until}</div>}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_PILL[e.status]}`}>{STATUS_LABELS[e.status]}</span>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <form action={toggleUsedTrial}>
+                        <input type="hidden" name="id" value={e.id} />
+                        <input type="hidden" name="value" value={String(!e.used_trial)} />
+                        <button type="submit" className={`h-5 w-5 rounded border-2 ${e.used_trial ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"}`}>
+                          {e.used_trial ? "✓" : ""}
+                        </button>
+                      </form>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {statusActions(e.status).map((a) => (
+                          <form key={a.next + a.label} action={changeEnrollmentStatus}>
+                            <input type="hidden" name="id" value={e.id} />
+                            <input type="hidden" name="status" value={a.next} />
+                            <ConfirmButton
+                              confirmText={`Zmienić status dla ${e.kids_class_registration.child_name} na "${STATUS_LABELS[a.next]}"?`}
+                              className={a.variant === "green" ? BTN_GREEN : BTN_RED}
+                            >
+                              {a.label}
+                            </ConfirmButton>
+                          </form>
+                        ))}
+                        {target.length > 0 && (
+                          <details className="inline-block">
+                            <summary className="cursor-pointer rounded-lg bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 [&::-webkit-details-marker]:hidden">
+                              🔁 Zmień grupę
+                            </summary>
+                            <form action={scheduleGroupChange} className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              <input type="hidden" name="enrollment_id" value={e.id} />
+                              <select name="new_group_id" required className={INPUT_SM} defaultValue="">
+                                <option value="" disabled>
+                                  nowa grupa…
+                                </option>
+                                {target.map((g) => (
+                                  <option key={g.id} value={g.id}>
+                                    {groupLabel(g)}
+                                  </option>
+                                ))}
+                              </select>
+                              <input type="date" name="effective_from" required defaultValue={nextMonthFirstDay(today)} className={INPUT_SM} />
+                              <SubmitButton className="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
+                                Zaplanuj
+                              </SubmitButton>
+                            </form>
+                          </details>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {enrollments.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-6 text-center text-zinc-400">
                     Brak zgłoszeń.
@@ -206,70 +264,82 @@ export default async function KidsClassesPage({
       )}
 
       {tab === "platnosci" && (
-        <div className="flex flex-col gap-4">
-          {(["poniedzialek", "czwartek", "obie"] as KidsClassGroup[]).map((group) => {
-            const items = payableByGroup.get(group) ?? [];
-            return (
-              <Card key={group}>
-                <h2 className="mb-3 font-semibold text-zinc-900">
-                  {GROUP_LABELS[group]} <span className="text-xs font-normal text-zinc-400">({items.length})</span>
-                </h2>
-                {items.length === 0 ? (
-                  <p className="text-sm text-zinc-400">Brak dzieci w tej grupie.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                        <tr>
-                          <th className="py-1.5 pr-3">Dziecko</th>
-                          {SEASON_MONTHS.map((m) => (
-                            <th key={m} className="py-1.5 px-1.5 text-center">
-                              {m.slice(0, 3)}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {items.map((r) => {
-                          const months = paymentsByRegistration.get(r.id) ?? new Array(SEASON_MONTHS.length).fill(false);
-                          return (
-                            <tr key={r.id}>
-                              <td className="py-1.5 pr-3 font-medium text-zinc-900">{r.child_name}</td>
-                              {SEASON_MONTHS.map((m, mi) => (
-                                <td key={m} className="py-1.5 px-1.5 text-center">
-                                  <form action={toggleMonthPayment}>
-                                    <input type="hidden" name="registration_id" value={r.id} />
-                                    <input type="hidden" name="month_index" value={mi} />
-                                    <input type="hidden" name="value" value={String(!months[mi])} />
-                                    <button
-                                      type="submit"
-                                      className={`mx-auto flex h-5 w-5 items-center justify-center rounded border-2 ${
-                                        months[mi] ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
-                                      }`}
-                                    >
-                                      {months[mi] ? "✓" : ""}
-                                    </button>
-                                  </form>
-                                </td>
-                              ))}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </Card>
-            );
-          })}
-        </div>
+        <Card>
+          <h2 className="mb-3 font-semibold text-zinc-900">
+            Płatności <span className="text-xs font-normal text-zinc-400">({payableRegistrations.length})</span>
+          </h2>
+          {payableRegistrations.length === 0 ? (
+            <p className="text-sm text-zinc-400">Brak dzieci z aktywnym zapisem.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  <tr>
+                    <th className="py-1.5 pr-3">Dziecko</th>
+                    <th className="py-1.5 pr-3">Grupy</th>
+                    {SEASON_MONTHS.map((m) => (
+                      <th key={m} className="py-1.5 px-1.5 text-center">
+                        {m.slice(0, 3)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {payableRegistrations.map((r) => {
+                    const months = paymentsByRegistration.get(r.id) ?? new Array(SEASON_MONTHS.length).fill(false);
+                    const childGroups = currentEnrollments.filter((e) => e.kids_class_registration.id === r.id && OCCUPYING_STATUSES.includes(e.status));
+                    return (
+                      <tr key={r.id}>
+                        <td className="py-1.5 pr-3 font-medium text-zinc-900">{r.child_name}</td>
+                        <td className="py-1.5 pr-3 text-xs text-zinc-500">
+                          {childGroups
+                            .map((e) => groupById.get(e.group_id))
+                            .filter((g): g is KidsClassGroup => !!g)
+                            .map((g) => groupLabel(g))
+                            .join(", ")}
+                        </td>
+                        {SEASON_MONTHS.map((m, mi) => (
+                          <td key={m} className="py-1.5 px-1.5 text-center">
+                            <form action={toggleMonthPayment}>
+                              <input type="hidden" name="registration_id" value={r.id} />
+                              <input type="hidden" name="month_index" value={mi} />
+                              <input type="hidden" name="value" value={String(!months[mi])} />
+                              <button
+                                type="submit"
+                                className={`mx-auto flex h-5 w-5 items-center justify-center rounded border-2 ${
+                                  months[mi] ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
+                                }`}
+                              >
+                                {months[mi] ? "✓" : ""}
+                              </button>
+                            </form>
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {tab === "frekwencja" && (
+        <FrekwencjaTab
+          groups={activeGroups}
+          enrollments={currentEnrollments}
+          selectedGroupId={params.frekwencja_grupa}
+          selectedMonth={params.frekwencja_miesiac}
+          today={today}
+        />
       )}
 
       {tab === "oczekujacy" && (
         <Card>
           <p className="mb-3 text-sm text-zinc-500">
-            Nie gwarantujemy miejsca — sprawdź, czy liczba osób uzasadnia otwarcie kolejnego kortu (przy 1 osobie
-            zwykle się to nie opłaca).
+            Nie gwarantujemy miejsca — sprawdź, czy liczba osób uzasadnia otwarcie kolejnej grupy (przy 1 osobie
+            zwykle się to nie opłaca). Kolejność = kolejność zgłoszenia.
           </p>
           {waiting.length === 0 ? (
             <p className="text-sm text-zinc-400">Nikt obecnie nie czeka.</p>
@@ -285,67 +355,234 @@ export default async function KidsClassesPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {waiting.map((r) => (
-                  <tr key={r.id}>
-                    <td className="py-1.5 pr-3 font-medium text-zinc-900">{r.child_name}</td>
-                    <td className="py-1.5 pr-3 text-zinc-600">{r.phone}</td>
-                    <td className="py-1.5 pr-3 text-zinc-600">{GROUP_LABELS[r.group_choice]}</td>
-                    <td className="py-1.5 pr-3 text-zinc-600">{new Date(r.created_at).toLocaleDateString("pl-PL")}</td>
-                    <td className="py-1.5 pr-3">
-                      <form action={changeRegistrationStatus}>
-                        <input type="hidden" name="id" value={r.id} />
-                        <input type="hidden" name="status" value="aktywny" />
-                        <ConfirmButton confirmText={`Zaakceptować ${r.child_name}?`} className={BTN_GREEN}>
-                          ✅ Zaakceptuj
-                        </ConfirmButton>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
+                {waiting.map((e) => {
+                  const group = groupById.get(e.group_id);
+                  return (
+                    <tr key={e.id}>
+                      <td className="py-1.5 pr-3 font-medium text-zinc-900">{e.kids_class_registration.child_name}</td>
+                      <td className="py-1.5 pr-3 text-zinc-600">{e.kids_class_registration.phone}</td>
+                      <td className="py-1.5 pr-3 text-zinc-600">{group ? groupLabel(group) : "?"}</td>
+                      <td className="py-1.5 pr-3 text-zinc-600">{new Date(e.created_at).toLocaleDateString("pl-PL")}</td>
+                      <td className="py-1.5 pr-3">
+                        <form action={changeEnrollmentStatus}>
+                          <input type="hidden" name="id" value={e.id} />
+                          <input type="hidden" name="status" value="aktywny" />
+                          <ConfirmButton confirmText={`Zaakceptować ${e.kids_class_registration.child_name}?`} className={BTN_GREEN}>
+                            ✅ Zaakceptuj
+                          </ConfirmButton>
+                        </form>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </Card>
       )}
 
-      {tab === "ustawienia" && (
+      {tab === "grupy" && (
         <Card>
-          <h2 className="mb-1 font-semibold text-zinc-900">Limity miejsc</h2>
-          {isAdmin ? (
-            <form action={setKidsClassLimits} className="mt-3 flex flex-wrap items-end gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-zinc-600">Poniedziałek — limit miejsc</label>
-                <input
-                  type="number"
-                  name="limit_poniedzialek"
-                  min={1}
-                  defaultValue={limits.limit_poniedzialek}
-                  className="w-28 rounded-xl border-[1.5px] border-zinc-300 px-3 py-1.5 text-sm"
-                />
+          <h2 className="mb-1 font-semibold text-zinc-900">Grupy</h2>
+          <p className="mb-3 text-sm text-zinc-500">Dzień, godzina i pojemność każdej grupy — nowa grupa od razu pojawia się w formularzu zapisu.</p>
+          <div className="flex flex-col gap-2">
+            {groups.map((g) => (
+              <div key={g.id} className={`rounded-lg border p-2.5 ${g.active ? "border-zinc-200 bg-zinc-50" : "border-zinc-100 bg-zinc-100 opacity-60"}`}>
+                {isAdmin ? (
+                  <form action={updateGroup} className="flex flex-wrap items-end gap-2">
+                    <input type="hidden" name="id" value={g.id} />
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-semibold text-zinc-500">Dzień</label>
+                      <select name="weekday" defaultValue={g.weekday} className={INPUT_SM}>
+                        {[1, 2, 3, 4, 5, 6, 0].map((wd) => (
+                          <option key={wd} value={wd}>
+                            {weekdayLabel(wd)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-semibold text-zinc-500">Od</label>
+                      <input type="time" name="start_time" defaultValue={g.start_time.slice(0, 5)} className={INPUT_SM} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-semibold text-zinc-500">Do</label>
+                      <input type="time" name="end_time" defaultValue={g.end_time.slice(0, 5)} className={INPUT_SM} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-semibold text-zinc-500">Nazwa (opcjonalnie)</label>
+                      <input name="label" defaultValue={g.label ?? ""} className={`${INPUT_SM} w-32`} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-semibold text-zinc-500">Pojemność</label>
+                      <input type="number" name="capacity" min={1} defaultValue={g.capacity} className={`${INPUT_SM} w-16`} />
+                    </div>
+                    <SubmitButton className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50">
+                      Zapisz
+                    </SubmitButton>
+                  </form>
+                ) : (
+                  <span className="text-sm text-zinc-700">
+                    {groupLabel(g)} — pojemność {g.capacity}
+                  </span>
+                )}
+                {isAdmin && (
+                  <form action={toggleGroupActive} className="mt-1.5">
+                    <input type="hidden" name="id" value={g.id} />
+                    <input type="hidden" name="active" value={String(g.active)} />
+                    <button type="submit" className="rounded-lg px-2 py-0.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-200">
+                      {g.active ? "Wyłącz grupę" : "Włącz grupę"}
+                    </button>
+                  </form>
+                )}
               </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-zinc-600">Czwartek — limit miejsc</label>
-                <input
-                  type="number"
-                  name="limit_czwartek"
-                  min={1}
-                  defaultValue={limits.limit_czwartek}
-                  className="w-28 rounded-xl border-[1.5px] border-zinc-300 px-3 py-1.5 text-sm"
-                />
-              </div>
-              <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
-                Zapisz limity
-              </SubmitButton>
-            </form>
-          ) : (
-            <p className="text-sm text-zinc-500">
-              Poniedziałek: <span className="font-semibold text-zinc-900">{limits.limit_poniedzialek}</span> miejsc · Czwartek:{" "}
-              <span className="font-semibold text-zinc-900">{limits.limit_czwartek}</span> miejsc.{" "}
-              <span className="text-zinc-400">Zmianę limitów może wykonać tylko administrator.</span>
-            </p>
+            ))}
+            {groups.length === 0 && <p className="text-sm text-zinc-400">Brak grup.</p>}
+          </div>
+
+          {isAdmin && (
+            <details className="mt-3 rounded-lg border border-dashed border-zinc-200 p-2.5">
+              <summary className="cursor-pointer text-sm font-semibold text-zinc-600 marker:content-none">+ Dodaj grupę</summary>
+              <form action={addGroup} className="mt-3 flex flex-wrap items-end gap-2 border-t border-zinc-100 pt-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold text-zinc-500">Dzień</label>
+                  <select name="weekday" defaultValue={1} className={INPUT_SM}>
+                    {[1, 2, 3, 4, 5, 6, 0].map((wd) => (
+                      <option key={wd} value={wd}>
+                        {weekdayLabel(wd)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold text-zinc-500">Od</label>
+                  <input type="time" name="start_time" required defaultValue="16:00" className={INPUT_SM} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold text-zinc-500">Do</label>
+                  <input type="time" name="end_time" required defaultValue="17:00" className={INPUT_SM} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold text-zinc-500">Nazwa (opcjonalnie)</label>
+                  <input name="label" className={`${INPUT_SM} w-32`} placeholder="np. Grupa zaawansowana" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold text-zinc-500">Pojemność</label>
+                  <input type="number" name="capacity" min={1} defaultValue={8} className={`${INPUT_SM} w-16`} />
+                </div>
+                <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+                  Dodaj grupę
+                </SubmitButton>
+              </form>
+            </details>
           )}
         </Card>
       )}
     </div>
+  );
+}
+
+async function FrekwencjaTab({
+  groups,
+  enrollments,
+  selectedGroupId,
+  selectedMonth,
+  today,
+}: {
+  groups: KidsClassGroup[];
+  enrollments: EnrollmentRow[];
+  selectedGroupId?: string;
+  selectedMonth?: string;
+  today: string;
+}) {
+  const groupId = selectedGroupId && groups.some((g) => g.id === selectedGroupId) ? selectedGroupId : groups[0]?.id;
+  const group = groups.find((g) => g.id === groupId);
+  const monthKey = selectedMonth && /^\d{4}-\d{2}$/.test(selectedMonth) ? selectedMonth : today.slice(0, 7);
+  const [year, month] = monthKey.split("-").map(Number);
+
+  const children = group
+    ? enrollments.filter((e) => e.group_id === group.id && OCCUPYING_STATUSES.includes(e.status))
+    : [];
+  const dates = group ? sessionDatesInMonth(group.weekday, year, month) : [];
+
+  // Jedno zapytanie o CAŁĄ frekwencję tej grupy w tym miesiącu, zamiast
+  // osobnego zapytania per komórka (dziecko × data) — przy kilkunastu
+  // dzieciach i kilku datach to byłyby dziesiątki zapytań na jedno
+  // renderowanie strony.
+  const presenceByCell = new Map<string, boolean>();
+  if (children.length > 0 && dates.length > 0) {
+    const supabase = createServerSupabaseClient();
+    const { data: attendance } = await supabase
+      .from("kids_class_attendance")
+      .select("enrollment_id, session_date, present")
+      .in("enrollment_id", children.map((c) => c.id))
+      .gte("session_date", dates[0])
+      .lte("session_date", dates[dates.length - 1]);
+    for (const a of attendance ?? []) {
+      presenceByCell.set(`${a.enrollment_id}|${a.session_date}`, a.present);
+    }
+  }
+
+  return (
+    <Card>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <FrekwencjaFilters groups={groups} groupId={groupId} monthKey={monthKey} />
+      </div>
+
+      {!group ? (
+        <p className="text-sm text-zinc-400">Brak grup.</p>
+      ) : dates.length === 0 ? (
+        <p className="text-sm text-zinc-400">Brak zajęć tej grupy w wybranym miesiącu.</p>
+      ) : children.length === 0 ? (
+        <p className="text-sm text-zinc-400">Brak aktywnych dzieci w tej grupie.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              <tr>
+                <th className="py-1.5 pr-3">Dziecko</th>
+                {dates.map((d) => (
+                  <th key={d} className="py-1.5 px-1.5 text-center">
+                    {d.slice(8, 10)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {children.map((c) => (
+                <tr key={c.id}>
+                  <td className="py-1.5 pr-3 font-medium text-zinc-900">{c.kids_class_registration.child_name}</td>
+                  {dates.map((d) => {
+                    const present = presenceByCell.get(`${c.id}|${d}`) ?? null;
+                    return (
+                      <td key={d} className="py-1.5 px-1.5 text-center">
+                        <form action={toggleAttendance}>
+                          <input type="hidden" name="enrollment_id" value={c.id} />
+                          <input type="hidden" name="session_date" value={d} />
+                          <input type="hidden" name="present" value={String(present !== true)} />
+                          <button
+                            type="submit"
+                            title={present === null ? "nieoznaczone" : present ? "obecny" : "nieobecny"}
+                            className={`mx-auto flex h-5 w-5 items-center justify-center rounded border-2 ${
+                              present === true
+                                ? "border-emerald-600 bg-emerald-600 text-white"
+                                : present === false
+                                  ? "border-red-400 bg-red-50 text-red-500"
+                                  : "border-zinc-300"
+                            }`}
+                          >
+                            {present === true ? "✓" : present === false ? "✕" : ""}
+                          </button>
+                        </form>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

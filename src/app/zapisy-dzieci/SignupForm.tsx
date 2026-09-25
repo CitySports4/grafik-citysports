@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { submitRegistration, type SignupInput } from "./actions";
-import { GROUP_LABELS, type KidsClassGroup } from "@/lib/kids-classes";
+import { groupLabel, type KidsClassGroup } from "@/lib/kids-classes";
 import { Banner } from "@/components/Banner";
 
 const INPUT =
@@ -12,35 +12,41 @@ const LABEL = "text-sm font-semibold text-zinc-900";
 const PRIMARY_BTN =
   "mt-1.5 rounded-xl bg-brand-orange px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
 
-const EMPTY: SignupInput = {
+type GroupOption = { group: KidsClassGroup; freeSpots: number };
+type FormState = Omit<SignupInput, "groupIds">;
+
+const EMPTY: FormState = {
   childName: "",
   birthDate: "",
   parentName: "",
   phone: "",
   whatsappContact: false,
-  groupChoice: "poniedzialek",
   hasExperience: false,
   rodoConsent: false,
   termsConsent: false,
 };
 
-export function SignupForm() {
-  const [form, setForm] = useState<SignupInput>(EMPTY);
+export function SignupForm({ groups }: { groups: GroupOption[] }) {
+  const [form, setForm] = useState<FormState>(EMPTY);
+  const [groupIds, setGroupIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [result, setResult] = useState<{ waitlisted: boolean } | null>(null);
+  const [result, setResult] = useState<{ label: string; waitlisted: boolean }[] | null>(null);
 
-  function set<K extends keyof SignupInput>(key: K, value: SignupInput[K]) {
+  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function toggleGroup(id: string) {
+    setGroupIds((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
   }
 
   // Strona żyje w <iframe> o STAŁEJ wysokości ustawionej ręcznie na stronie
   // klubu (WordPress) — bez tego treść krótsza/dłuższa niż ta stała
-  // wysokość albo ucina się, albo zostawia puste miejsce (patrz też usunięte
-  // wcześniej pionowe centrowanie w page.tsx). Zamiast zgadywać wysokość z
-  // dwóch stron, WordPress dostaje realną wysokość i sam dopasowuje iframe —
-  // przeliczane przy starcie, zmianie rozmiaru okna, i przy KAŻDEJ zmianie w
-  // DOM (np. pojawienie się błędu albo przejście do ekranu potwierdzenia).
+  // wysokość albo ucina się, albo zostawia puste miejsce. WordPress dostaje
+  // realną wysokość i sam dopasowuje iframe — przeliczane przy starcie,
+  // zmianie rozmiaru okna, i przy KAŻDEJ zmianie w DOM (np. błąd albo
+  // przejście do ekranu potwierdzenia).
   useEffect(() => {
     function sendHeight() {
       window.parent.postMessage({ type: "citysports-form-height", height: document.documentElement.scrollHeight }, "*");
@@ -58,11 +64,15 @@ export function SignupForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (groupIds.length === 0) {
+      setError("Wybierz przynajmniej jedną grupę.");
+      return;
+    }
     setPending(true);
     try {
-      const res = await submitRegistration(form);
+      const res = await submitRegistration({ ...form, groupIds });
       if (res.ok) {
-        setResult({ waitlisted: res.waitlisted });
+        setResult(res.groupResults);
       } else {
         setError(res.error);
       }
@@ -74,18 +84,30 @@ export function SignupForm() {
   }
 
   if (result) {
+    const anyWaitlisted = result.some((r) => r.waitlisted);
     return (
       <div className="mx-auto flex w-full max-w-md flex-col gap-6">
         <Logo />
         <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-7 text-center shadow-sm">
           <span className="text-3xl">🏸</span>
           <h1 className="text-lg font-bold text-zinc-900">Zgłoszenie wysłane!</h1>
-          {result.waitlisted ? (
+          <ul className="flex flex-col gap-1.5 text-left text-sm text-zinc-700">
+            {result.map((r) => (
+              <li key={r.label} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2">
+                <span>{r.label}</span>
+                {r.waitlisted ? (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">lista oczekujących</span>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">zapisano ✓</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {anyWaitlisted ? (
             <p className="text-sm text-zinc-600">
-              Grupa na ten miesiąc jest już pełna — dziecko zostało zapisane na listę oczekujących. Możliwy jest
-              start od kolejnego miesiąca, ale nie gwarantujemy miejsca — zależy to od liczby chętnych i
-              dostępności kortów. Skontaktujemy się z decyzją, a na pierwsze bezpłatne zajęcia można dołączyć
-              wcześniej — zapytaj recepcję.
+              Część grup jest już pełna na ten miesiąc — dziecko trafiło na listę oczekujących. Możliwy jest start od
+              kolejnego miesiąca, ale nie gwarantujemy miejsca — skontaktujemy się z decyzją, a na pierwsze bezpłatne
+              zajęcia można dołączyć wcześniej, zapytaj recepcję.
             </p>
           ) : (
             <p className="text-sm text-zinc-600">Do zobaczenia na korcie. Skontaktujemy się, jeśli będziemy potrzebować dodatkowych informacji.</p>
@@ -121,24 +143,47 @@ export function SignupForm() {
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-700">
           <input type="checkbox" checked={form.whatsappContact} onChange={(e) => set("whatsappContact", e.target.checked)} className="h-4 w-4" />
-          Można kontaktować się przez WhatsApp na podany numer
+          Korzystam z WhatsApp
         </label>
 
         <div className="flex flex-col gap-1.5">
-          <label className={LABEL}>Grupa</label>
-          <div className="flex flex-col gap-1.5">
-            {(Object.entries(GROUP_LABELS) as [KidsClassGroup, string][]).map(([value, label]) => (
-              <label key={value} className="flex items-center gap-2 text-sm text-zinc-700">
-                <input
-                  type="radio"
-                  name="group"
-                  checked={form.groupChoice === value}
-                  onChange={() => set("groupChoice", value)}
-                  className="h-4 w-4"
-                />
-                {label}
-              </label>
-            ))}
+          <label className={LABEL}>Grupa (można wybrać kilka)</label>
+          <div className="flex flex-col gap-2">
+            {groups.map(({ group, freeSpots }) => {
+              const full = freeSpots <= 0;
+              const selected = groupIds.includes(group.id);
+              return (
+                <button
+                  type="button"
+                  key={group.id}
+                  onClick={() => toggleGroup(group.id)}
+                  className={`flex items-center justify-between gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors ${
+                    selected ? "border-brand-orange bg-orange-50" : "border-zinc-200 bg-white hover:border-zinc-300"
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${
+                        selected ? "border-brand-orange bg-brand-orange text-white" : "border-zinc-300"
+                      }`}
+                    >
+                      {selected ? "✓" : ""}
+                    </span>
+                    <span className="text-sm font-semibold text-zinc-900">{groupLabel(group)}</span>
+                  </span>
+                  {full ? (
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">
+                      pełna — lista oczekujących
+                    </span>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                      {freeSpots} {freeSpots === 1 ? "wolne miejsce" : "wolne miejsca"}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {groups.length === 0 && <p className="text-sm text-zinc-400">Brak dostępnych grup — skontaktuj się z recepcją.</p>}
           </div>
         </div>
 
