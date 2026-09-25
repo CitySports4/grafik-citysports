@@ -1,15 +1,15 @@
-// Logika zapisów na zajęcia dla dzieci — port dawnego systemu Google Apps
-// Script. Funkcje czyste (bez dostępu do bazy), analogicznie do cleaning.ts
-// — warstwa zapytań/akcji żyje w app/zapisy-dzieci i app/(app)/zajecia-dzieci.
+// Logika zapisów na zajęcia dla dzieci. Funkcje czyste (bez dostępu do
+// bazy), analogicznie do cleaning.ts — warstwa zapytań/akcji żyje w
+// app/zapisy-dzieci i app/(app)/zajecia-dzieci.
+//
+// Grupa (dzień/godzina/pojemność) to edytowalna tabela (kids_class_group),
+// nie sztywny enum — dziecko może należeć do dowolnej liczby grup naraz,
+// każda ze swoim statusem (kids_class_enrollment), patrz migracja 0044.
 
-export type KidsClassGroup = "poniedzialek" | "czwartek" | "obie";
+import { weekdayLabel } from "./weekdays";
+import { formatHm } from "./time";
+
 export type KidsClassStatus = "nowe" | "aktywny" | "oczekuje" | "brak_oplaty" | "rezygnacja";
-
-export const GROUP_LABELS: Record<KidsClassGroup, string> = {
-  poniedzialek: "Poniedziałek",
-  czwartek: "Czwartek",
-  obie: "Obie grupy (2×/tydz.)",
-};
 
 export const STATUS_LABELS: Record<KidsClassStatus, string> = {
   nowe: "Nowe",
@@ -20,8 +20,7 @@ export const STATUS_LABELS: Record<KidsClassStatus, string> = {
 };
 
 // Statusy, które faktycznie zajmują miejsce w grupie — "oczekuje" świadomie
-// pominięte (to właśnie lista oczekujących, poza limitem), rezygnacja/brak
-// opłaty zwalniają miejsce.
+// pominięte (to właśnie lista oczekujących, poza limitem).
 export const OCCUPYING_STATUSES: KidsClassStatus[] = ["nowe", "aktywny"];
 
 export const SEASON_MONTHS = [
@@ -37,9 +36,31 @@ export const SEASON_MONTHS = [
   "Czerwiec",
 ] as const;
 
+export type KidsClassGroup = {
+  id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  label: string | null;
+  capacity: number;
+  active: boolean;
+  sort_order: number;
+};
+
+// Etykieta grupy do wyświetlenia — własna nazwa (jeśli admin ją ustawił) z
+// dopiskiem dnia/godziny, albo sam dzień/godzina, gdy nazwy nie ma.
+export function groupLabel(group: KidsClassGroup): string {
+  const dayTime = `${capitalize(weekdayLabel(group.weekday))} ${formatHm(group.start_time)}–${formatHm(group.end_time)}`;
+  return group.label ? `${group.label} (${dayTime})` : dayTime;
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 // Wiek dziecka NA DANY DZIEŃ — liczony z daty urodzenia, nigdy nie
-// zapisywany jako osobna wartość (patrz komentarz w migracji 0040) — dzięki
-// temu zawsze aktualny, niezależnie jak dawno dziecko się zapisało.
+// zapisywany jako osobna wartość — zawsze aktualny, niezależnie jak dawno
+// dziecko się zapisało.
 export function ageOnDate(birthDateKey: string, referenceDateKey: string): number {
   const dob = new Date(birthDateKey + "T00:00:00");
   const ref = new Date(referenceDateKey + "T00:00:00");
@@ -57,8 +78,7 @@ export function seasonSecondHalfCutoff(todayKey: string): string {
   const today = new Date(todayKey + "T00:00:00");
   const month = today.getMonth(); // 0 = styczeń
   const febYear = month >= 6 ? today.getFullYear() + 1 : today.getFullYear();
-  // Dzień 0 marca = ostatni dzień lutego (uwzględnia lata przestępne).
-  const lastFeb = new Date(febYear, 2, 0);
+  const lastFeb = new Date(febYear, 2, 0); // dzień 0 marca = ostatni dzień lutego
   return toDateKeyLocal(lastFeb);
 }
 
@@ -84,32 +104,49 @@ export function checkAgeEligibility(birthDateKey: string, todayKey: string): Age
   return { ok: true };
 }
 
-export type Occupancy = { poniedzialek: number; czwartek: number };
+export type Enrollment = {
+  id: string;
+  group_id: string;
+  status: KidsClassStatus;
+  effective_from: string;
+  effective_until: string | null;
+};
 
-// Ile miejsc w każdej grupie zajmują aktualne zgłoszenia — "obie" liczy się
-// do OBU dni naraz (dziecko fizycznie zajmuje miejsce na korcie w każdym
-// z nich). Liczy tylko statusy z OCCUPYING_STATUSES.
-export function computeOccupancy(registrations: { group_choice: KidsClassGroup; status: KidsClassStatus }[]): Occupancy {
-  let poniedzialek = 0;
-  let czwartek = 0;
-  for (const r of registrations) {
-    if (!OCCUPYING_STATUSES.includes(r.status)) continue;
-    if (r.group_choice === "poniedzialek" || r.group_choice === "obie") poniedzialek++;
-    if (r.group_choice === "czwartek" || r.group_choice === "obie") czwartek++;
-  }
-  return { poniedzialek, czwartek };
+// Czy dany zapis na grupę obowiązuje AKTUALNIE (na dany dzień) — wspiera
+// zaplanowaną zmianę grupy "od nowego miesiąca": stary zapis przestaje
+// obowiązywać dokładnie w dniu effective_until, nowy zaczyna dokładnie w
+// dniu effective_from.
+export function isEnrollmentEffective(enrollment: { effective_from: string; effective_until: string | null }, todayKey: string): boolean {
+  if (enrollment.effective_from > todayKey) return false;
+  if (enrollment.effective_until && enrollment.effective_until < todayKey) return false;
+  return true;
 }
 
-// Czy wybrana grupa ma miejsce — sprawdza dokładnie te dni, na które
-// dziecko by się zapisało (dla "obie" oba dni muszą mieć miejsce).
-export function hasCapacity(
-  groupChoice: KidsClassGroup,
-  occupancy: Occupancy,
-  limits: { limit_poniedzialek: number; limit_czwartek: number }
-): boolean {
-  const wantsMonday = groupChoice === "poniedzialek" || groupChoice === "obie";
-  const wantsThursday = groupChoice === "czwartek" || groupChoice === "obie";
-  if (wantsMonday && occupancy.poniedzialek >= limits.limit_poniedzialek) return false;
-  if (wantsThursday && occupancy.czwartek >= limits.limit_czwartek) return false;
-  return true;
+// Ile miejsc w KAŻDEJ grupie zajmują aktualnie obowiązujące zapisy (patrz
+// isEnrollmentEffective) ze statusem z OCCUPYING_STATUSES.
+export function computeGroupOccupancy(enrollments: Enrollment[], todayKey: string): Map<string, number> {
+  const occupancy = new Map<string, number>();
+  for (const e of enrollments) {
+    if (!OCCUPYING_STATUSES.includes(e.status)) continue;
+    if (!isEnrollmentEffective(e, todayKey)) continue;
+    occupancy.set(e.group_id, (occupancy.get(e.group_id) ?? 0) + 1);
+  }
+  return occupancy;
+}
+
+export function hasGroupCapacity(group: KidsClassGroup, occupancy: Map<string, number>): boolean {
+  return (occupancy.get(group.id) ?? 0) < group.capacity;
+}
+
+// Wszystkie daty konkretnego dnia tygodnia w danym miesiącu (np. każdy
+// poniedziałek września) — do widoku frekwencji, gdzie sesje NIE są
+// przechowywane osobno, tylko wynikają wprost z dnia tygodnia grupy.
+export function sessionDatesInMonth(weekday: number, year: number, month: number): string[] {
+  const dates: string[] = [];
+  const d = new Date(year, month - 1, 1);
+  while (d.getMonth() === month - 1) {
+    if (d.getDay() === weekday) dates.push(toDateKeyLocal(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return dates;
 }
