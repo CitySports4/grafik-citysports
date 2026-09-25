@@ -130,6 +130,26 @@ export async function toggleMonthPayment(formData: FormData) {
   revalidatePath("/zajecia-dzieci");
 }
 
+// Ręczna kwota łączna per dziecko — np. zniżka za zapis na 2+ grupy naraz
+// (2×/tydz.), zamiast sztywnej sumy cen pojedynczych grup. Puste pole
+// czyści nadpisanie i wraca do automatycznej sumy (patrz monthly_fee_override
+// w migracji 0047).
+export async function setFeeOverride(formData: FormData) {
+  await requireKidsClassManager();
+  const registrationId = String(formData.get("registration_id") ?? "");
+  const raw = String(formData.get("monthly_fee_override") ?? "").trim();
+  if (!registrationId) throw new Error("Brak danych.");
+  const value = raw === "" ? null : Number(raw);
+  if (value !== null && (!Number.isFinite(value) || value < 0)) {
+    throw new Error("Podaj poprawną, nieujemną kwotę albo zostaw pole puste.");
+  }
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("kids_class_registration").update({ monthly_fee_override: value }).eq("id", registrationId);
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/zajecia-dzieci");
+}
+
 export async function toggleAttendance(formData: FormData) {
   await requireKidsClassManager();
   const enrollmentId = String(formData.get("enrollment_id") ?? "");
