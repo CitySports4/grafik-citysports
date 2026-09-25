@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { submitRegistration, type SignupInput } from "./actions";
 import { GROUP_LABELS, type KidsClassGroup } from "@/lib/kids-classes";
@@ -33,6 +33,27 @@ export function SignupForm() {
   function set<K extends keyof SignupInput>(key: K, value: SignupInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
+
+  // Strona żyje w <iframe> o STAŁEJ wysokości ustawionej ręcznie na stronie
+  // klubu (WordPress) — bez tego treść krótsza/dłuższa niż ta stała
+  // wysokość albo ucina się, albo zostawia puste miejsce (patrz też usunięte
+  // wcześniej pionowe centrowanie w page.tsx). Zamiast zgadywać wysokość z
+  // dwóch stron, WordPress dostaje realną wysokość i sam dopasowuje iframe —
+  // przeliczane przy starcie, zmianie rozmiaru okna, i przy KAŻDEJ zmianie w
+  // DOM (np. pojawienie się błędu albo przejście do ekranu potwierdzenia).
+  useEffect(() => {
+    function sendHeight() {
+      window.parent.postMessage({ type: "citysports-form-height", height: document.documentElement.scrollHeight }, "*");
+    }
+    sendHeight();
+    window.addEventListener("resize", sendHeight);
+    const observer = new MutationObserver(sendHeight);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    return () => {
+      window.removeEventListener("resize", sendHeight);
+      observer.disconnect();
+    };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
