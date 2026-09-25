@@ -2,17 +2,20 @@
 
 import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { requireEmployee, requireAdmin, canManageKidsClasses } from "@/lib/session";
+import { requireAdmin } from "@/lib/session";
+import { hasKioskSession } from "@/lib/kiosk-session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { toDateKey } from "@/lib/schedule-month";
 import { SEASON_MONTHS, type KidsClassStatus } from "@/lib/kids-classes";
 
-async function requireKidsClassManager() {
-  const employee = await requireEmployee();
-  if (!canManageKidsClasses(employee)) {
-    throw new Error("Brak uprawnień — ta sekcja jest dostępna dla recepcji i administratora.");
-  }
-  return employee;
+// Bieżąca obsługa (status, grupa, płatność, frekwencja) — recepcja przez
+// kiosk PIN (/recepcja/zajecia-dzieci) ALBO admin zalogowany w pełnej
+// appce (/zajecia-dzieci). Zwykły pracownik recepcji zalogowany w pełnej
+// appce już NIE ma tu dostępu — patrz (app)/layout.tsx, link zdjęty z
+// nawigacji recepcji, zostaje tylko u adminów.
+async function requireKidsClassManager(): Promise<void> {
+  if (await hasKioskSession()) return;
+  await requireAdmin();
 }
 
 // Zmienia status zapisu na grupę. Dla przejść związanych z opłatą po
@@ -50,6 +53,7 @@ export async function changeEnrollmentStatus(formData: FormData) {
   }
 
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
 
 export async function toggleUsedTrial(formData: FormData) {
@@ -60,6 +64,7 @@ export async function toggleUsedTrial(formData: FormData) {
   const { error } = await supabase.from("kids_class_enrollment").update({ used_trial: value }).eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
 
 // Zaplanowana zmiana grupy "od nowego miesiąca" (domyślnie 1. dzień
@@ -99,6 +104,7 @@ export async function scheduleGroupChange(formData: FormData) {
   if (insertError) throw new Error(dbErrorMessage(insertError));
 
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
 
 // Zapisuje jedną zmianę checkboxa płatności za dany miesiąc — jeśli
@@ -128,6 +134,7 @@ export async function toggleMonthPayment(formData: FormData) {
     .upsert({ registration_id: registrationId, months }, { onConflict: "registration_id" });
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
 
 // Cennik: cena zależy od LICZBY grup dziecka (1×/tydz., 2×/tydz., ...), nie
@@ -147,6 +154,7 @@ export async function setPriceTier(formData: FormData) {
     .upsert({ group_count: groupCount, monthly_fee: monthlyFee }, { onConflict: "group_count" });
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
 
 export async function deletePriceTier(formData: FormData) {
@@ -156,6 +164,7 @@ export async function deletePriceTier(formData: FormData) {
   const { error } = await supabase.from("kids_class_price_tier").delete().eq("group_count", groupCount);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
 
 export async function toggleAttendance(formData: FormData) {
@@ -171,6 +180,7 @@ export async function toggleAttendance(formData: FormData) {
     .upsert({ enrollment_id: enrollmentId, session_date: sessionDate, present }, { onConflict: "enrollment_id,session_date" });
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
 
 // Zarządzanie grupami (dzień/godzina/pojemność) — tylko admin, tak jak
@@ -198,6 +208,7 @@ export async function addGroup(formData: FormData) {
   });
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
 
 export async function updateGroup(formData: FormData) {
@@ -219,6 +230,7 @@ export async function updateGroup(formData: FormData) {
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
 
 export async function toggleGroupActive(formData: FormData) {
@@ -229,4 +241,5 @@ export async function toggleGroupActive(formData: FormData) {
   const { error } = await supabase.from("kids_class_group").update({ active: !active }).eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
 }
