@@ -45,8 +45,23 @@ export type KidsClassGroup = {
   capacity: number;
   active: boolean;
   sort_order: number;
-  monthly_fee: number;
 };
+
+export type PriceTier = { group_count: number; monthly_fee: number };
+
+// Cena zależy od LICZBY grup, do których dziecko aktualnie należy
+// (1×/tydz., 2×/tydz., ...) — jeden wspólny cennik, nie cena per grupa ani
+// ręczny wpis per dziecko (odrzucone wcześniej podejście). Dokładne
+// dopasowanie liczby grup; przy liczbie grup większej niż najwyższy
+// zdefiniowany próg (np. ktoś dołączy do 3. grupy, zanim admin doda cenę
+// za 3×/tydz.) używa tego najwyższego progu, zamiast pokazywać "brak ceny".
+export function feeForGroupCount(tiers: PriceTier[], groupCount: number): number | null {
+  if (groupCount <= 0 || tiers.length === 0) return null;
+  const exact = tiers.find((t) => t.group_count === groupCount);
+  if (exact) return exact.monthly_fee;
+  const applicable = tiers.filter((t) => t.group_count <= groupCount).sort((a, b) => b.group_count - a.group_count);
+  return applicable[0]?.monthly_fee ?? null;
+}
 
 // Etykieta grupy do wyświetlenia — własna nazwa (jeśli admin ją ustawił) z
 // dopiskiem dnia/godziny, albo sam dzień/godzina, gdy nazwy nie ma.

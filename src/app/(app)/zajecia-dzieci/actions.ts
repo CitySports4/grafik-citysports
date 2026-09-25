@@ -130,22 +130,30 @@ export async function toggleMonthPayment(formData: FormData) {
   revalidatePath("/zajecia-dzieci");
 }
 
-// Ręczna kwota łączna per dziecko — np. zniżka za zapis na 2+ grupy naraz
-// (2×/tydz.), zamiast sztywnej sumy cen pojedynczych grup. Puste pole
-// czyści nadpisanie i wraca do automatycznej sumy (patrz monthly_fee_override
-// w migracji 0047).
-export async function setFeeOverride(formData: FormData) {
-  await requireKidsClassManager();
-  const registrationId = String(formData.get("registration_id") ?? "");
-  const raw = String(formData.get("monthly_fee_override") ?? "").trim();
-  if (!registrationId) throw new Error("Brak danych.");
-  const value = raw === "" ? null : Number(raw);
-  if (value !== null && (!Number.isFinite(value) || value < 0)) {
-    throw new Error("Podaj poprawną, nieujemną kwotę albo zostaw pole puste.");
+// Cennik: cena zależy od LICZBY grup dziecka (1×/tydz., 2×/tydz., ...), nie
+// od konkretnej grupy ani ręcznego wpisu per dziecko (odrzucone podejście
+// z monthly_fee_override, patrz migracja 0048). Upsert po group_count —
+// jeden formularz na próg.
+export async function setPriceTier(formData: FormData) {
+  await requireAdmin();
+  const groupCount = Number(formData.get("group_count"));
+  const monthlyFee = Number(formData.get("monthly_fee"));
+  if (!Number.isInteger(groupCount) || groupCount <= 0 || !Number.isFinite(monthlyFee) || monthlyFee < 0) {
+    throw new Error("Podaj poprawną liczbę grup i nieujemną cenę.");
   }
-
   const supabase = createServerSupabaseClient();
-  const { error } = await supabase.from("kids_class_registration").update({ monthly_fee_override: value }).eq("id", registrationId);
+  const { error } = await supabase
+    .from("kids_class_price_tier")
+    .upsert({ group_count: groupCount, monthly_fee: monthlyFee }, { onConflict: "group_count" });
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidatePath("/zajecia-dzieci");
+}
+
+export async function deletePriceTier(formData: FormData) {
+  await requireAdmin();
+  const groupCount = Number(formData.get("group_count"));
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("kids_class_price_tier").delete().eq("group_count", groupCount);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
 }
@@ -174,19 +182,8 @@ export async function addGroup(formData: FormData) {
   const endTime = String(formData.get("end_time") ?? "");
   const label = String(formData.get("label") ?? "").trim() || null;
   const capacity = Number(formData.get("capacity"));
-  const monthlyFee = Number(formData.get("monthly_fee") ?? 0);
-  if (
-    !Number.isInteger(weekday) ||
-    weekday < 0 ||
-    weekday > 6 ||
-    !startTime ||
-    !endTime ||
-    !Number.isInteger(capacity) ||
-    capacity <= 0 ||
-    !Number.isFinite(monthlyFee) ||
-    monthlyFee < 0
-  ) {
-    throw new Error("Uzupełnij dzień, godziny, dodatnią pojemność i nieujemną cenę.");
+  if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !startTime || !endTime || !Number.isInteger(capacity) || capacity <= 0) {
+    throw new Error("Uzupełnij dzień, godziny i dodatnią pojemność.");
   }
 
   const supabase = createServerSupabaseClient();
@@ -197,7 +194,6 @@ export async function addGroup(formData: FormData) {
     end_time: endTime,
     label,
     capacity,
-    monthly_fee: monthlyFee,
     sort_order: count ?? 0,
   });
   if (error) throw new Error(dbErrorMessage(error));
@@ -212,26 +208,14 @@ export async function updateGroup(formData: FormData) {
   const endTime = String(formData.get("end_time") ?? "");
   const label = String(formData.get("label") ?? "").trim() || null;
   const capacity = Number(formData.get("capacity"));
-  const monthlyFee = Number(formData.get("monthly_fee") ?? 0);
-  if (
-    !id ||
-    !Number.isInteger(weekday) ||
-    weekday < 0 ||
-    weekday > 6 ||
-    !startTime ||
-    !endTime ||
-    !Number.isInteger(capacity) ||
-    capacity <= 0 ||
-    !Number.isFinite(monthlyFee) ||
-    monthlyFee < 0
-  ) {
-    throw new Error("Uzupełnij dzień, godziny, dodatnią pojemność i nieujemną cenę.");
+  if (!id || !Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !startTime || !endTime || !Number.isInteger(capacity) || capacity <= 0) {
+    throw new Error("Uzupełnij dzień, godziny i dodatnią pojemność.");
   }
 
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("kids_class_group")
-    .update({ weekday, start_time: startTime, end_time: endTime, label, capacity, monthly_fee: monthlyFee })
+    .update({ weekday, start_time: startTime, end_time: endTime, label, capacity })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");

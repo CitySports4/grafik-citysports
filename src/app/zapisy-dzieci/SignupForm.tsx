@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { submitRegistration, type SignupInput } from "./actions";
-import { groupLabel, type KidsClassGroup } from "@/lib/kids-classes";
+import { groupLabel, feeForGroupCount, type KidsClassGroup, type PriceTier } from "@/lib/kids-classes";
 import { Banner } from "@/components/Banner";
 
 const INPUT =
@@ -26,7 +26,7 @@ const EMPTY: FormState = {
   termsConsent: false,
 };
 
-export function SignupForm({ groups }: { groups: GroupOption[] }) {
+export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; priceTiers: PriceTier[] }) {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -169,10 +169,7 @@ export function SignupForm({ groups }: { groups: GroupOption[] }) {
                     >
                       {selected ? "✓" : ""}
                     </span>
-                    <span className="flex flex-col">
-                      <span className="text-sm font-semibold text-zinc-900">{groupLabel(group)}</span>
-                      {group.monthly_fee > 0 && <span className="text-xs text-zinc-500">{group.monthly_fee} zł / miesiąc</span>}
-                    </span>
+                    <span className="text-sm font-semibold text-zinc-900">{groupLabel(group)}</span>
                   </span>
                   {full ? (
                     <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">
@@ -188,6 +185,15 @@ export function SignupForm({ groups }: { groups: GroupOption[] }) {
             })}
             {groups.length === 0 && <p className="text-sm text-zinc-400">Brak dostępnych grup — skontaktuj się z recepcją.</p>}
           </div>
+          {groupIds.length > 0 &&
+            (() => {
+              const fee = feeForGroupCount(priceTiers, groupIds.length);
+              return fee !== null ? (
+                <p className="rounded-lg bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-700">
+                  Cena: {fee} zł / miesiąc {groupIds.length > 1 ? `(${groupIds.length}×/tydz.)` : ""}
+                </p>
+              ) : null;
+            })()}
         </div>
 
         <label className="flex items-center gap-2 text-sm text-zinc-700">
