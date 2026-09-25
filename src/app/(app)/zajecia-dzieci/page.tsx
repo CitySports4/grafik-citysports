@@ -31,9 +31,9 @@ import {
 import { FrekwencjaFilters } from "./FrekwencjaFilters";
 
 const TABS = [
-  { key: "zgloszenia", label: "Zgłoszenia" },
-  { key: "platnosci", label: "Płatności" },
   { key: "frekwencja", label: "Frekwencja" },
+  { key: "platnosci", label: "Płatności" },
+  { key: "zgloszenia", label: "Zgłoszenia" },
   { key: "oczekujacy", label: "Lista oczekujących" },
   { key: "grupy", label: "Grupy" },
 ] as const;
@@ -100,7 +100,7 @@ export default async function KidsClassesPage({
   const isAdmin = employee.roles.includes("admin");
 
   const params = await searchParams;
-  const tab: TabKey = (TABS.find((t) => t.key === params.tab)?.key ?? "zgloszenia") as TabKey;
+  const tab: TabKey = (TABS.find((t) => t.key === params.tab)?.key ?? "frekwencja") as TabKey;
   const today = toDateKey(new Date());
 
   const supabase = createServerSupabaseClient();
@@ -148,7 +148,7 @@ export default async function KidsClassesPage({
         {TABS.map((t) => (
           <Link
             key={t.key}
-            href={t.key === "zgloszenia" ? "/zajecia-dzieci" : `/zajecia-dzieci?tab=${t.key}`}
+            href={t.key === "frekwencja" ? "/zajecia-dzieci" : `/zajecia-dzieci?tab=${t.key}`}
             className={`px-3 py-2 text-sm font-semibold ${
               tab === t.key ? "border-b-2 border-brand-orange text-zinc-900" : "text-zinc-500 hover:text-zinc-700"
             }`}
