@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining, canManageKidsClasses } from "@/lib/session";
+import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining } from "@/lib/session";
 import { NavDropdown } from "@/components/NavDropdown";
 import { MainContainer } from "@/components/MainContainer";
 import { logout } from "./actions";
@@ -38,8 +38,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const trailingLinks: { href: string; label: string }[] = [];
   if (!isTrainerOnly) trailingLinks.push({ href: "/zadania", label: "Zadania" });
   if (canSeePersonalTraining) trailingLinks.push({ href: "/treningi-personalne", label: "Treningi personalne" });
-  if (canManageKidsClasses(employee)) trailingLinks.push({ href: "/zajecia-dzieci", label: "Zajęcia dla dzieci" });
+  // Zajęcia dla dzieci — bieżącą obsługę recepcja robi przez kiosk PIN
+  // (/recepcja/zajecia-dzieci), nie stąd; tu zostaje tylko dla admina
+  // (konfiguracja grup/cennika).
   if (employee.roles.includes("admin")) {
+    trailingLinks.push({ href: "/zajecia-dzieci", label: "Zajęcia dla dzieci" });
     trailingLinks.push({ href: "/admin", label: "Panel admina" });
   }
 

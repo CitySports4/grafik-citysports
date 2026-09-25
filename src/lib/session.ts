@@ -114,14 +114,6 @@ export function canPreviewPersonalTraining(employee: SessionEmployee): boolean {
   return employee.roles.includes("recepcja") || employee.roles.includes("admin");
 }
 
-// Zajęcia dla dzieci (zgłoszenia, płatności) — dzień-do-dnia obsługuje
-// recepcja, tak jak w dawnym systemie ("Panel administracyjny dla
-// recepcji"); limity miejsc (Ustawienia) zmienia tylko admin — patrz
-// requireAdmin w app/(app)/zajecia-dzieci/actions.ts.
-export function canManageKidsClasses(employee: SessionEmployee): boolean {
-  return employee.roles.includes("recepcja") || employee.roles.includes("admin");
-}
-
 // Czy pracownik rozlicza się godzinowo — patrz komentarz przy hourlyRate.
 export function tracksHours(employee: SessionEmployee): boolean {
   return employee.hourlyRate > 0;

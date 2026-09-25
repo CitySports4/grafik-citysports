@@ -5,11 +5,21 @@ import { groupLabel, type KidsClassGroup } from "@/lib/kids-classes";
 
 const INPUT_SM = "rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-xs";
 
-export function FrekwencjaFilters({ groups, groupId, monthKey }: { groups: KidsClassGroup[]; groupId?: string; monthKey: string }) {
+export function FrekwencjaFilters({
+  groups,
+  groupId,
+  monthKey,
+  basePath,
+}: {
+  groups: KidsClassGroup[];
+  groupId?: string;
+  monthKey: string;
+  basePath: string;
+}) {
   const router = useRouter();
 
   function navigate(nextGroupId: string, nextMonth: string) {
-    router.push(`/zajecia-dzieci?tab=frekwencja&frekwencja_grupa=${nextGroupId}&frekwencja_miesiac=${nextMonth}`);
+    router.push(`${basePath}?tab=frekwencja&frekwencja_grupa=${nextGroupId}&frekwencja_miesiac=${nextMonth}`);
   }
 
   return (
