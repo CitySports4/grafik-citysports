@@ -10,6 +10,7 @@ import {
   ageOnDate,
   computeGroupOccupancy,
   groupLabel,
+  feeForGroupCount,
   sessionDatesInMonth,
   STATUS_LABELS,
   SEASON_MONTHS,
@@ -17,13 +18,15 @@ import {
   isEnrollmentEffective,
   type KidsClassGroup,
   type KidsClassStatus,
+  type PriceTier,
 } from "@/lib/kids-classes";
 import {
   changeEnrollmentStatus,
   toggleUsedTrial,
   scheduleGroupChange,
   toggleMonthPayment,
-  setFeeOverride,
+  setPriceTier,
+  deletePriceTier,
   toggleAttendance,
   addGroup,
   updateGroup,
@@ -86,7 +89,6 @@ type EnrollmentRow = {
     birth_date: string;
     parent_name: string;
     phone: string;
-    monthly_fee_override: number | null;
   };
 };
 
@@ -112,15 +114,16 @@ export default async function KidsClassesPage({
   const today = toDateKey(new Date());
 
   const supabase = createServerSupabaseClient();
-  const [{ data: groupsRaw }, { data: enrollmentsRaw }, { data: paymentsRaw }] = await Promise.all([
-    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order, monthly_fee").order("sort_order"),
+  const [{ data: groupsRaw }, { data: enrollmentsRaw }, { data: paymentsRaw }, { data: priceTiersRaw }] = await Promise.all([
+    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").order("sort_order"),
     supabase
       .from("kids_class_enrollment")
       .select(
-        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, kids_class_registration(id, child_name, birth_date, parent_name, phone, monthly_fee_override)"
+        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, kids_class_registration(id, child_name, birth_date, parent_name, phone)"
       )
       .order("created_at"),
     supabase.from("kids_class_payment").select("registration_id, months"),
+    supabase.from("kids_class_price_tier").select("group_count, monthly_fee").order("group_count"),
   ]);
 
   const groups = (groupsRaw ?? []) as KidsClassGroup[];
@@ -129,6 +132,7 @@ export default async function KidsClassesPage({
   const enrollments = (enrollmentsRaw ?? []) as unknown as EnrollmentRow[];
   const occupancy = computeGroupOccupancy(enrollments, today);
   const paymentsByRegistration = new Map((paymentsRaw ?? []).map((p) => [p.registration_id, p.months as boolean[]]));
+  const priceTiers = (priceTiersRaw ?? []) as PriceTier[];
 
   const currentEnrollments = enrollments.filter((e) => isEnrollmentEffective(e, today));
   const waiting = currentEnrollments.filter((e) => e.status === "oczekuje");
@@ -280,7 +284,7 @@ export default async function KidsClassesPage({
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="font-semibold text-zinc-900">{groupLabel(g)}</h2>
                   <span className="text-xs font-bold text-zinc-500">
-                    {g.monthly_fee} zł / mies. · {rows.length} {rows.length === 1 ? "dziecko" : "dzieci"}
+                    {rows.length} {rows.length === 1 ? "dziecko" : "dzieci"}
                   </span>
                 </div>
                 {rows.length === 0 ? (
@@ -303,40 +307,18 @@ export default async function KidsClassesPage({
                         {rows.map((e) => {
                           const r = e.kids_class_registration;
                           const months = paymentsByRegistration.get(r.id) ?? new Array(SEASON_MONTHS.length).fill(false);
-                          // Suma opłat ze WSZYSTKICH grup, do których to
+                          // Cena z cennika wg LICZBY grup, do których to
                           // dziecko aktualnie należy — nie tylko z tej
                           // jednej sekcji — bo płatność jest jedna, na całe
-                          // dziecko, nie osobno per grupa. Admin może to
-                          // nadpisać ręcznie (np. zniżka za 2×/tydz.) —
-                          // patrz monthly_fee_override.
-                          const sumFee = currentEnrollments
-                            .filter((oe) => oe.kids_class_registration.id === r.id && OCCUPYING_STATUSES.includes(oe.status))
-                            .reduce((sum, oe) => sum + (groupById.get(oe.group_id)?.monthly_fee ?? 0), 0);
-                          const isOverridden = r.monthly_fee_override !== null;
+                          // dziecko, nie osobno per grupa.
+                          const groupCount = currentEnrollments.filter(
+                            (oe) => oe.kids_class_registration.id === r.id && OCCUPYING_STATUSES.includes(oe.status)
+                          ).length;
+                          const fee = feeForGroupCount(priceTiers, groupCount);
                           return (
                             <tr key={e.id}>
                               <td className="py-1.5 pr-3 font-medium text-zinc-900">{r.child_name}</td>
-                              <td className="py-1.5 pr-3">
-                                <form action={setFeeOverride} className="flex items-center gap-1">
-                                  <input type="hidden" name="registration_id" value={r.id} />
-                                  <input
-                                    type="number"
-                                    name="monthly_fee_override"
-                                    min={0}
-                                    step="0.01"
-                                    defaultValue={r.monthly_fee_override ?? ""}
-                                    placeholder={`${sumFee} (suma)`}
-                                    title="Puste = automatyczna suma cen grup. Wpisz kwotę, żeby nadpisać (np. zniżka za 2×/tydz.)."
-                                    className={`w-20 rounded-lg border px-1.5 py-0.5 text-xs ${
-                                      isOverridden ? "border-brand-orange bg-orange-50 text-brand-navy" : "border-zinc-300 text-zinc-500"
-                                    }`}
-                                  />
-                                  <span className="text-xs text-zinc-400">zł</span>
-                                  <button type="submit" className="text-xs text-zinc-400 hover:text-zinc-700" title="Zapisz kwotę">
-                                    ✓
-                                  </button>
-                                </form>
-                              </td>
+                              <td className="py-1.5 pr-3 text-xs text-zinc-500">{fee !== null ? `${fee} zł` : "brak w cenniku"}</td>
                               {SEASON_MONTHS.map((m, mi) => (
                                 <td key={m} className="py-1.5 px-1.5 text-center">
                                   <form action={toggleMonthPayment}>
@@ -464,17 +446,13 @@ export default async function KidsClassesPage({
                       <label className="text-[10px] font-semibold text-zinc-500">Pojemność</label>
                       <input type="number" name="capacity" min={1} defaultValue={g.capacity} className={`${INPUT_SM} w-16`} />
                     </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold text-zinc-500">Cena/mies. (zł)</label>
-                      <input type="number" name="monthly_fee" min={0} step="0.01" defaultValue={g.monthly_fee} className={`${INPUT_SM} w-20`} />
-                    </div>
                     <SubmitButton className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50">
                       Zapisz
                     </SubmitButton>
                   </form>
                 ) : (
                   <span className="text-sm text-zinc-700">
-                    {groupLabel(g)} — pojemność {g.capacity} — {g.monthly_fee} zł/mies.
+                    {groupLabel(g)} — pojemność {g.capacity}
                   </span>
                 )}
                 {isAdmin && (
@@ -521,15 +499,66 @@ export default async function KidsClassesPage({
                   <label className="text-[10px] font-semibold text-zinc-500">Pojemność</label>
                   <input type="number" name="capacity" min={1} defaultValue={8} className={`${INPUT_SM} w-16`} />
                 </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-semibold text-zinc-500">Cena/mies. (zł)</label>
-                  <input type="number" name="monthly_fee" min={0} step="0.01" defaultValue={0} className={`${INPUT_SM} w-20`} />
-                </div>
                 <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
                   Dodaj grupę
                 </SubmitButton>
               </form>
             </details>
+          )}
+        </Card>
+      )}
+
+      {tab === "grupy" && (
+        <Card>
+          <h2 className="mb-1 font-semibold text-zinc-900">Cennik</h2>
+          <p className="mb-3 text-sm text-zinc-500">
+            Cena zależy od LICZBY grup, do których dziecko aktualnie należy (1×/tydz., 2×/tydz., ...) — nie od
+            konkretnej grupy. Widoczna na formularzu zapisu i w Płatnościach.
+          </p>
+          <div className="flex flex-col gap-2">
+            {priceTiers.map((t) => (
+              <div key={t.group_count} className="flex items-center gap-2">
+                {isAdmin ? (
+                  <>
+                    <form action={setPriceTier} className="flex items-center gap-2">
+                      <input type="hidden" name="group_count" value={t.group_count} />
+                      <span className="text-sm text-zinc-700">{t.group_count}×/tydz.:</span>
+                      <input type="number" name="monthly_fee" min={0} step="0.01" defaultValue={t.monthly_fee} className={`${INPUT_SM} w-20`} />
+                      <span className="text-xs text-zinc-400">zł/mies.</span>
+                      <SubmitButton className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50">
+                        Zapisz
+                      </SubmitButton>
+                    </form>
+                    <form action={deletePriceTier}>
+                      <input type="hidden" name="group_count" value={t.group_count} />
+                      <ConfirmButton confirmText={`Usunąć próg cenowy ${t.group_count}×/tydz.?`} className={BTN_RED}>
+                        Usuń
+                      </ConfirmButton>
+                    </form>
+                  </>
+                ) : (
+                  <span className="text-sm text-zinc-700">
+                    {t.group_count}×/tydz.: {t.monthly_fee} zł/mies.
+                  </span>
+                )}
+              </div>
+            ))}
+            {priceTiers.length === 0 && <p className="text-sm text-zinc-400">Brak progów cenowych.</p>}
+          </div>
+          {isAdmin && (
+            <form action={setPriceTier} className="mt-3 flex flex-wrap items-end gap-2 border-t border-zinc-100 pt-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-zinc-500">Liczba grup/tydz.</label>
+                <input type="number" name="group_count" min={1} defaultValue={priceTiers.length + 1} className={`${INPUT_SM} w-20`} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-zinc-500">Cena (zł/mies.)</label>
+                <input type="number" name="monthly_fee" min={0} step="0.01" defaultValue={0} className={`${INPUT_SM} w-20`} />
+              </div>
+              <SubmitButton className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
+                Dodaj próg
+              </SubmitButton>
+            </form>
           )}
         </Card>
       )}
