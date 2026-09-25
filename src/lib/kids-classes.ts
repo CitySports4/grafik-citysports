@@ -36,6 +36,28 @@ export const SEASON_MONTHS = [
   "Czerwiec",
 ] as const;
 
+// Indeks bieżącego miesiąca w SEASON_MONTHS (0=Wrzesień..9=Czerwiec) —
+// null w lipcu/sierpniu, kiedy zajęć nie ma wcale (przerwa wakacyjna, poza
+// sezonem). Używane do podświetlania zaległości za "ten miesiąc" — poza
+// sezonem nie ma czego pilnować.
+const SEASON_MONTH_TO_CALENDAR = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+export function currentSeasonMonthIndex(todayKey: string): number | null {
+  const calendarMonth = Number(todayKey.slice(5, 7));
+  const idx = SEASON_MONTH_TO_CALENDAR.indexOf(calendarMonth);
+  return idx === -1 ? null : idx;
+}
+
+// Zgłoszenie zostawione w statusie "Nowe" (nikt nie kliknął "Opłacono" ani
+// "Brak opłaty") dłużej niż tyle dni — widoczne przypomnienie, żeby żadne
+// nie "zgubiło się" bez decyzji.
+export const STALE_NEW_DAYS = 5;
+export function isStaleNew(status: KidsClassStatus, createdAt: string, todayKey: string): boolean {
+  if (status !== "nowe") return false;
+  const created = new Date(createdAt);
+  const daysSince = Math.floor((new Date(todayKey + "T00:00:00").getTime() - created.getTime()) / 86400000);
+  return daysSince >= STALE_NEW_DAYS;
+}
+
 export type KidsClassGroup = {
   id: string;
   weekday: number;

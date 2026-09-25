@@ -11,6 +11,8 @@ import {
   groupLabel,
   feeForGroupCount,
   sessionDatesInMonth,
+  currentSeasonMonthIndex,
+  isStaleNew,
   STATUS_LABELS,
   SEASON_MONTHS,
   OCCUPYING_STATUSES,
@@ -24,6 +26,7 @@ import {
   toggleUsedTrial,
   scheduleGroupChange,
   toggleMonthPayment,
+  markContacted,
   setPriceTier,
   deletePriceTier,
   toggleAttendance,
@@ -86,6 +89,7 @@ type EnrollmentRow = {
   effective_until: string | null;
   used_trial: boolean;
   paid_trial_fee: boolean;
+  needs_parent_contact: boolean;
   kids_class_registration: {
     id: string;
     child_name: string;
@@ -124,7 +128,7 @@ export async function KidsClassesContent({
     supabase
       .from("kids_class_enrollment")
       .select(
-        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, kids_class_registration(id, child_name, birth_date, parent_name, phone)"
+        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, needs_parent_contact, kids_class_registration(id, child_name, birth_date, parent_name, phone)"
       )
       .order("created_at"),
     supabase.from("kids_class_payment").select("registration_id, months"),
@@ -143,6 +147,19 @@ export async function KidsClassesContent({
   const waiting = currentEnrollments.filter((e) => e.status === "oczekuje");
   const visibleTabs = TABS.filter((t) => t.key !== "grupy" || canEditGroups);
 
+  const needsContact = enrollments.filter((e) => e.needs_parent_contact);
+  const staleNew = currentEnrollments.filter((e) => isStaleNew(e.status, e.created_at, today));
+
+  // Zaległość za BIEŻĄCY miesiąc sezonu — poza sezonem (lipiec/sierpień,
+  // currentMonthIdx === null) nie ma czego pilnować, zajęć wtedy nie ma.
+  const currentMonthIdx = currentSeasonMonthIndex(today);
+  const payableChildIds =
+    currentMonthIdx === null
+      ? []
+      : [...new Map(currentEnrollments.filter((e) => OCCUPYING_STATUSES.includes(e.status)).map((e) => [e.kids_class_registration.id, e.kids_class_registration.id])).keys()];
+  const unpaidCount =
+    currentMonthIdx === null ? 0 : payableChildIds.filter((id) => !(paymentsByRegistration.get(id) ?? [])[currentMonthIdx]).length;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -151,6 +168,21 @@ export async function KidsClassesContent({
           <p className="text-sm text-zinc-500">Zapisy, płatności, frekwencja i listy oczekujących na zajęcia badmintona dla dzieci.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+          {needsContact.length > 0 && (
+            <Link href={`${basePath}?tab=zgloszenia`} className="rounded-full bg-red-600 px-3 py-1.5 text-white hover:bg-red-700">
+              🔔 {needsContact.length} do obdzwonienia
+            </Link>
+          )}
+          {unpaidCount > 0 && (
+            <Link href={`${basePath}?tab=platnosci`} className="rounded-full bg-brand-orange px-3 py-1.5 text-white hover:bg-brand-orange-dark">
+              ⚠ {unpaidCount} bez opłaty za {SEASON_MONTHS[currentMonthIdx!]}
+            </Link>
+          )}
+          {staleNew.length > 0 && (
+            <Link href={`${basePath}?tab=zgloszenia`} className="rounded-full bg-amber-100 px-3 py-1.5 text-amber-800 hover:bg-amber-200">
+              ⏳ {staleNew.length} czeka na decyzję
+            </Link>
+          )}
           {activeGroups.map((g) => {
             const occ = occupancy.get(g.id) ?? 0;
             return (
@@ -197,9 +229,16 @@ export async function KidsClassesContent({
                 const group = groupById.get(e.group_id);
                 const scheduled = e.effective_from > today;
                 const target = activeGroups.filter((g) => g.id !== e.group_id);
+                const stale = isStaleNew(e.status, e.created_at, today);
                 return (
-                  <tr key={e.id}>
-                    <td className="px-4 py-2.5 font-medium text-zinc-900">{e.kids_class_registration.child_name}</td>
+                  <tr key={e.id} className={e.needs_parent_contact ? "bg-red-50" : stale ? "bg-amber-50" : undefined}>
+                    <td className="px-4 py-2.5 font-medium text-zinc-900">
+                      {e.kids_class_registration.child_name}
+                      {e.needs_parent_contact && (
+                        <div className="text-[11px] font-bold text-red-600">🔔 awans z rezerwy — zadzwoń</div>
+                      )}
+                      {stale && <div className="text-[11px] font-bold text-amber-700">⏳ czeka na decyzję</div>}
+                    </td>
                     <td className="px-4 py-2.5 text-zinc-600">{ageOnDate(e.kids_class_registration.birth_date, today)}</td>
                     <td className="px-4 py-2.5 text-zinc-600">{e.kids_class_registration.parent_name}</td>
                     <td className="px-4 py-2.5 text-zinc-600">{e.kids_class_registration.phone}</td>
@@ -222,6 +261,14 @@ export async function KidsClassesContent({
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex flex-wrap items-center gap-1.5">
+                        {e.needs_parent_contact && (
+                          <form action={markContacted}>
+                            <input type="hidden" name="id" value={e.id} />
+                            <button type="submit" className={BTN_GREEN}>
+                              ✓ Skontaktowano
+                            </button>
+                          </form>
+                        )}
                         {statusActions(e.status).map((a) => (
                           <form key={a.next + a.label} action={changeEnrollmentStatus}>
                             <input type="hidden" name="id" value={e.id} />
