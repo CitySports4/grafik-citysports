@@ -220,7 +220,17 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
               onChange={(e) => set("termsConsent", e.target.checked)}
               className="mt-0.5 h-4 w-4 shrink-0"
             />
-            Akceptuję Regulamin zajęć.
+            Akceptuję{" "}
+            <a
+              href="https://citysports.com.pl/regulamin/#badminton_dzieci"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-brand-blue underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Regulamin zajęć
+            </a>
+            .
           </label>
         </div>
 

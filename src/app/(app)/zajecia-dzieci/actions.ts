@@ -48,10 +48,29 @@ export async function changeEnrollmentStatus(formData: FormData) {
       .limit(1)
       .maybeSingle();
     if (nextInLine) {
-      await supabase.from("kids_class_enrollment").update({ status: "aktywny", paid_trial_fee: false }).eq("id", nextInLine.id);
+      // needs_parent_contact — auto-promocja dzieje się cicho w bazie, bez
+      // tej flagi nikt by się nie dowiedział, że trzeba zadzwonić do
+      // rodzica z informacją "jest miejsce" — patrz markContacted.
+      await supabase
+        .from("kids_class_enrollment")
+        .update({ status: "aktywny", paid_trial_fee: false, needs_parent_contact: true })
+        .eq("id", nextInLine.id);
     }
   }
 
+  revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
+}
+
+// Odhacza "zadzwoniono do rodzica" po automatycznej promocji z listy
+// oczekujących.
+export async function markContacted(formData: FormData) {
+  await requireKidsClassManager();
+  const id = String(formData.get("id") ?? "");
+  if (!id) throw new Error("Brak danych.");
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("kids_class_enrollment").update({ needs_parent_contact: false }).eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
   revalidatePath("/recepcja/zajecia-dzieci");
 }
