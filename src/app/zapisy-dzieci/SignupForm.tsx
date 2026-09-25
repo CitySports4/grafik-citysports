@@ -169,7 +169,10 @@ export function SignupForm({ groups }: { groups: GroupOption[] }) {
                     >
                       {selected ? "✓" : ""}
                     </span>
-                    <span className="text-sm font-semibold text-zinc-900">{groupLabel(group)}</span>
+                    <span className="flex flex-col">
+                      <span className="text-sm font-semibold text-zinc-900">{groupLabel(group)}</span>
+                      {group.monthly_fee > 0 && <span className="text-xs text-zinc-500">{group.monthly_fee} zł / miesiąc</span>}
+                    </span>
                   </span>
                   {full ? (
                     <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">

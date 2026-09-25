@@ -47,7 +47,7 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
 
   const supabase = createServerSupabaseClient();
   const [{ data: groupsData }, { data: enrollmentsData }] = await Promise.all([
-    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").in("id", input.groupIds),
+    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order, monthly_fee").in("id", input.groupIds),
     supabase.from("kids_class_enrollment").select("id, group_id, status, effective_from, effective_until"),
   ]);
   const groups = (groupsData ?? []) as KidsClassGroup[];

@@ -105,7 +105,7 @@ export default async function KidsClassesPage({
 
   const supabase = createServerSupabaseClient();
   const [{ data: groupsRaw }, { data: enrollmentsRaw }, { data: paymentsRaw }] = await Promise.all([
-    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").order("sort_order"),
+    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order, monthly_fee").order("sort_order"),
     supabase
       .from("kids_class_enrollment")
       .select(
@@ -124,12 +124,6 @@ export default async function KidsClassesPage({
 
   const currentEnrollments = enrollments.filter((e) => isEnrollmentEffective(e, today));
   const waiting = currentEnrollments.filter((e) => e.status === "oczekuje");
-  const payableRegistrationIds = new Set(
-    currentEnrollments.filter((e) => OCCUPYING_STATUSES.includes(e.status)).map((e) => e.kids_class_registration.id)
-  );
-  const payableRegistrations = [...new Map(currentEnrollments.map((e) => [e.kids_class_registration.id, e.kids_class_registration])).values()].filter(
-    (r) => payableRegistrationIds.has(r.id)
-  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -264,65 +258,87 @@ export default async function KidsClassesPage({
       )}
 
       {tab === "platnosci" && (
-        <Card>
-          <h2 className="mb-3 font-semibold text-zinc-900">
-            Płatności <span className="text-xs font-normal text-zinc-400">({payableRegistrations.length})</span>
-          </h2>
-          {payableRegistrations.length === 0 ? (
-            <p className="text-sm text-zinc-400">Brak dzieci z aktywnym zapisem.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  <tr>
-                    <th className="py-1.5 pr-3">Dziecko</th>
-                    <th className="py-1.5 pr-3">Grupy</th>
-                    {SEASON_MONTHS.map((m) => (
-                      <th key={m} className="py-1.5 px-1.5 text-center">
-                        {m.slice(0, 3)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {payableRegistrations.map((r) => {
-                    const months = paymentsByRegistration.get(r.id) ?? new Array(SEASON_MONTHS.length).fill(false);
-                    const childGroups = currentEnrollments.filter((e) => e.kids_class_registration.id === r.id && OCCUPYING_STATUSES.includes(e.status));
-                    return (
-                      <tr key={r.id}>
-                        <td className="py-1.5 pr-3 font-medium text-zinc-900">{r.child_name}</td>
-                        <td className="py-1.5 pr-3 text-xs text-zinc-500">
-                          {childGroups
-                            .map((e) => groupById.get(e.group_id))
-                            .filter((g): g is KidsClassGroup => !!g)
-                            .map((g) => groupLabel(g))
-                            .join(", ")}
-                        </td>
-                        {SEASON_MONTHS.map((m, mi) => (
-                          <td key={m} className="py-1.5 px-1.5 text-center">
-                            <form action={toggleMonthPayment}>
-                              <input type="hidden" name="registration_id" value={r.id} />
-                              <input type="hidden" name="month_index" value={mi} />
-                              <input type="hidden" name="value" value={String(!months[mi])} />
-                              <button
-                                type="submit"
-                                className={`mx-auto flex h-5 w-5 items-center justify-center rounded border-2 ${
-                                  months[mi] ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
-                                }`}
-                              >
-                                {months[mi] ? "✓" : ""}
-                              </button>
-                            </form>
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+        <div className="flex flex-col gap-4">
+          {activeGroups.map((g) => {
+            // Dzieci z TEJ grupy — jeśli ktoś chodzi na dwie grupy naraz,
+            // pojawia się w obu sekcjach (płaci raz, ale widać go w każdym
+            // dniu, na który faktycznie przychodzi).
+            const rows = currentEnrollments
+              .filter((e) => e.group_id === g.id && OCCUPYING_STATUSES.includes(e.status))
+              .slice()
+              .sort((a, b) => a.kids_class_registration.child_name.localeCompare(b.kids_class_registration.child_name, "pl"));
+            return (
+              <Card key={g.id}>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="font-semibold text-zinc-900">{groupLabel(g)}</h2>
+                  <span className="text-xs font-bold text-zinc-500">
+                    {g.monthly_fee} zł / mies. · {rows.length} {rows.length === 1 ? "dziecko" : "dzieci"}
+                  </span>
+                </div>
+                {rows.length === 0 ? (
+                  <p className="text-sm text-zinc-400">Brak dzieci w tej grupie.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        <tr>
+                          <th className="py-1.5 pr-3">Dziecko</th>
+                          <th className="py-1.5 pr-3">Łącznie/mies.</th>
+                          {SEASON_MONTHS.map((m) => (
+                            <th key={m} className="py-1.5 px-1.5 text-center">
+                              {m.slice(0, 3)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {rows.map((e) => {
+                          const r = e.kids_class_registration;
+                          const months = paymentsByRegistration.get(r.id) ?? new Array(SEASON_MONTHS.length).fill(false);
+                          // Suma opłat ze WSZYSTKICH grup, do których to
+                          // dziecko aktualnie należy — nie tylko z tej
+                          // jednej sekcji — bo płatność jest jedna, na całe
+                          // dziecko, nie osobno per grupa.
+                          const totalFee = currentEnrollments
+                            .filter((oe) => oe.kids_class_registration.id === r.id && OCCUPYING_STATUSES.includes(oe.status))
+                            .reduce((sum, oe) => sum + (groupById.get(oe.group_id)?.monthly_fee ?? 0), 0);
+                          return (
+                            <tr key={e.id}>
+                              <td className="py-1.5 pr-3 font-medium text-zinc-900">{r.child_name}</td>
+                              <td className="py-1.5 pr-3 text-xs text-zinc-500">{totalFee} zł</td>
+                              {SEASON_MONTHS.map((m, mi) => (
+                                <td key={m} className="py-1.5 px-1.5 text-center">
+                                  <form action={toggleMonthPayment}>
+                                    <input type="hidden" name="registration_id" value={r.id} />
+                                    <input type="hidden" name="month_index" value={mi} />
+                                    <input type="hidden" name="value" value={String(!months[mi])} />
+                                    <button
+                                      type="submit"
+                                      className={`mx-auto flex h-5 w-5 items-center justify-center rounded border-2 ${
+                                        months[mi] ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
+                                      }`}
+                                    >
+                                      {months[mi] ? "✓" : ""}
+                                    </button>
+                                  </form>
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+          {activeGroups.length === 0 && (
+            <Card>
+              <p className="text-sm text-zinc-400">Brak grup.</p>
+            </Card>
           )}
-        </Card>
+        </div>
       )}
 
       {tab === "frekwencja" && (
@@ -417,13 +433,17 @@ export default async function KidsClassesPage({
                       <label className="text-[10px] font-semibold text-zinc-500">Pojemność</label>
                       <input type="number" name="capacity" min={1} defaultValue={g.capacity} className={`${INPUT_SM} w-16`} />
                     </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-semibold text-zinc-500">Cena/mies. (zł)</label>
+                      <input type="number" name="monthly_fee" min={0} step="0.01" defaultValue={g.monthly_fee} className={`${INPUT_SM} w-20`} />
+                    </div>
                     <SubmitButton className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50">
                       Zapisz
                     </SubmitButton>
                   </form>
                 ) : (
                   <span className="text-sm text-zinc-700">
-                    {groupLabel(g)} — pojemność {g.capacity}
+                    {groupLabel(g)} — pojemność {g.capacity} — {g.monthly_fee} zł/mies.
                   </span>
                 )}
                 {isAdmin && (
@@ -469,6 +489,10 @@ export default async function KidsClassesPage({
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-semibold text-zinc-500">Pojemność</label>
                   <input type="number" name="capacity" min={1} defaultValue={8} className={`${INPUT_SM} w-16`} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold text-zinc-500">Cena/mies. (zł)</label>
+                  <input type="number" name="monthly_fee" min={0} step="0.01" defaultValue={0} className={`${INPUT_SM} w-20`} />
                 </div>
                 <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
                   Dodaj grupę

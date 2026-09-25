@@ -45,6 +45,7 @@ export type KidsClassGroup = {
   capacity: number;
   active: boolean;
   sort_order: number;
+  monthly_fee: number;
 };
 
 // Etykieta grupy do wyświetlenia — własna nazwa (jeśli admin ją ustawił) z
