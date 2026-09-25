@@ -23,7 +23,6 @@ const EMPTY: SignupInput = {
   hasExperience: false,
   rodoConsent: false,
   termsConsent: false,
-  imageConsent: false,
 };
 
 export function SignupForm() {
@@ -152,15 +151,6 @@ export function SignupForm() {
               className="mt-0.5 h-4 w-4 shrink-0"
             />
             Akceptuję Regulamin zajęć.
-          </label>
-          <label className="flex items-start gap-2 text-sm text-zinc-700">
-            <input
-              type="checkbox"
-              checked={form.imageConsent}
-              onChange={(e) => set("imageConsent", e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0"
-            />
-            Wyrażam zgodę na wykorzystanie wizerunku dziecka w materiałach promocyjnych klubu (opcjonalnie).
           </label>
         </div>
 

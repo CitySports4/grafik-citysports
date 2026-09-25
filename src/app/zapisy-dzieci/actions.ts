@@ -17,7 +17,6 @@ export type SignupInput = {
   hasExperience: boolean;
   rodoConsent: boolean;
   termsConsent: boolean;
-  imageConsent: boolean;
 };
 
 export type SignupResult = { ok: true; waitlisted: boolean } | { ok: false; error: string };
@@ -64,7 +63,6 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     has_experience: input.hasExperience,
     rodo_consent: input.rodoConsent,
     terms_consent: input.termsConsent,
-    image_consent: input.imageConsent,
     status: fits ? "nowe" : "oczekuje",
   });
   if (error) return { ok: false, error: dbErrorMessage(error) };
