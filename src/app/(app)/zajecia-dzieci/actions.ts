@@ -154,8 +154,19 @@ export async function addGroup(formData: FormData) {
   const endTime = String(formData.get("end_time") ?? "");
   const label = String(formData.get("label") ?? "").trim() || null;
   const capacity = Number(formData.get("capacity"));
-  if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !startTime || !endTime || !Number.isInteger(capacity) || capacity <= 0) {
-    throw new Error("Uzupełnij dzień, godziny i dodatnią pojemność.");
+  const monthlyFee = Number(formData.get("monthly_fee") ?? 0);
+  if (
+    !Number.isInteger(weekday) ||
+    weekday < 0 ||
+    weekday > 6 ||
+    !startTime ||
+    !endTime ||
+    !Number.isInteger(capacity) ||
+    capacity <= 0 ||
+    !Number.isFinite(monthlyFee) ||
+    monthlyFee < 0
+  ) {
+    throw new Error("Uzupełnij dzień, godziny, dodatnią pojemność i nieujemną cenę.");
   }
 
   const supabase = createServerSupabaseClient();
@@ -166,6 +177,7 @@ export async function addGroup(formData: FormData) {
     end_time: endTime,
     label,
     capacity,
+    monthly_fee: monthlyFee,
     sort_order: count ?? 0,
   });
   if (error) throw new Error(dbErrorMessage(error));
@@ -180,14 +192,26 @@ export async function updateGroup(formData: FormData) {
   const endTime = String(formData.get("end_time") ?? "");
   const label = String(formData.get("label") ?? "").trim() || null;
   const capacity = Number(formData.get("capacity"));
-  if (!id || !Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !startTime || !endTime || !Number.isInteger(capacity) || capacity <= 0) {
-    throw new Error("Uzupełnij dzień, godziny i dodatnią pojemność.");
+  const monthlyFee = Number(formData.get("monthly_fee") ?? 0);
+  if (
+    !id ||
+    !Number.isInteger(weekday) ||
+    weekday < 0 ||
+    weekday > 6 ||
+    !startTime ||
+    !endTime ||
+    !Number.isInteger(capacity) ||
+    capacity <= 0 ||
+    !Number.isFinite(monthlyFee) ||
+    monthlyFee < 0
+  ) {
+    throw new Error("Uzupełnij dzień, godziny, dodatnią pojemność i nieujemną cenę.");
   }
 
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("kids_class_group")
-    .update({ weekday, start_time: startTime, end_time: endTime, label, capacity })
+    .update({ weekday, start_time: startTime, end_time: endTime, label, capacity, monthly_fee: monthlyFee })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
