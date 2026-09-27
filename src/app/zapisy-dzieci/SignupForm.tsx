@@ -73,8 +73,11 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
       setError("Wybierz przynajmniej jedną grupę.");
       return;
     }
-    if (groupIds.some((id) => !trialDates[id])) {
-      setError("Wybierz termin zajęć próbnych dla każdej wybranej grupy.");
+    // Termin próbnych ma sens tylko tam, gdzie jest wolne miejsce — pełna
+    // grupa (lista oczekujących) nie ma wolnego terminu na próbne.
+    const groupsNeedingTrialDate = groups.filter((g) => groupIds.includes(g.group.id) && g.freeSpots > 0);
+    if (groupsNeedingTrialDate.some((g) => !trialDates[g.group.id])) {
+      setError("Wybierz termin zajęć próbnych dla każdej wybranej grupy z wolnym miejscem.");
       return;
     }
     setPending(true);
@@ -190,7 +193,13 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                       </span>
                     )}
                   </button>
-                  {selected && (
+                  {selected && full && (
+                    <p className="ml-1 rounded-xl bg-zinc-50 p-3 text-xs text-zinc-500">
+                      Grupa jest pełna — trafisz na listę oczekujących, bez terminu zajęć próbnych. Skontaktujemy się, jeśli
+                      zwolni się miejsce.
+                    </p>
+                  )}
+                  {selected && !full && (
                     <div className="ml-1 flex flex-col gap-1.5 rounded-xl bg-zinc-50 p-3">
                       <span className="text-xs font-semibold text-zinc-600">Termin bezpłatnych zajęć próbnych:</span>
                       <div className="flex flex-wrap gap-1.5">
