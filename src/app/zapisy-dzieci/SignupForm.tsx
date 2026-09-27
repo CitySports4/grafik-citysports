@@ -12,8 +12,8 @@ const LABEL = "text-sm font-semibold text-zinc-900";
 const PRIMARY_BTN =
   "mt-1.5 rounded-xl bg-brand-orange px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
 
-type GroupOption = { group: KidsClassGroup; freeSpots: number };
-type FormState = Omit<SignupInput, "groupIds">;
+type GroupOption = { group: KidsClassGroup; freeSpots: number; trialDates: string[] };
+type FormState = Omit<SignupInput, "groupIds" | "trialDates">;
 
 const EMPTY: FormState = {
   childName: "",
@@ -29,6 +29,7 @@ const EMPTY: FormState = {
 export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; priceTiers: PriceTier[] }) {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [trialDates, setTrialDates] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<{ label: string; waitlisted: boolean }[] | null>(null);
@@ -39,6 +40,10 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
 
   function toggleGroup(id: string) {
     setGroupIds((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
+  }
+
+  function setTrialDate(groupId: string, date: string) {
+    setTrialDates((prev) => ({ ...prev, [groupId]: date }));
   }
 
   // Strona żyje w <iframe> o STAŁEJ wysokości ustawionej ręcznie na stronie
@@ -68,9 +73,13 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
       setError("Wybierz przynajmniej jedną grupę.");
       return;
     }
+    if (groupIds.some((id) => !trialDates[id])) {
+      setError("Wybierz termin zajęć próbnych dla każdej wybranej grupy.");
+      return;
+    }
     setPending(true);
     try {
-      const res = await submitRegistration({ ...form, groupIds });
+      const res = await submitRegistration({ ...form, groupIds, trialDates });
       if (res.ok) {
         setResult(res.groupResults);
       } else {
@@ -149,38 +158,61 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
         <div className="flex flex-col gap-1.5">
           <label className={LABEL}>Grupa (można wybrać kilka)</label>
           <div className="flex flex-col gap-2">
-            {groups.map(({ group, freeSpots }) => {
+            {groups.map(({ group, freeSpots, trialDates: groupTrialDates }) => {
               const full = freeSpots <= 0;
               const selected = groupIds.includes(group.id);
               return (
-                <button
-                  type="button"
-                  key={group.id}
-                  onClick={() => toggleGroup(group.id)}
-                  className={`flex items-center justify-between gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors ${
-                    selected ? "border-brand-orange bg-orange-50" : "border-zinc-200 bg-white hover:border-zinc-300"
-                  }`}
-                >
-                  <span className="flex items-center gap-2.5">
-                    <span
-                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${
-                        selected ? "border-brand-orange bg-brand-orange text-white" : "border-zinc-300"
-                      }`}
-                    >
-                      {selected ? "✓" : ""}
+                <div key={group.id} className="flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.id)}
+                    className={`flex items-center justify-between gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors ${
+                      selected ? "border-brand-orange bg-orange-50" : "border-zinc-200 bg-white hover:border-zinc-300"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <span
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${
+                          selected ? "border-brand-orange bg-brand-orange text-white" : "border-zinc-300"
+                        }`}
+                      >
+                        {selected ? "✓" : ""}
+                      </span>
+                      <span className="text-sm font-semibold text-zinc-900">{groupLabel(group)}</span>
                     </span>
-                    <span className="text-sm font-semibold text-zinc-900">{groupLabel(group)}</span>
-                  </span>
-                  {full ? (
-                    <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">
-                      pełna — lista oczekujących
-                    </span>
-                  ) : (
-                    <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">
-                      {freeSpots} {freeSpots === 1 ? "wolne miejsce" : "wolne miejsca"}
-                    </span>
+                    {full ? (
+                      <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">
+                        pełna — lista oczekujących
+                      </span>
+                    ) : (
+                      <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                        {freeSpots} {freeSpots === 1 ? "wolne miejsce" : "wolne miejsca"}
+                      </span>
+                    )}
+                  </button>
+                  {selected && (
+                    <div className="ml-1 flex flex-col gap-1.5 rounded-xl bg-zinc-50 p-3">
+                      <span className="text-xs font-semibold text-zinc-600">Termin bezpłatnych zajęć próbnych:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {groupTrialDates.map((date) => {
+                          const dateChosen = trialDates[group.id] === date;
+                          return (
+                            <button
+                              type="button"
+                              key={date}
+                              onClick={() => setTrialDate(group.id, date)}
+                              className={`rounded-lg border-2 px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                                dateChosen ? "border-brand-orange bg-white text-brand-orange" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                              }`}
+                            >
+                              {formatTrialDate(date)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
-                </button>
+                </div>
               );
             })}
             {groups.length === 0 && <p className="text-sm text-zinc-400">Brak dostępnych grup — skontaktuj się z recepcją.</p>}
@@ -240,6 +272,13 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
       </form>
     </div>
   );
+}
+
+function formatTrialDate(dateKey: string): string {
+  const d = new Date(dateKey + "T00:00:00");
+  const weekday = d.toLocaleDateString("pl-PL", { weekday: "long" });
+  const rest = d.toLocaleDateString("pl-PL", { day: "numeric", month: "long" });
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${rest}`;
 }
 
 function Logo() {

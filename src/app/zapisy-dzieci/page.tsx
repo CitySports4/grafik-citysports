@@ -1,6 +1,6 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { toDateKey } from "@/lib/schedule-month";
-import { computeGroupOccupancy, type KidsClassGroup, type Enrollment, type PriceTier } from "@/lib/kids-classes";
+import { computeGroupOccupancy, upcomingSessionDates, type KidsClassGroup, type Enrollment, type PriceTier } from "@/lib/kids-classes";
 import { SignupForm } from "./SignupForm";
 
 // Jedyna strona w apce bez sesji/ciasteczek (żadnego requireEmployee) —
@@ -19,9 +19,12 @@ export default async function ZapisyDzieciPage() {
 
   const today = toDateKey(new Date());
   const occupancy = computeGroupOccupancy((enrollments ?? []) as Enrollment[], today);
+  // 3 najbliższe terminy — tyle wystarczy, żeby rodzic miał wybór, a nie za
+  // dużo, żeby lista mieściła się w boxie grupy.
   const groupsWithFreeSpots = ((groups ?? []) as KidsClassGroup[]).map((g) => ({
     group: g,
     freeSpots: Math.max(0, g.capacity - (occupancy.get(g.id) ?? 0)),
+    trialDates: upcomingSessionDates(g.weekday, today, 3),
   }));
 
   return (

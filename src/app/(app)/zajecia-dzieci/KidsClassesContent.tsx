@@ -89,6 +89,7 @@ type EnrollmentRow = {
   effective_until: string | null;
   used_trial: boolean;
   paid_trial_fee: boolean;
+  trial_date: string | null;
   needs_parent_contact: boolean;
   kids_class_registration: {
     id: string;
@@ -128,7 +129,7 @@ export async function KidsClassesContent({
     supabase
       .from("kids_class_enrollment")
       .select(
-        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, needs_parent_contact, kids_class_registration(id, child_name, birth_date, parent_name, phone)"
+        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, trial_date, needs_parent_contact, kids_class_registration(id, child_name, birth_date, parent_name, phone)"
       )
       .order("created_at"),
     supabase.from("kids_class_payment").select("registration_id, months"),
@@ -262,6 +263,9 @@ export async function KidsClassesContent({
                           {e.used_trial ? "✓" : ""}
                         </button>
                       </form>
+                      {e.trial_date && (
+                        <div className="mt-1 text-[11px] text-zinc-400">{new Date(e.trial_date).toLocaleDateString("pl-PL")}</div>
+                      )}
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex flex-wrap items-center gap-1.5">

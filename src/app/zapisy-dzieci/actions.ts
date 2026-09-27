@@ -13,6 +13,7 @@ export type SignupInput = {
   phone: string;
   whatsappContact: boolean;
   groupIds: string[];
+  trialDates: Record<string, string>;
   hasExperience: boolean;
   rodoConsent: boolean;
   termsConsent: boolean;
@@ -34,6 +35,9 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
 
   if (!childName || !parentName || !phone || !input.birthDate || input.groupIds.length === 0) {
     return { ok: false, error: "Wypełnij wszystkie wymagane pola i wybierz przynajmniej jedną grupę." };
+  }
+  if (input.groupIds.some((id) => !input.trialDates[id])) {
+    return { ok: false, error: "Wybierz termin zajęć próbnych dla każdej wybranej grupy." };
   }
   if (!input.rodoConsent || !input.termsConsent) {
     return { ok: false, error: "Zaznacz zgodę RODO i akceptację Regulaminu, żeby wysłać zgłoszenie." };
@@ -83,7 +87,7 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
       const fits = hasGroupCapacity(g, occupancy);
       occupancy.set(g.id, (occupancy.get(g.id) ?? 0) + (fits ? 1 : 0));
       groupResults.push({ label: groupLabel(g), waitlisted: !fits });
-      return { registration_id: registrationId, group_id: g.id, status: fits ? "nowe" : "oczekuje" };
+      return { registration_id: registrationId, group_id: g.id, status: fits ? "nowe" : "oczekuje", trial_date: input.trialDates[g.id] };
     });
     const { error: enrollmentError } = await supabase.from("kids_class_enrollment").insert(enrollmentRows);
     if (enrollmentError) return { ok: false, error: dbErrorMessage(enrollmentError) };
@@ -114,7 +118,7 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     // prawie pełnej grupy mogłoby oboje "zmieścić się" mimo jednego miejsca.
     occupancy.set(g.id, (occupancy.get(g.id) ?? 0) + (fits ? 1 : 0));
     groupResults.push({ label: groupLabel(g), waitlisted: !fits });
-    return { registration_id: registration.id, group_id: g.id, status: fits ? "nowe" : "oczekuje" };
+    return { registration_id: registration.id, group_id: g.id, status: fits ? "nowe" : "oczekuje", trial_date: input.trialDates[g.id] };
   });
 
   const { error: enrollmentError } = await supabase.from("kids_class_enrollment").insert(enrollmentRows);
