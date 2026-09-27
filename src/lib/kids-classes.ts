@@ -189,14 +189,17 @@ export function sessionDatesInMonth(weekday: number, year: number, month: number
   return dates;
 }
 
-// Najbliższe `count` terminów danego dnia tygodnia, licząc od JUTRA (nie od
-// dziś — zgłoszenie złożone dziś po zajęciach nie powinno proponować
-// terminu "dziś") — do wyboru zajęć próbnych w formularzu zapisu.
-export function upcomingSessionDates(weekday: number, todayKey: string, count: number): string[] {
+// WSZYSTKIE terminy danego dnia tygodnia w BIEŻĄCYM miesiącu, licząc od
+// JUTRA (nie od dziś — zgłoszenie złożone dziś po zajęciach nie powinno
+// proponować terminu "dziś") do końca miesiąca — do wyboru zajęć próbnych
+// w formularzu zapisu. Pod koniec miesiąca lista naturalnie się kurczy.
+export function upcomingSessionDates(weekday: number, todayKey: string): string[] {
+  const today = new Date(todayKey + "T00:00:00");
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   const dates: string[] = [];
-  const d = new Date(todayKey + "T00:00:00");
+  const d = new Date(today);
   d.setDate(d.getDate() + 1);
-  while (dates.length < count) {
+  while (d <= monthEnd) {
     if (d.getDay() === weekday) dates.push(toDateKeyLocal(d));
     d.setDate(d.getDate() + 1);
   }

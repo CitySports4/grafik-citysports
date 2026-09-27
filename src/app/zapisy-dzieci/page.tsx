@@ -19,12 +19,10 @@ export default async function ZapisyDzieciPage() {
 
   const today = toDateKey(new Date());
   const occupancy = computeGroupOccupancy((enrollments ?? []) as Enrollment[], today);
-  // 3 najbliższe terminy — tyle wystarczy, żeby rodzic miał wybór, a nie za
-  // dużo, żeby lista mieściła się w boxie grupy.
   const groupsWithFreeSpots = ((groups ?? []) as KidsClassGroup[]).map((g) => ({
     group: g,
     freeSpots: Math.max(0, g.capacity - (occupancy.get(g.id) ?? 0)),
-    trialDates: upcomingSessionDates(g.weekday, today, 3),
+    trialDates: upcomingSessionDates(g.weekday, today),
   }));
 
   return (

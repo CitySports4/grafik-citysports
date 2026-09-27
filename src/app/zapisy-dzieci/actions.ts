@@ -36,9 +36,6 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
   if (!childName || !parentName || !phone || !input.birthDate || input.groupIds.length === 0) {
     return { ok: false, error: "Wypełnij wszystkie wymagane pola i wybierz przynajmniej jedną grupę." };
   }
-  if (input.groupIds.some((id) => !input.trialDates[id])) {
-    return { ok: false, error: "Wybierz termin zajęć próbnych dla każdej wybranej grupy." };
-  }
   if (!input.rodoConsent || !input.termsConsent) {
     return { ok: false, error: "Zaznacz zgodę RODO i akceptację Regulaminu, żeby wysłać zgłoszenie." };
   }
@@ -82,16 +79,44 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     if (newGroups.length === 0) {
       return { ok: false, error: "To dziecko jest już zapisane na wybrane grupy — skontaktuj się z recepcją, jeśli chcesz coś zmienić." };
     }
-    const groupResults: { label: string; waitlisted: boolean }[] = [];
-    const enrollmentRows = newGroups.map((g) => {
+    // Termin próbnych ma sens tylko dla grup z wolnym miejscem — grupa
+    // pełna trafia na listę oczekujących, bez terminu (patrz SignupForm).
+    const plan = newGroups.map((g) => {
       const fits = hasGroupCapacity(g, occupancy);
       occupancy.set(g.id, (occupancy.get(g.id) ?? 0) + (fits ? 1 : 0));
-      groupResults.push({ label: groupLabel(g), waitlisted: !fits });
-      return { registration_id: registrationId, group_id: g.id, status: fits ? "nowe" : "oczekuje", trial_date: input.trialDates[g.id] };
+      return { group: g, fits };
     });
+    const missingTrialDate = plan.find((p) => p.fits && !input.trialDates[p.group.id]);
+    if (missingTrialDate) {
+      return { ok: false, error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(missingTrialDate.group)}.` };
+    }
+
+    const groupResults = plan.map((p) => ({ label: groupLabel(p.group), waitlisted: !p.fits }));
+    const enrollmentRows = plan.map((p) => ({
+      registration_id: registrationId,
+      group_id: p.group.id,
+      status: p.fits ? "nowe" : "oczekuje",
+      trial_date: p.fits ? input.trialDates[p.group.id] : null,
+    }));
     const { error: enrollmentError } = await supabase.from("kids_class_enrollment").insert(enrollmentRows);
     if (enrollmentError) return { ok: false, error: dbErrorMessage(enrollmentError) };
     return { ok: true, groupResults };
+  }
+
+  // Kolejne wybrane grupy w TYM SAMYM zgłoszeniu liczą się do siebie
+  // nawzajem — bez tego dwoje rodzeństwa zapisywanych naraz do tej samej
+  // prawie pełnej grupy mogłoby oboje "zmieścić się" mimo jednego miejsca.
+  // Termin próbnych ma sens tylko dla grup z wolnym miejscem. Liczone i
+  // walidowane PRZED utworzeniem profilu dziecka, żeby błąd walidacji nie
+  // zostawiał osieroconego wiersza bez żadnego zapisu na grupę.
+  const plan = groups.map((g) => {
+    const fits = hasGroupCapacity(g, occupancy);
+    occupancy.set(g.id, (occupancy.get(g.id) ?? 0) + (fits ? 1 : 0));
+    return { group: g, fits };
+  });
+  const missingTrialDate = plan.find((p) => p.fits && !input.trialDates[p.group.id]);
+  if (missingTrialDate) {
+    return { ok: false, error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(missingTrialDate.group)}.` };
   }
 
   const { data: registration, error: registrationError } = await supabase
@@ -110,16 +135,13 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     .single();
   if (registrationError || !registration) return { ok: false, error: dbErrorMessage(registrationError) };
 
-  const groupResults: { label: string; waitlisted: boolean }[] = [];
-  const enrollmentRows = groups.map((g) => {
-    const fits = hasGroupCapacity(g, occupancy);
-    // Kolejne wybrane grupy w TYM SAMYM zgłoszeniu liczą się do siebie
-    // nawzajem — bez tego dwoje rodzeństwa zapisywanych naraz do tej samej
-    // prawie pełnej grupy mogłoby oboje "zmieścić się" mimo jednego miejsca.
-    occupancy.set(g.id, (occupancy.get(g.id) ?? 0) + (fits ? 1 : 0));
-    groupResults.push({ label: groupLabel(g), waitlisted: !fits });
-    return { registration_id: registration.id, group_id: g.id, status: fits ? "nowe" : "oczekuje", trial_date: input.trialDates[g.id] };
-  });
+  const groupResults = plan.map((p) => ({ label: groupLabel(p.group), waitlisted: !p.fits }));
+  const enrollmentRows = plan.map((p) => ({
+    registration_id: registration.id,
+    group_id: p.group.id,
+    status: p.fits ? "nowe" : "oczekuje",
+    trial_date: p.fits ? input.trialDates[p.group.id] : null,
+  }));
 
   const { error: enrollmentError } = await supabase.from("kids_class_enrollment").insert(enrollmentRows);
   if (enrollmentError) return { ok: false, error: dbErrorMessage(enrollmentError) };
