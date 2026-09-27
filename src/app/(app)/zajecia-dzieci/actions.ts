@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/session";
 import { hasKioskSession } from "@/lib/kiosk-session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { toDateKey } from "@/lib/schedule-month";
-import { SEASON_MONTHS, type KidsClassStatus } from "@/lib/kids-classes";
+import { SEASON_MONTHS, isEnrollmentEffective, type KidsClassStatus } from "@/lib/kids-classes";
 
 // Bieżąca obsługa (status, grupa, płatność, frekwencja) — recepcja przez
 // kiosk PIN (/recepcja/zajecia-dzieci) ALBO admin zalogowany w pełnej
@@ -75,12 +75,25 @@ export async function markContacted(formData: FormData) {
   revalidatePath("/recepcja/zajecia-dzieci");
 }
 
+// Odhaczenie "wykorzystano próbne" dla zgłoszenia w statusie "Nowe" samo
+// w sobie oznacza, że dziecko zostaje — promujemy od razu na "Aktywny",
+// tak samo jak przy ręcznym "Opłacono → Aktywny" (patrz
+// changeEnrollmentStatus). Ręczne przyciski statusu zostają bez zmian —
+// to tylko skrót, nie zamiennik.
 export async function toggleUsedTrial(formData: FormData) {
   await requireKidsClassManager();
   const id = String(formData.get("id") ?? "");
   const value = formData.get("value") === "true";
   const supabase = createServerSupabaseClient();
-  const { error } = await supabase.from("kids_class_enrollment").update({ used_trial: value }).eq("id", id);
+  const patch: Record<string, unknown> = { used_trial: value };
+  if (value) {
+    const { data: current } = await supabase.from("kids_class_enrollment").select("status").eq("id", id).single();
+    if (current?.status === "nowe") {
+      patch.status = "aktywny";
+      patch.paid_trial_fee = true;
+    }
+  }
+  const { error } = await supabase.from("kids_class_enrollment").update(patch).eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
   revalidatePath("/recepcja/zajecia-dzieci");
@@ -152,6 +165,26 @@ export async function toggleMonthPayment(formData: FormData) {
     .from("kids_class_payment")
     .upsert({ registration_id: registrationId, months }, { onConflict: "registration_id" });
   if (error) throw new Error(dbErrorMessage(error));
+
+  // Odznaczenie opłaty za dowolny miesiąc oznacza, że dziecko zostaje —
+  // "Nowe"/"Brak opłaty" awansuje samo na "Aktywny", tak jak ręczne
+  // "Opłacono → Aktywny" (patrz changeEnrollmentStatus). "Oczekuje" i
+  // "Rezygnacja" świadomie pominięte — te wymagają jawnej decyzji
+  // personelu (limit miejsc / rezygnacja to nie pomyłka do cofnięcia samą
+  // płatnością).
+  if (value) {
+    const today = toDateKey(new Date());
+    const { data: candidates } = await supabase
+      .from("kids_class_enrollment")
+      .select("id, status, effective_from, effective_until")
+      .eq("registration_id", registrationId)
+      .in("status", ["nowe", "brak_oplaty"]);
+    const toPromote = (candidates ?? []).filter((e) => isEnrollmentEffective(e, today)).map((e) => e.id);
+    if (toPromote.length > 0) {
+      await supabase.from("kids_class_enrollment").update({ status: "aktywny", paid_trial_fee: true }).in("id", toPromote);
+    }
+  }
+
   revalidatePath("/zajecia-dzieci");
   revalidatePath("/recepcja/zajecia-dzieci");
 }
