@@ -152,11 +152,15 @@ export async function KidsClassesContent({
 
   // Zaległość za BIEŻĄCY miesiąc sezonu — poza sezonem (lipiec/sierpień,
   // currentMonthIdx === null) nie ma czego pilnować, zajęć wtedy nie ma.
+  // Tylko status "aktywny" liczy się jako zobowiązany do opłaty — "nowe"
+  // to wciąż okres próbny/decyzyjny (ma swoje "czeka na decyzję" wyżej), a
+  // dziecko, które dopiero wykorzystało bezpłatne wejście próbne i dołącza
+  // od kolejnego miesiąca, nie powinno wyglądać jak zaległość.
   const currentMonthIdx = currentSeasonMonthIndex(today);
   const payableChildIds =
     currentMonthIdx === null
       ? []
-      : [...new Map(currentEnrollments.filter((e) => OCCUPYING_STATUSES.includes(e.status)).map((e) => [e.kids_class_registration.id, e.kids_class_registration.id])).keys()];
+      : [...new Map(currentEnrollments.filter((e) => e.status === "aktywny").map((e) => [e.kids_class_registration.id, e.kids_class_registration.id])).keys()];
   const unpaidCount =
     currentMonthIdx === null ? 0 : payableChildIds.filter((id) => !(paymentsByRegistration.get(id) ?? [])[currentMonthIdx]).length;
 
