@@ -75,25 +75,21 @@ export async function markContacted(formData: FormData) {
   revalidatePath("/recepcja/zajecia-dzieci");
 }
 
-// Odhaczenie "wykorzystano próbne" dla zgłoszenia w statusie "Nowe" samo
-// w sobie oznacza, że dziecko zostaje — promujemy od razu na "Aktywny",
-// tak samo jak przy ręcznym "Opłacono → Aktywny" (patrz
-// changeEnrollmentStatus). Ręczne przyciski statusu zostają bez zmian —
-// to tylko skrót, nie zamiennik.
+// UWAGA: celowo NIE promujemy tu automatycznie na "Aktywny" (było tak
+// wcześniej, usunięte). Skorzystanie z próbnego to sam fakt obecności, nie
+// decyzja "płaci od tego miesiąca" — dziecko często wraca z próbnego, ale
+// formalnie dołącza dopiero od KOLEJNEGO miesiąca (patrz trial_date), więc
+// automatyczne "Aktywny" fałszywie pokazywało je jako zalegające z opłatą
+// za bieżący miesiąc. Promocja na "Aktywny" zostaje wyłącznie: ręcznym
+// przyciskiem (Opłacono → Aktywny) albo zaznaczeniem realnej opłaty w
+// Płatnościach (patrz toggleMonthPayment) — oba faktycznie oznaczają "płaci
+// teraz", w przeciwieństwie do samego "był na próbnym".
 export async function toggleUsedTrial(formData: FormData) {
   await requireKidsClassManager();
   const id = String(formData.get("id") ?? "");
   const value = formData.get("value") === "true";
   const supabase = createServerSupabaseClient();
-  const patch: Record<string, unknown> = { used_trial: value };
-  if (value) {
-    const { data: current } = await supabase.from("kids_class_enrollment").select("status").eq("id", id).single();
-    if (current?.status === "nowe") {
-      patch.status = "aktywny";
-      patch.paid_trial_fee = true;
-    }
-  }
-  const { error } = await supabase.from("kids_class_enrollment").update(patch).eq("id", id);
+  const { error } = await supabase.from("kids_class_enrollment").update({ used_trial: value }).eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidatePath("/zajecia-dzieci");
   revalidatePath("/recepcja/zajecia-dzieci");
