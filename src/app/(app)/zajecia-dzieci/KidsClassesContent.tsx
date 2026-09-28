@@ -25,16 +25,16 @@ import {
   changeEnrollmentStatus,
   toggleUsedTrial,
   scheduleGroupChange,
-  toggleMonthPayment,
   markContacted,
   setPriceTier,
   deletePriceTier,
-  toggleAttendance,
   addGroup,
   updateGroup,
   toggleGroupActive,
 } from "./actions";
 import { FrekwencjaFilters } from "./FrekwencjaFilters";
+import { AttendanceCell } from "./AttendanceCell";
+import { PaymentCell } from "./PaymentCell";
 
 // Wspólna treść dla dwóch wejść: pełna appka (/zajecia-dzieci, tylko admin)
 // i kiosk recepcji (/recepcja/zajecia-dzieci, PIN) — patrz komentarz przy
@@ -382,19 +382,7 @@ export async function KidsClassesContent({
                               <td className="py-1.5 pr-3 text-xs text-zinc-500">{fee !== null ? `${fee} zł` : "brak w cenniku"}</td>
                               {SEASON_MONTHS.map((m, mi) => (
                                 <td key={m} className="py-1.5 px-1.5 text-center">
-                                  <form action={toggleMonthPayment}>
-                                    <input type="hidden" name="registration_id" value={r.id} />
-                                    <input type="hidden" name="month_index" value={mi} />
-                                    <input type="hidden" name="value" value={String(!months[mi])} />
-                                    <button
-                                      type="submit"
-                                      className={`mx-auto flex h-5 w-5 items-center justify-center rounded border-2 ${
-                                        months[mi] ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
-                                      }`}
-                                    >
-                                      {months[mi] ? "✓" : ""}
-                                    </button>
-                                  </form>
+                                  <PaymentCell registrationId={r.id} monthIndex={mi} paid={months[mi]} />
                                 </td>
                               ))}
                             </tr>
@@ -684,24 +672,7 @@ async function FrekwencjaTab({
                     const present = presenceByCell.get(`${c.id}|${d}`) ?? null;
                     return (
                       <td key={d} className="py-1.5 px-1.5 text-center">
-                        <form action={toggleAttendance}>
-                          <input type="hidden" name="enrollment_id" value={c.id} />
-                          <input type="hidden" name="session_date" value={d} />
-                          <input type="hidden" name="present" value={String(present !== true)} />
-                          <button
-                            type="submit"
-                            title={present === null ? "nieoznaczone" : present ? "obecny" : "nieobecny"}
-                            className={`mx-auto flex h-5 w-5 items-center justify-center rounded border-2 ${
-                              present === true
-                                ? "border-emerald-600 bg-emerald-600 text-white"
-                                : present === false
-                                  ? "border-red-400 bg-red-50 text-red-500"
-                                  : "border-zinc-300"
-                            }`}
-                          >
-                            {present === true ? "✓" : present === false ? "✕" : ""}
-                          </button>
-                        </form>
+                        <AttendanceCell enrollmentId={c.id} sessionDate={d} present={present} />
                       </td>
                     );
                   })}
