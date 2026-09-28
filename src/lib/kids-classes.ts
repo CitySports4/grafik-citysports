@@ -176,6 +176,44 @@ export function hasGroupCapacity(group: KidsClassGroup, occupancy: Map<string, n
   return (occupancy.get(group.id) ?? 0) < group.capacity;
 }
 
+// Miejsca zajęte na STAŁE, na KAŻDYCH zajęciach tej grupy — tylko status
+// "Aktywny" (potwierdzeni, cykliczni członkowie). "Nowe" (jeszcze
+// niezdecydowani, na próbnym) świadomie pominięte: próbne zajmuje miejsce
+// tylko na SWÓJ konkretny termin (patrz computeTrialBookingCounts), nie na
+// każdych zajęciach tej grupy — inaczej 2 dzieci próbujące w RÓŻNYCH
+// terminach zamykałyby grupę na cały miesiąc, mimo wolnych miejsc na
+// większości terminów.
+export function computeCommittedOccupancy(enrollments: Enrollment[], todayKey: string): Map<string, number> {
+  const occupancy = new Map<string, number>();
+  for (const e of enrollments) {
+    if (e.status !== "aktywny") continue;
+    if (!isEnrollmentEffective(e, todayKey)) continue;
+    occupancy.set(e.group_id, (occupancy.get(e.group_id) ?? 0) + 1);
+  }
+  return occupancy;
+}
+
+// Ile dzieci ma już zarezerwowany dany termin próbny w danej grupie
+// (status "Nowe", bo tylko one są jeszcze "na próbę" — "Aktywny" już
+// liczy się do committedOccupancy, nie do konkretnego terminu).
+export function computeTrialBookingCounts(enrollments: { group_id: string; status: KidsClassStatus; trial_date: string | null }[]): Map<string, Map<string, number>> {
+  const counts = new Map<string, Map<string, number>>();
+  for (const e of enrollments) {
+    if (e.status !== "nowe" || !e.trial_date) continue;
+    const perGroup = counts.get(e.group_id) ?? new Map<string, number>();
+    perGroup.set(e.trial_date, (perGroup.get(e.trial_date) ?? 0) + 1);
+    counts.set(e.group_id, perGroup);
+  }
+  return counts;
+}
+
+// Czy na DANY termin (nie w całej grupie) jest jeszcze miejsce — suma
+// stałych członków ("Aktywny") i dzieci już zapisanych na próbne WŁAŚNIE
+// na ten dzień musi zmieścić się w pojemności sali.
+export function hasTrialDateCapacity(group: KidsClassGroup, committedOccupancy: Map<string, number>, trialBookingsForDate: number): boolean {
+  return (committedOccupancy.get(group.id) ?? 0) + trialBookingsForDate < group.capacity;
+}
+
 // Wszystkie daty konkretnego dnia tygodnia w danym miesiącu (np. każdy
 // poniedziałek września) — do widoku frekwencji, gdzie sesje NIE są
 // przechowywane osobno, tylko wynikają wprost z dnia tygodnia grupy.
@@ -192,21 +230,23 @@ export function sessionDatesInMonth(weekday: number, year: number, month: number
 // WSZYSTKIE terminy danego dnia tygodnia w BIEŻĄCYM miesiącu, licząc od
 // JUTRA (nie od dziś — zgłoszenie złożone dziś po zajęciach nie powinno
 // proponować terminu "dziś") do końca miesiąca — do wyboru zajęć próbnych
-// w formularzu zapisu. Pod koniec miesiąca lista naturalnie się kurczy, a
-// jeśli w tym dniu tygodnia nie zostało już NIC do końca miesiąca (np.
-// zgłoszenie złożone po ostatnim czwartku września), pokazujemy cały
-// następny miesiąc zamiast pustej listy.
-export function upcomingSessionDates(weekday: number, todayKey: string): string[] {
+// w formularzu zapisu. Pod koniec miesiąca lista naturalnie się kurczy.
+// `isDateAvailable` odsiewa terminy, na które limit próbnych już się
+// wyczerpał (patrz wywołanie w page.tsx) — każdy termin to OSOBNE zajęcia,
+// więc "pełny" jeden czwartek nie blokuje innego. Jeśli po odsianiu w tym
+// miesiącu nic nie zostało (albo dzień tygodnia się już skończył, albo
+// wszystkie jego terminy są pełne), pokazujemy cały następny miesiąc.
+export function upcomingSessionDates(weekday: number, todayKey: string, isDateAvailable: (dateKey: string) => boolean = () => true): string[] {
   const today = new Date(todayKey + "T00:00:00");
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  const dates = weekdayDatesBetween(weekday, tomorrow, monthEnd);
+  const dates = weekdayDatesBetween(weekday, tomorrow, monthEnd).filter(isDateAvailable);
   if (dates.length > 0) return dates;
 
   const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const nextMonthEnd = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-  return weekdayDatesBetween(weekday, nextMonthStart, nextMonthEnd);
+  return weekdayDatesBetween(weekday, nextMonthStart, nextMonthEnd).filter(isDateAvailable);
 }
 
 function weekdayDatesBetween(weekday: number, start: Date, end: Date): string[] {
