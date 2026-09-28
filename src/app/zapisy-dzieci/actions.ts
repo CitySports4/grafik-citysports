@@ -4,7 +4,15 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { dbErrorMessage } from "@/lib/db-error";
 import { normalizePhone } from "@/lib/phone";
 import { toDateKey } from "@/lib/schedule-month";
-import { checkAgeEligibility, computeGroupOccupancy, hasGroupCapacity, groupLabel, type KidsClassGroup, type Enrollment } from "@/lib/kids-classes";
+import {
+  checkAgeEligibility,
+  computeCommittedOccupancy,
+  computeTrialBookingCounts,
+  hasTrialDateCapacity,
+  groupLabel,
+  type KidsClassGroup,
+  type Enrollment,
+} from "@/lib/kids-classes";
 
 export type SignupInput = {
   childName: string;
@@ -49,14 +57,34 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
   const supabase = createServerSupabaseClient();
   const [{ data: groupsData }, { data: enrollmentsData }, { data: existingByPhone }] = await Promise.all([
     supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").in("id", input.groupIds),
-    supabase.from("kids_class_enrollment").select("id, group_id, status, effective_from, effective_until"),
+    supabase.from("kids_class_enrollment").select("id, group_id, status, effective_from, effective_until, trial_date"),
     supabase.from("kids_class_registration").select("id, child_name").eq("phone", phone),
   ]);
   const groups = (groupsData ?? []) as KidsClassGroup[];
   if (groups.length !== input.groupIds.length) {
     return { ok: false, error: "Wybrana grupa już nie istnieje — odśwież stronę i spróbuj ponownie." };
   }
-  const occupancy = computeGroupOccupancy((enrollmentsData ?? []) as Enrollment[], today);
+  // Aktywny (stały) zajmuje miejsce na każdych zajęciach; Nowe (próbne)
+  // tylko na swój termin — patrz komentarz przy hasTrialDateCapacity.
+  const committedOccupancy = computeCommittedOccupancy((enrollmentsData ?? []) as Enrollment[], today);
+  const trialBookingCounts = computeTrialBookingCounts(enrollmentsData ?? []);
+
+  // Buduje plan zapisów: dla każdej grupy sprawdza, czy WYBRANY przez
+  // rodzica termin nadal ma miejsce (przeliczane na świeżo z bazy — klient
+  // mógł mieć nieaktualną listę), i mutuje trialBookingCounts na bieżąco,
+  // żeby rodzeństwo wybierające TEN SAM termin w jednym zgłoszeniu nie
+  // zmieściło się oboje na ostatnie miejsce.
+  function planGroup(g: KidsClassGroup) {
+    const date = input.trialDates[g.id];
+    const perGroupBookings = trialBookingCounts.get(g.id) ?? new Map<string, number>();
+    const bookedForDate = date ? (perGroupBookings.get(date) ?? 0) : 0;
+    const fits = hasTrialDateCapacity(g, committedOccupancy, bookedForDate);
+    if (fits && date) {
+      perGroupBookings.set(date, bookedForDate + 1);
+      trialBookingCounts.set(g.id, perGroupBookings);
+    }
+    return { group: g, fits };
+  }
 
   // Ten sam telefon może mieć kilkoro dzieci (rodzeństwo) — duplikat to
   // dokładnie to samo imię i nazwisko NA TYM SAMYM telefonie, nie sam
@@ -81,11 +109,7 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     }
     // Termin próbnych ma sens tylko dla grup z wolnym miejscem — grupa
     // pełna trafia na listę oczekujących, bez terminu (patrz SignupForm).
-    const plan = newGroups.map((g) => {
-      const fits = hasGroupCapacity(g, occupancy);
-      occupancy.set(g.id, (occupancy.get(g.id) ?? 0) + (fits ? 1 : 0));
-      return { group: g, fits };
-    });
+    const plan = newGroups.map(planGroup);
     const missingTrialDate = plan.find((p) => p.fits && !input.trialDates[p.group.id]);
     if (missingTrialDate) {
       return { ok: false, error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(missingTrialDate.group)}.` };
@@ -103,17 +127,9 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     return { ok: true, groupResults };
   }
 
-  // Kolejne wybrane grupy w TYM SAMYM zgłoszeniu liczą się do siebie
-  // nawzajem — bez tego dwoje rodzeństwa zapisywanych naraz do tej samej
-  // prawie pełnej grupy mogłoby oboje "zmieścić się" mimo jednego miejsca.
-  // Termin próbnych ma sens tylko dla grup z wolnym miejscem. Liczone i
-  // walidowane PRZED utworzeniem profilu dziecka, żeby błąd walidacji nie
-  // zostawiał osieroconego wiersza bez żadnego zapisu na grupę.
-  const plan = groups.map((g) => {
-    const fits = hasGroupCapacity(g, occupancy);
-    occupancy.set(g.id, (occupancy.get(g.id) ?? 0) + (fits ? 1 : 0));
-    return { group: g, fits };
-  });
+  // Liczone i walidowane PRZED utworzeniem profilu dziecka, żeby błąd
+  // walidacji nie zostawiał osieroconego wiersza bez żadnego zapisu na grupę.
+  const plan = groups.map(planGroup);
   const missingTrialDate = plan.find((p) => p.fits && !input.trialDates[p.group.id]);
   if (missingTrialDate) {
     return { ok: false, error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(missingTrialDate.group)}.` };

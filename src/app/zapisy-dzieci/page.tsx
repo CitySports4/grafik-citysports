@@ -1,6 +1,14 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { toDateKey } from "@/lib/schedule-month";
-import { computeGroupOccupancy, upcomingSessionDates, type KidsClassGroup, type Enrollment, type PriceTier } from "@/lib/kids-classes";
+import {
+  computeCommittedOccupancy,
+  computeTrialBookingCounts,
+  hasTrialDateCapacity,
+  upcomingSessionDates,
+  type KidsClassGroup,
+  type Enrollment,
+  type PriceTier,
+} from "@/lib/kids-classes";
 import { SignupForm } from "./SignupForm";
 
 // Jedyna strona w apce bez sesji/ciasteczek (żadnego requireEmployee) —
@@ -13,17 +21,28 @@ export default async function ZapisyDzieciPage() {
   const supabase = createServerSupabaseClient();
   const [{ data: groups }, { data: enrollments }, { data: priceTiers }] = await Promise.all([
     supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").eq("active", true).order("sort_order"),
-    supabase.from("kids_class_enrollment").select("id, group_id, status, effective_from, effective_until"),
+    supabase.from("kids_class_enrollment").select("id, group_id, status, effective_from, effective_until, trial_date"),
     supabase.from("kids_class_price_tier").select("group_count, monthly_fee").order("group_count"),
   ]);
 
   const today = toDateKey(new Date());
-  const occupancy = computeGroupOccupancy((enrollments ?? []) as Enrollment[], today);
-  const groupsWithFreeSpots = ((groups ?? []) as KidsClassGroup[]).map((g) => ({
-    group: g,
-    freeSpots: Math.max(0, g.capacity - (occupancy.get(g.id) ?? 0)),
-    trialDates: upcomingSessionDates(g.weekday, today),
-  }));
+  // Miejsce zajęte NA STAŁE (Aktywny) liczy się do każdych zajęć tej grupy;
+  // dziecko "na próbnym" (Nowe) zajmuje miejsce TYLKO na swój wybrany
+  // termin — inaczej dwoje dzieci próbujących w różnych terminach
+  // zamykałoby grupę na cały miesiąc mimo wolnych miejsc na większości
+  // terminów (patrz hasTrialDateCapacity w kids-classes.ts).
+  const committedOccupancy = computeCommittedOccupancy((enrollments ?? []) as Enrollment[], today);
+  const trialBookingCounts = computeTrialBookingCounts(enrollments ?? []);
+
+  const groupsWithFreeSpots = ((groups ?? []) as KidsClassGroup[]).map((g) => {
+    const freeSpots = Math.max(0, g.capacity - (committedOccupancy.get(g.id) ?? 0));
+    const booked = trialBookingCounts.get(g.id);
+    return {
+      group: g,
+      freeSpots,
+      trialDates: upcomingSessionDates(g.weekday, today, (date) => hasTrialDateCapacity(g, committedOccupancy, booked?.get(date) ?? 0)),
+    };
+  });
 
   return (
     // Bez pionowego wyśrodkowania (min-h-screen + items-center) celowo —
