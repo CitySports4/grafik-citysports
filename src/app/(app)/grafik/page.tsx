@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { redirect } from "next/navigation";
 import { requireEmployee, tracksHours as employeeTracksHours, isPersonalTrainerOnly } from "@/lib/session";
-import { findScheduleMonth, currentMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
+import { findScheduleMonth, currentMonth, nextMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
 import { hoursBetween, formatHm, dailyEffectiveHours, extraEventHours, timeToMinutes, shiftsAndEventWindows } from "@/lib/time";
 import { isWithinEditWindow, EDIT_WINDOW_DAYS } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
@@ -189,7 +189,48 @@ export default async function MyGrafikPage({
   const now = new Date();
   const isCurrentMonthView = year === now.getFullYear() && month === now.getMonth() + 1;
   const pastDays = isCurrentMonthView ? visibleDays.filter((d) => d.date < today) : [];
-  const upcomingDays = isCurrentMonthView ? visibleDays.filter((d) => d.date >= today) : visibleDays;
+  let upcomingDays = isCurrentMonthView ? visibleDays.filter((d) => d.date >= today) : visibleDays;
+
+  // Jeśli grafik na KOLEJNY miesiąc jest już opublikowany (zwykle na kilka
+  // dni przed jego startem), doklejamy jego dni od razu tutaj zamiast
+  // wymuszać kliknięcie "następny" — widok "dziś i dalej" ma płynnie
+  // kontynuować się w nowy miesiąc, a nie urywać na ostatnim dniu bieżącego.
+  // Tylko dla widoku BIEŻĄCEGO miesiąca — jawna nawigacja do innego
+  // miesiąca (poprzedni/następny) pokazuje go osobno, bez doklejania.
+  if (isCurrentMonthView) {
+    const next = nextMonth(new Date(year, month - 1, 1));
+    const nextScheduleMonth = await findScheduleMonth(next.year, next.month);
+    if (nextScheduleMonth && nextScheduleMonth.status === "published") {
+      const nextDateKeys = daysInMonth(next.year, next.month).map(toDateKey);
+      const [{ data: nextDays }, { data: nextTimeEntries }] = await Promise.all([
+        supabase
+          .from("schedule_day")
+          .select(
+            "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, end_time, label, note, participant_employee_ids)"
+          )
+          .eq("schedule_month_id", nextScheduleMonth.id)
+          .order("date"),
+        tracksHours
+          ? supabase
+              .from("time_entry")
+              .select("id, date, actual_start, actual_end, note, is_remote")
+              .eq("employee_id", employee.id)
+              .in("date", nextDateKeys)
+          : Promise.resolve({ data: [] }),
+      ]);
+      for (const e of nextTimeEntries ?? []) {
+        if (!timeEntriesByDate.has(e.date)) timeEntriesByDate.set(e.date, []);
+        timeEntriesByDate.get(e.date)!.push({
+          id: e.id,
+          actualStart: e.actual_start ? formatHm(e.actual_start) : "",
+          actualEnd: e.actual_end ? formatHm(e.actual_end) : "",
+          note: e.note ?? "",
+          isRemote: e.is_remote,
+        });
+      }
+      upcomingDays = [...upcomingDays, ...(nextDays ?? [])];
+    }
+  }
 
   // Wyciągnięte do osobnej funkcji, bo ta sama karta dnia renderuje się teraz
   // w dwóch miejscach: w zwijanym "ostatnie 7 dni" i w zawsze widocznej
