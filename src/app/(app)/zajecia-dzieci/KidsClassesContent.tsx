@@ -693,6 +693,11 @@ async function FrekwencjaTab({
   return (
     <Card>
       <div className="mb-3 flex flex-wrap items-end gap-3">
+        {group && (
+          <span className="rounded-xl border-2 border-brand-orange bg-orange-50 px-3 py-1.5 text-sm font-bold text-brand-navy">
+            {groupLabel(group)}
+          </span>
+        )}
         <FrekwencjaFilters groups={groups} groupId={groupId} monthKey={monthKey} basePath={basePath} />
       </div>
 
