@@ -161,7 +161,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
         {error && <Banner variant="error">{error}</Banner>}
 
         <div className="flex flex-col gap-2 rounded-xl bg-zinc-50 p-3">
-          <p className="text-xs font-semibold text-zinc-600">Wraca dziecko, które już u nas kiedyś chodziło? Podaj numer telefonu.</p>
+          <p className="text-xs font-semibold text-zinc-600">Wraca dziecko, które już wcześniej do nas chodziło? Podaj numer telefonu.</p>
           <div className="flex gap-2">
             <input
               type="tel"
