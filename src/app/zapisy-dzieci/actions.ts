@@ -12,6 +12,7 @@ import {
   currentSeasonMonthIndex,
   groupLabel,
   type KidsClassGroup,
+  type KidsClassStatus,
 } from "@/lib/kids-classes";
 
 export type SignupInput = {
@@ -167,4 +168,49 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
   if (enrollmentError) return { ok: false, error: dbErrorMessage(enrollmentError) };
 
   return { ok: true, groupResults };
+}
+
+export type ReturningChildMatch = {
+  id: string;
+  childName: string;
+  birthDate: string;
+  parentName: string;
+  groups: { label: string; status: KidsClassStatus }[];
+};
+
+// "Dziecko już chodziło, chcę wrócić" — rodzic podaje swój numer zamiast
+// wypełniać wszystko od nowa. Pokazujemy tylko to, co trzeba do rozpoznania
+// właściwego dziecka (imię + historia grup/statusów) — bez numeru telefonu
+// w wyniku, bo rodzic sam go przed chwilą wpisał. Dopasowanie jest DOKŁADNE
+// po numerze — nic nie widać bez znajomości właściwego numeru.
+export async function findChildrenByPhone(rawPhone: string): Promise<ReturningChildMatch[]> {
+  const phone = normalizePhone(rawPhone);
+  if (!phone) return [];
+
+  const supabase = createServerSupabaseClient();
+  const { data: registrations } = await supabase
+    .from("kids_class_registration")
+    .select("id, child_name, birth_date, parent_name")
+    .eq("phone", phone);
+  if (!registrations || registrations.length === 0) return [];
+
+  const registrationIds = registrations.map((r) => r.id);
+  const [{ data: enrollments }, { data: groupsData }] = await Promise.all([
+    supabase.from("kids_class_enrollment").select("registration_id, group_id, status").in("registration_id", registrationIds),
+    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order"),
+  ]);
+  const groupById = new Map(((groupsData ?? []) as KidsClassGroup[]).map((g) => [g.id, g]));
+
+  return registrations.map((r) => ({
+    id: r.id,
+    childName: r.child_name,
+    birthDate: r.birth_date,
+    parentName: r.parent_name,
+    groups: (enrollments ?? [])
+      .filter((e) => e.registration_id === r.id)
+      .map((e) => {
+        const g = groupById.get(e.group_id);
+        return { label: g ? groupLabel(g) : "?", status: e.status as KidsClassStatus };
+      }),
+  }));
 }
