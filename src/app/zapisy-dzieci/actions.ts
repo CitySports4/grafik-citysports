@@ -78,8 +78,16 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
   // rodzica termin nadal ma miejsce (przeliczane na świeżo z bazy — klient
   // mógł mieć nieaktualną listę), i mutuje trialBookingCounts na bieżąco,
   // żeby rodzeństwo wybierające TEN SAM termin w jednym zgłoszeniu nie
-  // zmieściło się oboje na ostatnie miejsce.
-  function planGroup(g: KidsClassGroup) {
+  // zmieściło się oboje na ostatnie miejsce. `skipTrial` (dziecko już
+  // kiedyś wykorzystało bezpłatne wejście próbne — patrz hasUsedTrial
+  // niżej) pomija termin całkowicie i sprawdza zwykłe, stałe miejsce.
+  function planGroup(g: KidsClassGroup, skipTrial = false) {
+    if (skipTrial) {
+      const current = committedOccupancy.get(g.id) ?? 0;
+      const fits = current < g.capacity;
+      if (fits) committedOccupancy.set(g.id, current + 1);
+      return { group: g, fits };
+    }
     const date = input.trialDates[g.id];
     const perGroupBookings = trialBookingCounts.get(g.id) ?? new Map<string, number>();
     const bookedForDate = date ? (perGroupBookings.get(date) ?? 0) : 0;
@@ -102,20 +110,25 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
   let registrationId: string;
   if (existingChild) {
     registrationId = existingChild.id;
+    // Bez filtra statusu — rezygnacja z grupy nie "cofa" wcześniej
+    // wykorzystanego wejścia próbnego, musimy widzieć całą historię.
     const { data: existingEnrollments } = await supabase
       .from("kids_class_enrollment")
-      .select("group_id, status")
-      .eq("registration_id", registrationId)
-      .neq("status", "rezygnacja");
-    const alreadyEnrolledGroupIds = new Set((existingEnrollments ?? []).map((e) => e.group_id));
+      .select("group_id, status, used_trial")
+      .eq("registration_id", registrationId);
+    const alreadyEnrolledGroupIds = new Set(
+      (existingEnrollments ?? []).filter((e) => e.status !== "rezygnacja").map((e) => e.group_id)
+    );
     const newGroups = groups.filter((g) => !alreadyEnrolledGroupIds.has(g.id));
     if (newGroups.length === 0) {
       return { ok: false, error: "To dziecko jest już zapisane na wybrane grupy — skontaktuj się z recepcją, jeśli chcesz coś zmienić." };
     }
-    // Termin próbnych ma sens tylko dla grup z wolnym miejscem — grupa
-    // pełna trafia na listę oczekujących, bez terminu (patrz SignupForm).
-    const plan = newGroups.map(planGroup);
-    const missingTrialDate = plan.find((p) => p.fits && !input.trialDates[p.group.id]);
+    // Dziecko, które KIEDYKOLWIEK (w dowolnej grupie) wykorzystało
+    // bezpłatne wejście próbne, nie dostaje go drugi raz — pomijamy
+    // wybór terminu całkowicie, od razu liczy się zwykłe miejsce.
+    const hasUsedTrial = (existingEnrollments ?? []).some((e) => e.used_trial);
+    const plan = newGroups.map((g) => planGroup(g, hasUsedTrial));
+    const missingTrialDate = hasUsedTrial ? undefined : plan.find((p) => p.fits && !input.trialDates[p.group.id]);
     if (missingTrialDate) {
       return { ok: false, error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(missingTrialDate.group)}.` };
     }
@@ -125,7 +138,7 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
       registration_id: registrationId,
       group_id: p.group.id,
       status: p.fits ? "nowe" : "oczekuje",
-      trial_date: p.fits ? input.trialDates[p.group.id] : null,
+      trial_date: !hasUsedTrial && p.fits ? input.trialDates[p.group.id] : null,
     }));
     const { error: enrollmentError } = await supabase.from("kids_class_enrollment").insert(enrollmentRows);
     if (enrollmentError) return { ok: false, error: dbErrorMessage(enrollmentError) };
@@ -134,7 +147,7 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
 
   // Liczone i walidowane PRZED utworzeniem profilu dziecka, żeby błąd
   // walidacji nie zostawiał osieroconego wiersza bez żadnego zapisu na grupę.
-  const plan = groups.map(planGroup);
+  const plan = groups.map((g) => planGroup(g));
   const missingTrialDate = plan.find((p) => p.fits && !input.trialDates[p.group.id]);
   if (missingTrialDate) {
     return { ok: false, error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(missingTrialDate.group)}.` };
@@ -176,6 +189,7 @@ export type ReturningChildMatch = {
   birthDate: string;
   parentName: string;
   groups: { label: string; status: KidsClassStatus }[];
+  hasUsedTrial: boolean;
 };
 
 // "Dziecko już chodziło, chcę wrócić" — rodzic podaje swój numer zamiast
@@ -196,21 +210,27 @@ export async function findChildrenByPhone(rawPhone: string): Promise<ReturningCh
 
   const registrationIds = registrations.map((r) => r.id);
   const [{ data: enrollments }, { data: groupsData }] = await Promise.all([
-    supabase.from("kids_class_enrollment").select("registration_id, group_id, status").in("registration_id", registrationIds),
+    supabase.from("kids_class_enrollment").select("registration_id, group_id, status, used_trial").in("registration_id", registrationIds),
     supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order"),
   ]);
   const groupById = new Map(((groupsData ?? []) as KidsClassGroup[]).map((g) => [g.id, g]));
 
-  return registrations.map((r) => ({
-    id: r.id,
-    childName: r.child_name,
-    birthDate: r.birth_date,
-    parentName: r.parent_name,
-    groups: (enrollments ?? [])
-      .filter((e) => e.registration_id === r.id)
-      .map((e) => {
+  return registrations.map((r) => {
+    const own = (enrollments ?? []).filter((e) => e.registration_id === r.id);
+    return {
+      id: r.id,
+      childName: r.child_name,
+      birthDate: r.birth_date,
+      parentName: r.parent_name,
+      groups: own.map((e) => {
         const g = groupById.get(e.group_id);
         return { label: g ? groupLabel(g) : "?", status: e.status as KidsClassStatus };
       }),
-  }));
+      // Czy to dziecko KIEDYKOLWIEK (w dowolnej grupie) wykorzystało
+      // bezpłatne wejście próbne — jeśli tak, formularz (SignupForm) od
+      // razu pomija wybór terminu, nie ma sensu go pokazywać. Autorytatywnie
+      // sprawdzane jeszcze raz w submitRegistration, to tu tylko dla UX.
+      hasUsedTrial: own.some((e) => e.used_trial),
+    };
+  });
 }

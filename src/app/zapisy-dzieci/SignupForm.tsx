@@ -39,6 +39,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [lookupResults, setLookupResults] = useState<ReturningChildMatch[] | null>(null);
   const [returningId, setReturningId] = useState<string | null>(null);
+  const [skipTrial, setSkipTrial] = useState(false);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -60,6 +61,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
   function selectReturning(m: ReturningChildMatch) {
     setForm((prev) => ({ ...prev, childName: m.childName, birthDate: m.birthDate, parentName: m.parentName, phone: phoneQuery }));
     setReturningId(m.id);
+    setSkipTrial(m.hasUsedTrial);
   }
 
   function toggleGroup(id: string) {
@@ -98,11 +100,15 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
       return;
     }
     // Termin próbnych ma sens tylko tam, gdzie jest wolne miejsce — pełna
-    // grupa (lista oczekujących) nie ma wolnego terminu na próbne.
-    const groupsNeedingTrialDate = groups.filter((g) => groupIds.includes(g.group.id) && g.freeSpots > 0);
-    if (groupsNeedingTrialDate.some((g) => !trialDates[g.group.id])) {
-      setError("Wybierz termin zajęć próbnych dla każdej wybranej grupy z wolnym miejscem.");
-      return;
+    // grupa (lista oczekujących) nie ma wolnego terminu na próbne. Dziecko,
+    // które już kiedyś wykorzystało bezpłatne wejście (skipTrial), nie
+    // wybiera terminu wcale — serwer i tak by go zignorował.
+    if (!skipTrial) {
+      const groupsNeedingTrialDate = groups.filter((g) => groupIds.includes(g.group.id) && g.freeSpots > 0);
+      if (groupsNeedingTrialDate.some((g) => !trialDates[g.group.id])) {
+        setError("Wybierz termin zajęć próbnych dla każdej wybranej grupy z wolnym miejscem.");
+        return;
+      }
     }
     setPending(true);
     try {
@@ -211,7 +217,19 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
 
         <div className="flex flex-col gap-1.5">
           <label className={LABEL}>Imię i nazwisko dziecka</label>
-          <input required value={form.childName} onChange={(e) => set("childName", e.target.value)} className={INPUT} />
+          <input
+            required
+            value={form.childName}
+            onChange={(e) => {
+              // Ręczna zmiana imienia po wybraniu wracającego dziecka
+              // oznacza, że to już nie ten sam zapis — cofamy "pomiń
+              // termin próbnych", żeby nie ominąć go przez pomyłkę.
+              setReturningId(null);
+              setSkipTrial(false);
+              set("childName", e.target.value);
+            }}
+            className={INPUT}
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <label className={LABEL}>Data urodzenia dziecka</label>
@@ -272,7 +290,13 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                       zwolni się miejsce.
                     </p>
                   )}
-                  {selected && !full && (
+                  {selected && !full && skipTrial && (
+                    <p className="ml-1 rounded-xl bg-zinc-50 p-3 text-xs text-zinc-500">
+                      To dziecko ma już wykorzystane bezpłatne wejście próbne — nie trzeba wybierać terminu, dołącza od
+                      razu jako zwykły zapis.
+                    </p>
+                  )}
+                  {selected && !full && !skipTrial && (
                     <div className="ml-1 flex flex-col gap-1.5 rounded-xl bg-zinc-50 p-3">
                       <span className="text-xs font-semibold text-zinc-600">Termin bezpłatnych zajęć próbnych:</span>
                       <div className="flex flex-wrap gap-1.5">
