@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { submitRegistration, type SignupInput } from "./actions";
-import { groupLabel, feeForGroupCount, type KidsClassGroup, type PriceTier } from "@/lib/kids-classes";
+import { submitRegistration, findChildrenByPhone, type SignupInput, type ReturningChildMatch } from "./actions";
+import { groupLabel, feeForGroupCount, STATUS_LABELS, type KidsClassGroup, type PriceTier } from "@/lib/kids-classes";
 import { Banner } from "@/components/Banner";
 
 const INPUT =
@@ -34,8 +34,32 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<{ label: string; waitlisted: boolean }[] | null>(null);
 
+  const [phoneQuery, setPhoneQuery] = useState("");
+  const [lookupPending, setLookupPending] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookupResults, setLookupResults] = useState<ReturningChildMatch[] | null>(null);
+  const [returningId, setReturningId] = useState<string | null>(null);
+
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleLookup() {
+    setLookupError(null);
+    setLookupResults(null);
+    setLookupPending(true);
+    try {
+      setLookupResults(await findChildrenByPhone(phoneQuery));
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : "Nie udało się sprawdzić.");
+    } finally {
+      setLookupPending(false);
+    }
+  }
+
+  function selectReturning(m: ReturningChildMatch) {
+    setForm((prev) => ({ ...prev, childName: m.childName, birthDate: m.birthDate, parentName: m.parentName, phone: phoneQuery }));
+    setReturningId(m.id);
   }
 
   function toggleGroup(id: string) {
@@ -135,6 +159,55 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm">
         <h1 className="text-lg font-bold text-zinc-900">Zapisy — Zajęcia Badmintona dla dzieci</h1>
         {error && <Banner variant="error">{error}</Banner>}
+
+        <div className="flex flex-col gap-2 rounded-xl bg-zinc-50 p-3">
+          <p className="text-xs font-semibold text-zinc-600">Dziecko już u nas chodziło i chcecie wrócić? Podaj numer telefonu.</p>
+          <div className="flex gap-2">
+            <input
+              type="tel"
+              placeholder="Numer telefonu"
+              value={phoneQuery}
+              onChange={(e) => setPhoneQuery(e.target.value)}
+              className={INPUT}
+            />
+            <button
+              type="button"
+              onClick={handleLookup}
+              disabled={lookupPending || !phoneQuery}
+              className="shrink-0 rounded-xl bg-zinc-800 px-3 py-2 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50"
+            >
+              {lookupPending ? "Szukam…" : "Sprawdź"}
+            </button>
+          </div>
+          {lookupError && <p className="text-xs text-red-600">{lookupError}</p>}
+          {lookupResults && lookupResults.length === 0 && (
+            <p className="text-xs text-zinc-500">Nie znaleziono dziecka na ten numer — wypełnij formularz poniżej jako nowe zgłoszenie.</p>
+          )}
+          {lookupResults && lookupResults.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {lookupResults.map((m) => (
+                <button
+                  type="button"
+                  key={m.id}
+                  onClick={() => selectReturning(m)}
+                  className={`flex flex-col items-start gap-0.5 rounded-lg border-2 px-3 py-2 text-left transition-colors ${
+                    returningId === m.id ? "border-brand-orange bg-orange-50" : "border-zinc-200 bg-white hover:border-zinc-300"
+                  }`}
+                >
+                  <span className="text-sm font-semibold text-zinc-900">{m.childName}</span>
+                  {m.groups.length > 0 && (
+                    <span className="text-[11px] text-zinc-500">
+                      {m.groups.map((g) => `${g.label} — ${STATUS_LABELS[g.status]}`).join(", ")}
+                    </span>
+                  )}
+                  <span className="text-[11px] font-semibold text-brand-orange">
+                    {returningId === m.id ? "✓ wybrano, uzupełnij dane poniżej" : "To moje dziecko, chcę wrócić →"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-col gap-1.5">
           <label className={LABEL}>Imię i nazwisko dziecka</label>
