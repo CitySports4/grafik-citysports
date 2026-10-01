@@ -713,9 +713,15 @@ async function FrekwencjaTab({
                   return (
                     <th
                       key={d}
-                      className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-orange bg-orange-50 text-brand-navy" : ""}`}
+                      className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-blue bg-blue-50 text-brand-navy" : ""}`}
                     >
-                      {isToday && <div className="text-[9px] font-bold normal-case tracking-normal text-brand-orange">dziś</div>}
+                      {isToday && (
+                        <div className="mb-0.5">
+                          <span className="rounded-full bg-brand-blue px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                            Dziś
+                          </span>
+                        </div>
+                      )}
                       {d.slice(8, 10)}
                     </th>
                   );
@@ -730,7 +736,7 @@ async function FrekwencjaTab({
                     const present = presenceByCell.get(`${c.id}|${d}`) ?? null;
                     const isToday = d === today;
                     return (
-                      <td key={d} className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-orange bg-orange-50" : ""}`}>
+                      <td key={d} className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-blue bg-blue-50" : ""}`}>
                         <AttendanceCell enrollmentId={c.id} sessionDate={d} present={present} />
                       </td>
                     );
