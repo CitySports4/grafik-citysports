@@ -47,6 +47,15 @@ export function currentSeasonMonthIndex(todayKey: string): number | null {
   return idx === -1 ? null : idx;
 }
 
+// Czy opłata za KONKRETNY miesiąc sezonu jest zaznaczona — płatność jest
+// NIEZALEŻNA per miesiąc (dziecko może zapłacić we wrześniu, nie zapłacić
+// w październiku, zapłacić znowu w listopadzie), więc to zawsze pytanie o
+// JEDEN konkretny miesiąc, nigdy ogólne "czy płaci".
+export function isPaidForMonth(months: boolean[] | null | undefined, monthIdx: number | null): boolean {
+  if (monthIdx === null) return false;
+  return months?.[monthIdx] === true;
+}
+
 // Zgłoszenie zostawione w statusie "Nowe" (nikt nie kliknął "Opłacono" ani
 // "Brak opłaty") dłużej niż tyle dni — widoczne przypomnienie, żeby żadne
 // nie "zgubiło się" bez decyzji.
@@ -176,18 +185,27 @@ export function hasGroupCapacity(group: KidsClassGroup, occupancy: Map<string, n
   return (occupancy.get(group.id) ?? 0) < group.capacity;
 }
 
-// Miejsca zajęte na STAŁE, na KAŻDYCH zajęciach tej grupy — tylko status
-// "Aktywny" (potwierdzeni, cykliczni członkowie). "Nowe" (jeszcze
-// niezdecydowani, na próbnym) świadomie pominięte: próbne zajmuje miejsce
-// tylko na SWÓJ konkretny termin (patrz computeTrialBookingCounts), nie na
-// każdych zajęciach tej grupy — inaczej 2 dzieci próbujące w RÓŻNYCH
-// terminach zamykałyby grupę na cały miesiąc, mimo wolnych miejsc na
-// większości terminów.
-export function computeCommittedOccupancy(enrollments: Enrollment[], todayKey: string): Map<string, number> {
+// Miejsca zajęte na STAŁE, na KAŻDYCH zajęciach tej grupy W DANYM MIESIĄCU
+// — status "Aktywny" ORAZ zaznaczona opłata za TEN miesiąc (patrz
+// isPaidForMonth). Brak opłaty = miejsce się zwalnia (dla kogoś innego, np.
+// nowego zgłoszenia), ale status dziecka się NIE zmienia — może dopłacić
+// po kilku dniach, to nie jest rezygnacja. "Nowe" (jeszcze niezdecydowani,
+// na próbnym) świadomie pominięte: próbne zajmuje miejsce tylko na SWÓJ
+// konkretny termin (patrz computeTrialBookingCounts), nie na każdych
+// zajęciach tej grupy — inaczej 2 dzieci próbujące w RÓŻNYCH terminach
+// zamykałyby grupę na cały miesiąc, mimo wolnych miejsc na większości
+// terminów.
+export function computeCommittedOccupancy(
+  enrollments: (Enrollment & { registration_id: string })[],
+  paymentsByRegistration: Map<string, boolean[]>,
+  todayKey: string,
+  monthIdx: number | null
+): Map<string, number> {
   const occupancy = new Map<string, number>();
   for (const e of enrollments) {
     if (e.status !== "aktywny") continue;
     if (!isEnrollmentEffective(e, todayKey)) continue;
+    if (!isPaidForMonth(paymentsByRegistration.get(e.registration_id), monthIdx)) continue;
     occupancy.set(e.group_id, (occupancy.get(e.group_id) ?? 0) + 1);
   }
   return occupancy;
