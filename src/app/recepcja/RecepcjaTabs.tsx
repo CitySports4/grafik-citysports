@@ -15,7 +15,7 @@ export function RecepcjaTabs() {
   return (
     <nav className="mx-auto flex max-w-5xl gap-1 px-4">
       {TABS.map((t) => {
-        const active = pathname === t.href;
+        const active = t.href === "/recepcja" ? pathname === "/recepcja" : pathname.startsWith(t.href);
         return (
           <Link
             key={t.href}
