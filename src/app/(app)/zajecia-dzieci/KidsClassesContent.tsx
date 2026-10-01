@@ -693,11 +693,6 @@ async function FrekwencjaTab({
   return (
     <Card>
       <div className="mb-3 flex flex-wrap items-end gap-3">
-        {group && (
-          <span className="rounded-xl border-2 border-brand-orange bg-orange-50 px-3 py-1.5 text-sm font-bold text-brand-navy">
-            {groupLabel(group)}
-          </span>
-        )}
         <FrekwencjaFilters groups={groups} groupId={groupId} monthKey={monthKey} basePath={basePath} />
       </div>
 
@@ -713,11 +708,17 @@ async function FrekwencjaTab({
             <thead className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
               <tr>
                 <th className="py-1.5 pr-3">Dziecko</th>
-                {dates.map((d) => (
-                  <th key={d} className="py-1.5 px-1.5 text-center">
-                    {d.slice(8, 10)}
-                  </th>
-                ))}
+                {dates.map((d) => {
+                  const isToday = d === today;
+                  return (
+                    <th
+                      key={d}
+                      className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-orange bg-orange-50 text-brand-navy" : ""}`}
+                    >
+                      {d.slice(8, 10)}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -726,8 +727,9 @@ async function FrekwencjaTab({
                   <td className="py-1.5 pr-3 font-medium text-zinc-900">{c.kids_class_registration.child_name}</td>
                   {dates.map((d) => {
                     const present = presenceByCell.get(`${c.id}|${d}`) ?? null;
+                    const isToday = d === today;
                     return (
-                      <td key={d} className="py-1.5 px-1.5 text-center">
+                      <td key={d} className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-orange bg-orange-50" : ""}`}>
                         <AttendanceCell enrollmentId={c.id} sessionDate={d} present={present} />
                       </td>
                     );
