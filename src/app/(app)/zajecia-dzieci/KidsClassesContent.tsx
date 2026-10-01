@@ -715,6 +715,7 @@ async function FrekwencjaTab({
                       key={d}
                       className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-orange bg-orange-50 text-brand-navy" : ""}`}
                     >
+                      {isToday && <div className="text-[9px] font-bold normal-case tracking-normal text-brand-orange">dziś</div>}
                       {d.slice(8, 10)}
                     </th>
                   );
