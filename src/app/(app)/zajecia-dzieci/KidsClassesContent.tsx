@@ -622,6 +622,25 @@ export async function KidsClassesContent({
   );
 }
 
+// Grupa, której NAJBLIŻSZE zajęcia wypadają najwcześniej od dziś (dziś =
+// odległość 0, wygrywa od razu) — wygodniejszy domyślny wybór niż zawsze
+// pierwsza grupa wg sort_order, która w czwartek pokazywałaby poniedziałek
+// (czyli grupę, która właśnie się odbyła najdawniej, a nie tę najbliższą).
+function nearestGroupId(groups: KidsClassGroup[], todayKey: string): string | undefined {
+  if (groups.length === 0) return undefined;
+  const todayWeekday = new Date(todayKey + "T00:00:00").getDay();
+  let best = groups[0];
+  let bestDelta = (best.weekday - todayWeekday + 7) % 7;
+  for (const g of groups.slice(1)) {
+    const delta = (g.weekday - todayWeekday + 7) % 7;
+    if (delta < bestDelta) {
+      best = g;
+      bestDelta = delta;
+    }
+  }
+  return best.id;
+}
+
 async function FrekwencjaTab({
   groups,
   enrollments,
@@ -639,7 +658,7 @@ async function FrekwencjaTab({
   today: string;
   basePath: string;
 }) {
-  const groupId = selectedGroupId && groups.some((g) => g.id === selectedGroupId) ? selectedGroupId : groups[0]?.id;
+  const groupId = selectedGroupId && groups.some((g) => g.id === selectedGroupId) ? selectedGroupId : nearestGroupId(groups, today);
   const group = groups.find((g) => g.id === groupId);
   const monthKey = selectedMonth && /^\d{4}-\d{2}$/.test(selectedMonth) ? selectedMonth : today.slice(0, 7);
   const [year, month] = monthKey.split("-").map(Number);
