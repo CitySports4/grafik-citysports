@@ -7,11 +7,11 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import {
   ageOnDate,
-  computeGroupOccupancy,
   groupLabel,
   feeForGroupCount,
   sessionDatesInMonth,
   currentSeasonMonthIndex,
+  isPaidForMonth,
   isStaleNew,
   STATUS_LABELS,
   SEASON_MONTHS,
@@ -74,6 +74,22 @@ function statusActions(status: KidsClassStatus): { label: string; next: KidsClas
     return [{ label: "✅ Zaakceptuj → Aktywny", next: "aktywny", variant: "green" }];
   }
   return [{ label: "♻️ Przywróć → Aktywny", next: "aktywny", variant: "green" }];
+}
+
+// Czy ten zapis liczy się jako ZAJMUJĄCY miejsce w KONKRETNYM miesiącu
+// sezonu — "Nowe" (próbne) zawsze tak (zajmuje miejsce na swój termin
+// próbny, niezależnie od płatności miesięcznej), "Aktywny" tylko jeśli
+// opłata za TEN miesiąc jest zaznaczona. Brak opłaty = miejsce się zwalnia
+// (dla kogoś innego), ale status dziecka się NIE zmienia samoczynnie — to
+// może być chwilowe opóźnienie (zapłaci za kilka dni), nie rezygnacja;
+// jeśli zapłaci w kolejnym miesiącu, miejsce zajmuje znowu. Używane zamiast
+// samego statusu wszędzie, gdzie liczy się AKTUALNE obłożenie grupy
+// (odznaki na górze, lista frekwencji) — NIE w Płatnościach, gdzie trzeba
+// widzieć WSZYSTKICH, żeby móc ich dopilnować.
+function occupiesMonth(e: EnrollmentRow, monthIdx: number | null, paymentsByRegistration: Map<string, boolean[]>): boolean {
+  if (e.status === "nowe") return true;
+  if (e.status !== "aktywny") return false;
+  return isPaidForMonth(paymentsByRegistration.get(e.kids_class_registration.id), monthIdx);
 }
 
 const BTN_GREEN = "rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100";
@@ -140,24 +156,33 @@ export async function KidsClassesContent({
   const activeGroups = groups.filter((g) => g.active);
   const groupById = new Map(groups.map((g) => [g.id, g]));
   const enrollments = (enrollmentsRaw ?? []) as unknown as EnrollmentRow[];
-  const occupancy = computeGroupOccupancy(enrollments, today);
   const paymentsByRegistration = new Map((paymentsRaw ?? []).map((p) => [p.registration_id, p.months as boolean[]]));
   const priceTiers = (priceTiersRaw ?? []) as PriceTier[];
+
+  // Poza sezonem (lipiec/sierpień, currentMonthIdx === null) nie ma czego
+  // pilnować, zajęć wtedy nie ma.
+  const currentMonthIdx = currentSeasonMonthIndex(today);
 
   const currentEnrollments = enrollments.filter((e) => isEnrollmentEffective(e, today));
   const waiting = currentEnrollments.filter((e) => e.status === "oczekuje");
   const visibleTabs = TABS.filter((t) => t.key !== "grupy" || canEditGroups);
 
+  // Obłożenie grup TERAZ — "Nowe" zawsze liczy się (próbne), "Aktywny"
+  // tylko jeśli opłata za bieżący miesiąc jest zaznaczona (patrz
+  // occupiesMonth) — brak opłaty zwalnia miejsce.
+  const occupancy = new Map<string, number>();
+  for (const e of currentEnrollments) {
+    if (!occupiesMonth(e, currentMonthIdx, paymentsByRegistration)) continue;
+    occupancy.set(e.group_id, (occupancy.get(e.group_id) ?? 0) + 1);
+  }
+
   const needsContact = enrollments.filter((e) => e.needs_parent_contact);
   const staleNew = currentEnrollments.filter((e) => isStaleNew(e.status, e.created_at, today));
 
-  // Zaległość za BIEŻĄCY miesiąc sezonu — poza sezonem (lipiec/sierpień,
-  // currentMonthIdx === null) nie ma czego pilnować, zajęć wtedy nie ma.
   // Tylko status "aktywny" liczy się jako zobowiązany do opłaty — "nowe"
   // to wciąż okres próbny/decyzyjny (ma swoje "czeka na decyzję" wyżej), a
   // dziecko, które dopiero wykorzystało bezpłatne wejście próbne i dołącza
   // od kolejnego miesiąca, nie powinno wyglądać jak zaległość.
-  const currentMonthIdx = currentSeasonMonthIndex(today);
   const payableChildIds =
     currentMonthIdx === null
       ? []
@@ -407,6 +432,7 @@ export async function KidsClassesContent({
         <FrekwencjaTab
           groups={activeGroups}
           enrollments={currentEnrollments}
+          paymentsByRegistration={paymentsByRegistration}
           selectedGroupId={params.frekwencja_grupa}
           selectedMonth={params.frekwencja_miesiac}
           today={today}
@@ -599,6 +625,7 @@ export async function KidsClassesContent({
 async function FrekwencjaTab({
   groups,
   enrollments,
+  paymentsByRegistration,
   selectedGroupId,
   selectedMonth,
   today,
@@ -606,6 +633,7 @@ async function FrekwencjaTab({
 }: {
   groups: KidsClassGroup[];
   enrollments: EnrollmentRow[];
+  paymentsByRegistration: Map<string, boolean[]>;
   selectedGroupId?: string;
   selectedMonth?: string;
   today: string;
@@ -615,9 +643,13 @@ async function FrekwencjaTab({
   const group = groups.find((g) => g.id === groupId);
   const monthKey = selectedMonth && /^\d{4}-\d{2}$/.test(selectedMonth) ? selectedMonth : today.slice(0, 7);
   const [year, month] = monthKey.split("-").map(Number);
+  // Sezonowy indeks WYBRANEGO miesiąca (nie dzisiejszego) — frekwencja za
+  // wrzesień patrzy na opłatę za wrzesień, za październik na opłatę za
+  // październik, niezależnie od tego, jaki miesiąc jest dziś.
+  const monthSeasonIdx = currentSeasonMonthIndex(`${monthKey}-01`);
 
   const children = group
-    ? enrollments.filter((e) => e.group_id === group.id && OCCUPYING_STATUSES.includes(e.status))
+    ? enrollments.filter((e) => e.group_id === group.id && occupiesMonth(e, monthSeasonIdx, paymentsByRegistration))
     : [];
   const dates = group ? sessionDatesInMonth(group.weekday, year, month) : [];
 
