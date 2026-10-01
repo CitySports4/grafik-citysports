@@ -186,26 +186,29 @@ export function hasGroupCapacity(group: KidsClassGroup, occupancy: Map<string, n
 }
 
 // Miejsca zajęte na STAŁE, na KAŻDYCH zajęciach tej grupy W DANYM MIESIĄCU
-// — status "Aktywny" ORAZ zaznaczona opłata za TEN miesiąc (patrz
-// isPaidForMonth). Brak opłaty = miejsce się zwalnia (dla kogoś innego, np.
-// nowego zgłoszenia), ale status dziecka się NIE zmienia — może dopłacić
-// po kilku dniach, to nie jest rezygnacja. "Nowe" (jeszcze niezdecydowani,
-// na próbnym) świadomie pominięte: próbne zajmuje miejsce tylko na SWÓJ
+// — status "Aktywny" (z zaznaczoną opłatą za TEN miesiąc, patrz
+// isPaidForMonth — brak opłaty zwalnia miejsce, ale status się nie zmienia)
+// ORAZ "Nowe" BEZ terminu próbnego. "Nowe" z terminem próbnym (zwykłe nowe
+// zgłoszenie) świadomie pominięte: próbne zajmuje miejsce tylko na SWÓJ
 // konkretny termin (patrz computeTrialBookingCounts), nie na każdych
 // zajęciach tej grupy — inaczej 2 dzieci próbujące w RÓŻNYCH terminach
 // zamykałyby grupę na cały miesiąc, mimo wolnych miejsc na większości
-// terminów.
+// terminów. Ale "Nowe" BEZ terminu (dziecko wraca i już wykorzystało swoje
+// bezpłatne wejście — patrz findChildrenByPhone/submitRegistration w
+// zapisy-dzieci/actions.ts) nie ma żadnego jednorazowego terminu do
+// zajęcia — zajmuje więc zwykłe, stałe miejsce od razu, tak jak "Aktywny".
 export function computeCommittedOccupancy(
-  enrollments: (Enrollment & { registration_id: string })[],
+  enrollments: (Enrollment & { registration_id: string; trial_date: string | null })[],
   paymentsByRegistration: Map<string, boolean[]>,
   todayKey: string,
   monthIdx: number | null
 ): Map<string, number> {
   const occupancy = new Map<string, number>();
   for (const e of enrollments) {
-    if (e.status !== "aktywny") continue;
+    const isOngoingClaim = e.status === "aktywny" || (e.status === "nowe" && e.trial_date === null);
+    if (!isOngoingClaim) continue;
     if (!isEnrollmentEffective(e, todayKey)) continue;
-    if (!isPaidForMonth(paymentsByRegistration.get(e.registration_id), monthIdx)) continue;
+    if (e.status === "aktywny" && !isPaidForMonth(paymentsByRegistration.get(e.registration_id), monthIdx)) continue;
     occupancy.set(e.group_id, (occupancy.get(e.group_id) ?? 0) + 1);
   }
   return occupancy;
