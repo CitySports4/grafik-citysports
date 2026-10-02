@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireEmployee, tracksHours as employeeTracksHours, isPersonalTrainerOnly } from "@/lib/session";
 import { findScheduleMonth, currentMonth, nextMonth, monthLabel, toDateKey, daysInMonth } from "@/lib/schedule-month";
 import { hoursBetween, formatHm, dailyEffectiveHours, extraEventHours, timeToMinutes, shiftsAndEventWindows } from "@/lib/time";
+import { minutesToTime } from "@/lib/personal-training";
 import { isWithinEditWindow, EDIT_WINDOW_DAYS } from "@/lib/time-entry-window";
 import { weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
@@ -52,6 +53,11 @@ export default async function MyGrafikPage({
   // jedyne miejsce, które w ogóle rozlicza godziny godzinowo. Kto tej roli
   // nie ma (np. szef na stałej pensji), widzi zwykły, pełny grafik.
   const tracksHours = employeeTracksHours(employee);
+  // Trener personalny (nawet jeśli to tylko jedna z kilku jego ról) ma
+  // własne treningi w OSOBNEJ tabeli (personal_training_session), zupełnie
+  // poza schedule_shift/schedule_event — bez tego nie widział ich tutaj
+  // wcale, tylko po przejściu do /treningi-personalne osobno.
+  const isTrainer = employee.roles.includes("trener_personalny");
 
   const scheduleMonth = await findScheduleMonth(year, month);
   const prevLink = month === 1 ? `?year=${year - 1}&month=12` : `?year=${year}&month=${month - 1}`;
@@ -96,27 +102,36 @@ export default async function MyGrafikPage({
   // pierwszym Promise.all, mimo że żadne z nich nie zależy od jego wyniku)
   // — ta strona ładuje się przy każdym wejściu w "Mój grafik", więc każda
   // zaoszczędzona runda ma tu największe znaczenie w całej appce.
-  const [{ data: days }, { data: myClasses }, { data: myTimeEntries }, { data: employees }, { data: requests }] = await Promise.all([
-    supabase
-      .from("schedule_day")
-      .select(
-        "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, end_time, label, note, participant_employee_ids)"
-      )
-      .eq("schedule_month_id", scheduleMonth.id)
-      .order("date"),
-    supabase.from("employee_class_schedule").select("weekday, start_time, end_time").eq("employee_id", employee.id),
-    supabase
-      .from("time_entry")
-      .select("id, date, actual_start, actual_end, note, is_remote")
-      .eq("employee_id", employee.id)
-      .in("date", monthDateKeys),
-    supabase.from("employee").select("id, name, short_name, color_hex"),
-    supabase
-      .from("shift_swap_request")
-      .select("id, status, hour_delta, requested_at, requester_employee_id, target_employee_id, requester_shift_id, target_shift_id")
-      .or(`requester_employee_id.eq.${employee.id},target_employee_id.eq.${employee.id}`)
-      .order("requested_at", { ascending: false }),
-  ]);
+  const [{ data: days }, { data: myClasses }, { data: myTimeEntries }, { data: employees }, { data: requests }, { data: myTrainings }] =
+    await Promise.all([
+      supabase
+        .from("schedule_day")
+        .select(
+          "id, date, weekday, schedule_shift(id, slot_index, start_time, end_time, employee_id, is_closed), schedule_event(id, type, start_time, end_time, label, note, participant_employee_ids)"
+        )
+        .eq("schedule_month_id", scheduleMonth.id)
+        .order("date"),
+      supabase.from("employee_class_schedule").select("weekday, start_time, end_time").eq("employee_id", employee.id),
+      supabase
+        .from("time_entry")
+        .select("id, date, actual_start, actual_end, note, is_remote")
+        .eq("employee_id", employee.id)
+        .in("date", monthDateKeys),
+      supabase.from("employee").select("id, name, short_name, color_hex"),
+      supabase
+        .from("shift_swap_request")
+        .select("id, status, hour_delta, requested_at, requester_employee_id, target_employee_id, requester_shift_id, target_shift_id")
+        .or(`requester_employee_id.eq.${employee.id},target_employee_id.eq.${employee.id}`)
+        .order("requested_at", { ascending: false }),
+      isTrainer
+        ? supabase
+            .from("personal_training_session")
+            .select("id, date, start_time, duration_minutes, client_count")
+            .eq("trainer_employee_id", employee.id)
+            .eq("status", "scheduled")
+            .in("date", monthDateKeys)
+        : Promise.resolve({ data: [] }),
+    ]);
 
   // Wpisane "przy okazji" swojej zmiany, na tej samej stronie co grafik —
   // jeden dzień może mieć kilka wpisów (podzielona zmiana z przerwą).
@@ -135,6 +150,16 @@ export default async function MyGrafikPage({
     Math.round(
       (myTimeEntries ?? []).reduce((sum, e) => sum + (e.actual_start && e.actual_end ? hoursBetween(e.actual_start, e.actual_end) : 0), 0) * 100
     ) / 100;
+
+  // Treningi personalne NIE wliczają się do "Twoje godziny zaplanowane"
+  // wyżej — to osobny model rozliczenia (stawka za sesję, nie godzinówka,
+  // patrz /treningi-personalne/rozliczenia) — tu tylko wizualna informacja
+  // "to też Twoje", żeby trener widział wszystko w jednym miejscu.
+  const myTrainingsByDate = new Map<string, { id: string; start_time: string; duration_minutes: number; client_count: number }[]>();
+  for (const t of myTrainings ?? []) {
+    if (!myTrainingsByDate.has(t.date)) myTrainingsByDate.set(t.date, []);
+    myTrainingsByDate.get(t.date)!.push(t);
+  }
 
   const employeeById = new Map((employees ?? []).map((e) => [e.id, e]));
 
@@ -202,7 +227,7 @@ export default async function MyGrafikPage({
     const nextScheduleMonth = await findScheduleMonth(next.year, next.month);
     if (nextScheduleMonth && nextScheduleMonth.status === "published") {
       const nextDateKeys = daysInMonth(next.year, next.month).map(toDateKey);
-      const [{ data: nextDays }, { data: nextTimeEntries }] = await Promise.all([
+      const [{ data: nextDays }, { data: nextTimeEntries }, { data: nextTrainings }] = await Promise.all([
         supabase
           .from("schedule_day")
           .select(
@@ -217,6 +242,14 @@ export default async function MyGrafikPage({
               .eq("employee_id", employee.id)
               .in("date", nextDateKeys)
           : Promise.resolve({ data: [] }),
+        isTrainer
+          ? supabase
+              .from("personal_training_session")
+              .select("id, date, start_time, duration_minutes, client_count")
+              .eq("trainer_employee_id", employee.id)
+              .eq("status", "scheduled")
+              .in("date", nextDateKeys)
+          : Promise.resolve({ data: [] }),
       ]);
       for (const e of nextTimeEntries ?? []) {
         if (!timeEntriesByDate.has(e.date)) timeEntriesByDate.set(e.date, []);
@@ -228,6 +261,10 @@ export default async function MyGrafikPage({
           isRemote: e.is_remote,
         });
       }
+      for (const t of nextTrainings ?? []) {
+        if (!myTrainingsByDate.has(t.date)) myTrainingsByDate.set(t.date, []);
+        myTrainingsByDate.get(t.date)!.push(t);
+      }
       upcomingDays = [...upcomingDays, ...(nextDays ?? [])];
     }
   }
@@ -238,7 +275,8 @@ export default async function MyGrafikPage({
   const renderDay = (day: (typeof visibleDays)[number]) => {
     const shifts = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
     const events = day.schedule_event ?? [];
-    const isMyDay = shifts.some((s) => s.employee_id === employee.id);
+    const myTrainingsToday = (myTrainingsByDate.get(day.date) ?? []).slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
+    const isMyDay = shifts.some((s) => s.employee_id === employee.id) || myTrainingsToday.length > 0;
     const myShiftsOnly = shifts.filter((s) => s.employee_id === employee.id).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
     // Do porównania z wpisanymi godzinami (odbiega od grafiku?) liczy się
     // też udział w wydarzeniach tego dnia (np. sprzątanie przed zmianą) —
@@ -300,6 +338,19 @@ export default async function MyGrafikPage({
                   const p = employeeById.get(id);
                   return p ? <ColorDot key={id} color={p.color_hex} /> : null;
                 })}
+              </span>
+            ))}
+          </div>
+        )}
+        {myTrainingsToday.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {myTrainingsToday.map((t) => (
+              <span
+                key={t.id}
+                className="flex items-center gap-1 rounded-lg border-2 border-purple-300 bg-purple-50 px-2 py-1 text-xs font-bold text-purple-700"
+              >
+                🏸 {formatHm(t.start_time)}–{minutesToTime(timeToMinutes(t.start_time) + t.duration_minutes)} Twój trening ({t.client_count}{" "}
+                {t.client_count === 1 ? "osoba" : "osoby"})
               </span>
             ))}
           </div>
