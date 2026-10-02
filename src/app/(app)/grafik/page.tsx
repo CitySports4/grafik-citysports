@@ -347,8 +347,10 @@ export default async function MyGrafikPage({
             {myTrainingsToday.map((t) => (
               <span
                 key={t.id}
-                className="flex items-center gap-1 rounded-lg border-2 border-purple-300 bg-purple-50 px-2 py-1 text-xs font-bold text-purple-700"
+                style={{ backgroundColor: `${employee.colorHex}2e`, borderLeft: `3px solid ${employee.colorHex}` }}
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-zinc-900"
               >
+                <ColorDot color={employee.colorHex} />
                 🏸 {formatHm(t.start_time)}–{minutesToTime(timeToMinutes(t.start_time) + t.duration_minutes)} Twój trening ({t.client_count}{" "}
                 {t.client_count === 1 ? "osoba" : "osoby"})
               </span>
