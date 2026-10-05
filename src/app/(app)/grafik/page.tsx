@@ -276,12 +276,17 @@ export default async function MyGrafikPage({
     const shifts = (day.schedule_shift ?? []).slice().sort((a, b) => a.slot_index - b.slot_index);
     const events = day.schedule_event ?? [];
     const myTrainingsToday = (myTrainingsByDate.get(day.date) ?? []).slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
-    const isMyDay = shifts.some((s) => s.employee_id === employee.id) || myTrainingsToday.length > 0;
     const myShiftsOnly = shifts.filter((s) => s.employee_id === employee.id).map((s) => ({ start_time: s.start_time, end_time: s.end_time }));
     // Do porównania z wpisanymi godzinami (odbiega od grafiku?) liczy się
     // też udział w wydarzeniach tego dnia (np. sprzątanie przed zmianą) —
     // patrz shiftsAndEventWindows.
     const myEventsToday = events.filter((ev) => ev.participant_employee_ids?.includes(employee.id));
+    // Udział w wydarzeniu (np. "Liga open") bez własnej zmiany to WCIĄŻ
+    // zaplanowana praca tego dnia, nie "niezaplanowana praca zdalna" —
+    // inaczej osoba przypisana tylko do wydarzenia nie miała wcale
+    // przycisku "Wpisz godziny", chyba że akurat miała zgodę na pracę
+    // zdalną (allowRemoteWork), co nie ma tu nic do rzeczy.
+    const isMyDay = shifts.some((s) => s.employee_id === employee.id) || myTrainingsToday.length > 0 || myEventsToday.length > 0;
     const myShiftsRaw = shiftsAndEventWindows(myShiftsOnly, myEventsToday);
     const isToday = day.date === today;
     const dateLabelStr = new Date(day.date + "T00:00:00").toLocaleDateString("pl-PL", {
@@ -329,17 +334,26 @@ export default async function MyGrafikPage({
         </div>
         {events.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {events.map((ev) => (
-              <span key={ev.id} className="flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-700">
-                {ev.start_time ? `${formatHm(ev.start_time)}${ev.end_time ? `–${formatHm(ev.end_time)}` : ""} ` : ""}
-                {EVENT_TYPE_LABELS[ev.type] ?? ev.type}
-                {ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}
-                {(ev.participant_employee_ids ?? []).map((id: string) => {
-                  const p = employeeById.get(id);
-                  return p ? <ColorDot key={id} color={p.color_hex} /> : null;
-                })}
-              </span>
-            ))}
+            {events.map((ev) => {
+              const isMyEvent = ev.participant_employee_ids?.includes(employee.id);
+              return (
+                <span
+                  key={ev.id}
+                  style={isMyEvent ? { backgroundColor: `${employee.colorHex}2e`, borderLeft: `3px solid ${employee.colorHex}` } : undefined}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs ${
+                    isMyEvent ? "font-bold text-zinc-900" : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {ev.start_time ? `${formatHm(ev.start_time)}${ev.end_time ? `–${formatHm(ev.end_time)}` : ""} ` : ""}
+                  {EVENT_TYPE_LABELS[ev.type] ?? ev.type}
+                  {ev.label && ev.label !== EVENT_TYPE_LABELS[ev.type] ? ` — ${ev.label}` : ""}
+                  {(ev.participant_employee_ids ?? []).map((id: string) => {
+                    const p = employeeById.get(id);
+                    return p ? <ColorDot key={id} color={p.color_hex} /> : null;
+                  })}
+                </span>
+              );
+            })}
           </div>
         )}
         {myTrainingsToday.length > 0 && (
