@@ -53,11 +53,13 @@ export function maxConcurrentClients(
   return max;
 }
 
-// Szuka najbliższego wolnego terminu (w PRZÓD od żądanej godziny, tego
-// samego dnia — nie cofa się do wcześniejszych okienek i nie szuka w innych
-// dniach, patrz komentarz w treningi-personalne) — pierwszy start (co 5 min)
-// od którego cały trening mieści się w oknie dostępności sali i nie
-// przekracza limitu osób w żadnym momencie swojego trwania.
+// Szuka najbliższego wolnego terminu TEGO SAMEGO dnia — na przemian w przód
+// i w tył od żądanej godziny (co 5 min), więc wygrywa ten bliższy. Samo "w
+// przód" nie wystarczało: przy treningu proszonym tuż przed zamknięciem
+// sali (np. żądane 16:00/60 min, sala zamyka 16:50) w przód nigdy nic się
+// nie zmieści — dopiero cofnięcie o 10 min (do 15:50) daje wolny termin, a
+// bez szukania wstecz trener dostawał tylko "brak wolnego terminu", mimo że
+// chwilę wcześniej sala była wolna.
 export function findAvailableStart(
   requestedStartMin: number,
   durationMin: number,
@@ -67,13 +69,45 @@ export function findAvailableStart(
   otherSessionsThatDay: { start_time: string; duration_minutes: number; client_count: number }[]
 ): number | null {
   if (roomWindows.length === 0) return null;
+  const dayStart = Math.min(...roomWindows.map((w) => timeToMinutes(w.start_time)));
   const dayEnd = Math.max(...roomWindows.map((w) => timeToMinutes(w.end_time)));
 
-  for (let candidate = requestedStartMin; candidate + durationMin <= dayEnd; candidate += PT_SLOT_STEP_MIN) {
+  function fitsAt(candidate: number): boolean {
     const candidateEnd = candidate + durationMin;
-    if (!fitsInRoomHours(candidate, candidateEnd, roomWindows)) continue;
+    if (!fitsInRoomHours(candidate, candidateEnd, roomWindows)) return false;
     const concurrent = maxConcurrentClients(candidate, candidateEnd, otherSessionsThatDay);
-    if (concurrent + clientCount <= roomCapacity) return candidate;
+    return concurrent + clientCount <= roomCapacity;
+  }
+
+  for (let offset = 0; ; offset += PT_SLOT_STEP_MIN) {
+    const forward = requestedStartMin + offset;
+    const backward = requestedStartMin - offset;
+    const forwardInRange = forward + durationMin <= dayEnd;
+    const backwardInRange = backward >= dayStart;
+    if (!forwardInRange && !backwardInRange) return null;
+    if (forwardInRange && fitsAt(forward)) return forward;
+    if (offset > 0 && backwardInRange && fitsAt(backward)) return backward;
+  }
+}
+
+// Czy skrócenie treningu (przy TEJ SAMEJ godzinie startu) do jednego z
+// dostępnych, krótszych czasów trwania (patrz PT_DURATIONS_MIN) zmieściłoby
+// się — alternatywa dla przesunięcia godziny, gdy np. sala zamyka się za
+// mniej czasu niż żądany trening. Zwraca najdłuższy pasujący czas.
+export function maxFittingDuration(
+  startMin: number,
+  requestedDurationMin: number,
+  clientCount: number,
+  roomCapacity: number,
+  roomWindows: RoomWindow[],
+  otherSessionsThatDay: { start_time: string; duration_minutes: number; client_count: number }[]
+): number | null {
+  const shorterOptions = PT_DURATIONS_MIN.filter((d) => d < requestedDurationMin).sort((a, b) => b - a);
+  for (const d of shorterOptions) {
+    const end = startMin + d;
+    if (!fitsInRoomHours(startMin, end, roomWindows)) continue;
+    const concurrent = maxConcurrentClients(startMin, end, otherSessionsThatDay);
+    if (concurrent + clientCount <= roomCapacity) return d;
   }
   return null;
 }
