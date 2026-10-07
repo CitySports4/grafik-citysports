@@ -19,14 +19,16 @@ import {
   type RoomWindow,
 } from "@/lib/personal-training";
 
-// Buduje wspólny fragment komunikatu błędu z obiema podpowiedziami —
-// skrócenie NAJPIERW, nowa godzina NA KOŃCU (klient wyłapuje regexem
-// końcowe HH:MM, żeby pokazać przycisk "Zastosuj", patrz PersonalTrainingForm).
+// Buduje fragment komunikatu błędu z JEDNĄ konkretną podpowiedzią, nie
+// dwiema naraz — wybór między "przesuń godzinę" i "skróć trening" to
+// decyzja trenera, nie coś do rozstrzygania za niego w jednym zdaniu.
+// Nowa godzina ma pierwszeństwo (da się ją zastosować jednym kliknięciem,
+// patrz regex na końcowe HH:MM w PersonalTrainingForm) — skrócenie to
+// zapasowa podpowiedź TYLKO gdy żadna inna godzina tego dnia się nie mieści.
 function availabilitySuggestionText(suggestionDuration: number | null, suggestionStart: string | null): string {
-  const hints: string[] = [];
-  if (suggestionDuration !== null) hints.push(`Możesz skrócić trening do ${suggestionDuration} min przy tej samej godzinie.`);
-  if (suggestionStart !== null) hints.push(`Najbliższy wolny termin tego dnia: ${suggestionStart}.`);
-  return hints.length > 0 ? ` ${hints.join(" ")}` : " Brak wolnego terminu tego dnia w godzinach otwarcia sali.";
+  if (suggestionStart !== null) return ` Najbliższy wolny termin tego dnia: ${suggestionStart}.`;
+  if (suggestionDuration !== null) return ` Przy tej godzinie zmieściłby się trening skrócony do ${suggestionDuration} min.`;
+  return " Brak wolnego terminu tego dnia w godzinach otwarcia sali.";
 }
 
 type Supabase = ReturnType<typeof createServerSupabaseClient>;
