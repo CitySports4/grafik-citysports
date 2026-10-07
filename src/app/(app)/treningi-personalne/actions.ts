@@ -209,71 +209,88 @@ async function applyPendingCredits(supabase: Supabase, trainerId: string) {
   }
 }
 
-export async function createPersonalTrainingSession(formData: FormData) {
-  const { trainerId } = await resolveCreateActor(formData);
+export type CreateSessionResult = { ok: true } | { ok: false; error: string };
 
-  const date = String(formData.get("date") ?? "");
-  const startTime = String(formData.get("start_time") ?? "");
-  const durationMinutes = Number(formData.get("duration_minutes"));
-  const clientCount = Number(formData.get("client_count"));
-  const clientName = String(formData.get("client_name") ?? "").trim() || null;
-  const repeat = formData.get("repeat") === "on";
-  const repeatUntil = String(formData.get("repeat_until") ?? "") || null;
-  const repeatCountRaw = String(formData.get("repeat_count") ?? "") || null;
-  const repeatCount = repeatCountRaw ? Number(repeatCountRaw) : null;
+// Zwraca WYNIK zamiast rzucać wyjątek (throw) — ta wersja Next.js potrafi w
+// produkcji zamienić treść rzuconego z akcji błędu na ogólny, zredagowany
+// tekst (patrz node_modules/next/dist/docs/.../error.md: "Errors forwarded
+// ... show a generic message ... to prevent leaking sensitive details"), co
+// dokładnie uderzało w komunikat o pełnej sali — zamiast konkretnej
+// podpowiedzi widać było samo "Wystąpił nieoczekiwany błąd". Oficjalny
+// przewodnik (10-error-handling.md) wprost zaleca: błędy walidacyjne jako
+// ZWRACANĄ WARTOŚĆ, nie throw — stąd ten kształt, patrz handleSubmit w
+// PersonalTrainingForm.tsx.
+export async function createPersonalTrainingSession(formData: FormData): Promise<CreateSessionResult> {
+  try {
+    const { trainerId } = await resolveCreateActor(formData);
 
-  if (!date || !startTime) throw new Error("Podaj dzień i godzinę treningu.");
-  if (!PT_DURATIONS_MIN.includes(durationMinutes as (typeof PT_DURATIONS_MIN)[number])) {
-    throw new Error("Nieprawidłowy czas trwania treningu.");
+    const date = String(formData.get("date") ?? "");
+    const startTime = String(formData.get("start_time") ?? "");
+    const durationMinutes = Number(formData.get("duration_minutes"));
+    const clientCount = Number(formData.get("client_count"));
+    const clientName = String(formData.get("client_name") ?? "").trim() || null;
+    const repeat = formData.get("repeat") === "on";
+    const repeatUntil = String(formData.get("repeat_until") ?? "") || null;
+    const repeatCountRaw = String(formData.get("repeat_count") ?? "") || null;
+    const repeatCount = repeatCountRaw ? Number(repeatCountRaw) : null;
+
+    if (!date || !startTime) return { ok: false, error: "Podaj dzień i godzinę treningu." };
+    if (!PT_DURATIONS_MIN.includes(durationMinutes as (typeof PT_DURATIONS_MIN)[number])) {
+      return { ok: false, error: "Nieprawidłowy czas trwania treningu." };
+    }
+    if (!Number.isFinite(clientCount) || clientCount < 1) return { ok: false, error: "Podaj liczbę osób na treningu (min. 1)." };
+    if (repeat && !repeatUntil && !repeatCount) {
+      return { ok: false, error: "Przy powtarzaniu co tydzień podaj datę końcową albo liczbę powtórzeń." };
+    }
+
+    const dates = repeat ? weeklyOccurrenceDates(date, repeatUntil, repeatCount) : [date];
+    if (dates.length === 0) return { ok: false, error: "Nieprawidłowy zakres powtarzania." };
+
+    const weekday = new Date(date + "T00:00:00").getDay();
+    const startMin = timeToMinutes(startTime);
+
+    const supabase = createServerSupabaseClient();
+    const settings = await getSettings(supabase);
+
+    // Osobny, jednoznaczny komunikat, gdy sama liczba osób przekracza limit
+    // sali — bez tego trafiałoby to do checkAvailability i wychodziłoby jako
+    // mylące "brak wolnego terminu", mimo że żaden termin nigdy by nie pasował
+    // (limit sali nie da się w ogóle zmieścić, niezależnie od godziny).
+    if (clientCount > settings.room_capacity) {
+      return { ok: false, error: `Za dużo osób — limit sali to ${settings.room_capacity} naraz, a podano ${clientCount}.` };
+    }
+
+    const availability = await checkAvailability(supabase, dates, weekday, startMin, durationMinutes, clientCount, settings.room_capacity);
+    if (!availability.ok) {
+      const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
+      const dateLabel = new Date(availability.conflictDate + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+      return { ok: false, error: `Sala pełna o tej porze (${dateLabel}) — przekroczony limit osób lub poza godzinami otwarcia.${suggestionText}` };
+    }
+
+    const seriesId = dates.length > 1 ? crypto.randomUUID() : null;
+    const rows = dates.map((d) => ({
+      trainer_employee_id: trainerId,
+      series_id: seriesId,
+      date: d,
+      start_time: startTime,
+      duration_minutes: durationMinutes,
+      client_count: clientCount,
+      client_name: clientName,
+      rate_per_person_snapshot: settings.rate_per_person,
+    }));
+
+    const { error } = await supabase.from("personal_training_session").insert(rows);
+    if (error) return { ok: false, error: dbErrorMessage(error) };
+
+    await applyPendingCredits(supabase, trainerId);
+
+    revalidatePath("/treningi-personalne");
+    revalidatePath("/treningi-personalne/rozliczenia");
+    revalidatePath("/recepcja/treningi");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Wystąpił nieoczekiwany błąd. Odśwież stronę i spróbuj ponownie." };
   }
-  if (!Number.isFinite(clientCount) || clientCount < 1) throw new Error("Podaj liczbę osób na treningu (min. 1).");
-  if (repeat && !repeatUntil && !repeatCount) {
-    throw new Error("Przy powtarzaniu co tydzień podaj datę końcową albo liczbę powtórzeń.");
-  }
-
-  const dates = repeat ? weeklyOccurrenceDates(date, repeatUntil, repeatCount) : [date];
-  if (dates.length === 0) throw new Error("Nieprawidłowy zakres powtarzania.");
-
-  const weekday = new Date(date + "T00:00:00").getDay();
-  const startMin = timeToMinutes(startTime);
-
-  const supabase = createServerSupabaseClient();
-  const settings = await getSettings(supabase);
-
-  // Osobny, jednoznaczny komunikat, gdy sama liczba osób przekracza limit
-  // sali — bez tego trafiałoby to do checkAvailability i wychodziłoby jako
-  // mylące "brak wolnego terminu", mimo że żaden termin nigdy by nie pasował
-  // (limit sali nie da się w ogóle zmieścić, niezależnie od godziny).
-  if (clientCount > settings.room_capacity) {
-    throw new Error(`Za dużo osób — limit sali to ${settings.room_capacity} naraz, a podano ${clientCount}.`);
-  }
-
-  const availability = await checkAvailability(supabase, dates, weekday, startMin, durationMinutes, clientCount, settings.room_capacity);
-  if (!availability.ok) {
-    const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
-    const dateLabel = new Date(availability.conflictDate + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
-    throw new Error(`Sala pełna o tej porze (${dateLabel}) — przekroczony limit osób lub poza godzinami otwarcia.${suggestionText}`);
-  }
-
-  const seriesId = dates.length > 1 ? crypto.randomUUID() : null;
-  const rows = dates.map((d) => ({
-    trainer_employee_id: trainerId,
-    series_id: seriesId,
-    date: d,
-    start_time: startTime,
-    duration_minutes: durationMinutes,
-    client_count: clientCount,
-    client_name: clientName,
-    rate_per_person_snapshot: settings.rate_per_person,
-  }));
-
-  const { error } = await supabase.from("personal_training_session").insert(rows);
-  if (error) throw new Error(dbErrorMessage(error));
-
-  await applyPendingCredits(supabase, trainerId);
-
-  revalidatePath("/treningi-personalne");
-  revalidatePath("/treningi-personalne/rozliczenia");
 }
 
 export async function updatePersonalTrainingSession(formData: FormData) {

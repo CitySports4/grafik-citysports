@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { PT_DURATIONS_MIN, maxConcurrentClients, minutesToTime, type RoomWindow } from "@/lib/personal-training";
 import { timeToMinutes } from "@/lib/time";
-import { friendlyActionError } from "@/lib/client-error";
+import type { CreateSessionResult } from "./actions";
 
 const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2.5 py-1.5 text-sm";
 const LABEL = "text-xs font-semibold text-zinc-600";
@@ -33,7 +33,7 @@ export function NewPersonalTrainingForm({
   dayWindows,
   daySessions,
 }: {
-  action: (formData: FormData) => Promise<void>;
+  action: (formData: FormData) => Promise<CreateSessionResult>;
   defaultDate: string;
   // Górna granica listy "Liczba osób", gdy nie znamy jeszcze obłożenia
   // konkretnej godziny (np. inny dzień niż defaultDate) — patrz freeAtSelection.
@@ -131,7 +131,13 @@ export function NewPersonalTrainingForm({
         if (repeatMode === "until") fd.set("repeat_until", repeatUntil);
         else fd.set("repeat_count", repeatCount);
       }
-      await action(fd);
+      const result = await action(fd);
+      if (!result.ok) {
+        setError(result.error);
+        const match = result.error.match(/(\d{2}:\d{2})\.?\s*$/);
+        if (match) setSuggestion(match[1]);
+        return;
+      }
       setStartTime("");
       setClientName("");
       setClientCount(1);
@@ -139,10 +145,9 @@ export function NewPersonalTrainingForm({
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2500);
     } catch (err) {
-      const raw = err instanceof Error ? err.message : "";
-      setError(friendlyActionError(err));
-      const match = raw.match(/(\d{2}:\d{2})\.?\s*$/);
-      if (match) setSuggestion(match[1]);
+      // Siatka bezpieczeństwa na naprawdę nieoczekiwane sytuacje (np. sieć)
+      // — akcja sama w sobie już nie powinna rzucać, patrz createPersonalTrainingSession.
+      setError(err instanceof Error ? err.message : "Wystąpił nieoczekiwany błąd. Odśwież stronę i spróbuj ponownie.");
     } finally {
       setPending(false);
     }
