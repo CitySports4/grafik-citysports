@@ -11,12 +11,23 @@ import {
   fitsInRoomHours,
   maxConcurrentClients,
   findAvailableStart,
+  maxFittingDuration,
   minutesToTime,
   weeklyOccurrenceDates,
   sessionAmount,
   PT_DURATIONS_MIN,
   type RoomWindow,
 } from "@/lib/personal-training";
+
+// Buduje wspólny fragment komunikatu błędu z obiema podpowiedziami —
+// skrócenie NAJPIERW, nowa godzina NA KOŃCU (klient wyłapuje regexem
+// końcowe HH:MM, żeby pokazać przycisk "Zastosuj", patrz PersonalTrainingForm).
+function availabilitySuggestionText(suggestionDuration: number | null, suggestionStart: string | null): string {
+  const hints: string[] = [];
+  if (suggestionDuration !== null) hints.push(`Możesz skrócić trening do ${suggestionDuration} min przy tej samej godzinie.`);
+  if (suggestionStart !== null) hints.push(`Najbliższy wolny termin tego dnia: ${suggestionStart}.`);
+  return hints.length > 0 ? ` ${hints.join(" ")}` : " Brak wolnego terminu tego dnia w godzinach otwarcia sali.";
+}
 
 type Supabase = ReturnType<typeof createServerSupabaseClient>;
 
@@ -127,7 +138,7 @@ async function checkAvailability(
   // zostawiając w sprawdzeniu wszystko inne (inni trenerzy, inne treningi
   // tego samego trenera spoza tej serii).
   excludeSeriesId?: string
-): Promise<{ ok: true } | { ok: false; conflictDate: string; suggestion: string | null }> {
+): Promise<{ ok: true } | { ok: false; conflictDate: string; suggestionStart: string | null; suggestionDuration: number | null }> {
   const windows = await getRoomWindows(supabase, weekday);
 
   for (const date of dates) {
@@ -147,7 +158,13 @@ async function checkAvailability(
     if (fits && concurrent + clientCount <= roomCapacity) continue;
 
     const suggestionMin = findAvailableStart(startMin, durationMin, clientCount, roomCapacity, windows, existingWithBlocks);
-    return { ok: false, conflictDate: date, suggestion: suggestionMin === null ? null : minutesToTime(suggestionMin) };
+    const suggestionDuration = maxFittingDuration(startMin, durationMin, clientCount, roomCapacity, windows, existingWithBlocks);
+    return {
+      ok: false,
+      conflictDate: date,
+      suggestionStart: suggestionMin === null ? null : minutesToTime(suggestionMin),
+      suggestionDuration,
+    };
   }
   return { ok: true };
 }
@@ -231,9 +248,7 @@ export async function createPersonalTrainingSession(formData: FormData) {
 
   const availability = await checkAvailability(supabase, dates, weekday, startMin, durationMinutes, clientCount, settings.room_capacity);
   if (!availability.ok) {
-    const suggestionText = availability.suggestion
-      ? ` Najbliższy wolny termin tego dnia: ${availability.suggestion}.`
-      : " Brak wolnego terminu tego dnia w godzinach otwarcia sali.";
+    const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
     const dateLabel = new Date(availability.conflictDate + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
     throw new Error(`Sala pełna o tej porze (${dateLabel}) — przekroczony limit osób lub poza godzinami otwarcia.${suggestionText}`);
   }
@@ -293,7 +308,7 @@ export async function updatePersonalTrainingSession(formData: FormData) {
 
   const availability = await checkAvailability(supabase, [date], weekday, startMin, durationMinutes, clientCount, settings.room_capacity, id);
   if (!availability.ok) {
-    const suggestionText = availability.suggestion ? ` Najbliższy wolny termin: ${availability.suggestion}.` : " Brak wolnego terminu tego dnia.";
+    const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
     throw new Error(`Sala pełna o tej porze.${suggestionText}`);
   }
 
@@ -356,7 +371,7 @@ export async function movePersonalTrainingSeries(formData: FormData) {
       seriesId
     );
     if (!availability.ok) {
-      const suggestionText = availability.suggestion ? ` Najbliższy wolny termin: ${availability.suggestion}.` : " Brak wolnego terminu tego dnia.";
+      const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
       const dateLabel = new Date(s.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
       throw new Error(`Nowa godzina koliduje z inną rezerwacją (${dateLabel}).${suggestionText}`);
     }
@@ -425,9 +440,7 @@ export async function extendPersonalTrainingSeries(formData: FormData) {
     seriesId
   );
   if (!availability.ok) {
-    const suggestionText = availability.suggestion
-      ? ` Najbliższy wolny termin tego dnia: ${availability.suggestion}.`
-      : " Brak wolnego terminu tego dnia w godzinach otwarcia sali.";
+    const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
     const dateLabel = new Date(availability.conflictDate + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
     throw new Error(`Sala pełna o tej porze (${dateLabel}) — przekroczony limit osób lub poza godzinami otwarcia.${suggestionText}`);
   }
