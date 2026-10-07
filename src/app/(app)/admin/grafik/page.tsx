@@ -222,6 +222,15 @@ export default async function ScheduleBuilderPage({
 
       {hasStructure && (
         <ScheduleTable
+          // Wymusza pełny remount przy zmianie miesiąca (poprzedni/następny)
+          // — ScheduleTable trzyma `days` we własnym stanie (useState),
+          // zainicjowanym TYLKO przy pierwszym montowaniu, żeby admin mógł
+          // od razu widzieć efekt przypisania zmiany bez przeładowania
+          // strony. Bez tego klucza React reużywał tę samą instancję
+          // komponentu przy nawigacji do innego miesiąca — URL i nagłówek
+          // się zmieniały, ale tabela dalej pokazywała dane poprzedniego
+          // miesiąca, bo useState ignoruje nowy prop po pierwszym montowaniu.
+          key={`${year}-${month}`}
           scheduleMonthId={scheduleMonth.id}
           scheduleMonthStatus={scheduleMonth.status}
           days={(days ?? []).map((d) => ({
