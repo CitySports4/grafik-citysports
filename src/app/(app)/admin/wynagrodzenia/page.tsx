@@ -9,6 +9,19 @@ import { ColorDot } from "@/components/ColorDot";
 import { BackLink } from "@/components/BackLink";
 import { InstructorCalculator } from "./InstructorCalculator";
 
+// Ile dokładnie wpisane godziny odbiegają od grafiku tego dnia, słownie —
+// "3h dłużej"/"50 min mniej" — zamiast zostawiać admina z samym "odbiega od
+// grafiku" i liczeniem różnicy w głowie z dwóch zakresów godzin.
+function formatHourDiff(diffHours: number): string {
+  const diffMinutes = Math.round(diffHours * 60);
+  if (diffMinutes === 0) return "";
+  const abs = Math.abs(diffMinutes);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  const parts = [h > 0 ? `${h}h` : null, m > 0 ? `${m} min` : null].filter(Boolean);
+  return `${parts.join(" ")} ${diffMinutes > 0 ? "dłużej" : "mniej"}`;
+}
+
 export default async function WynagrodzeniaPage({
   searchParams,
 }: {
@@ -127,6 +140,11 @@ export default async function WynagrodzeniaPage({
         (e): e is { actual_start: string; actual_end: string; is_remote: boolean; note: string | null } => Boolean(e.actual_start && e.actual_end)
       );
       const workedHours = dayEntries.reduce((sum, e) => sum + hoursBetween(e.actual_start, e.actual_end), 0);
+      // Suma POSZCZEGÓLNYCH zmian tego dnia, nie zbiorczy zakres min-start/
+      // max-end (ten przy podzielonej zmianie zawyżałby zaplanowane godziny
+      // o długość przerwy między nimi) — żeby różnica "ile dłużej/krócej"
+      // niżej była policzona tak samo rzetelnie jak workedHours.
+      const scheduledHours = scheduledList.reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time), 0);
 
       // "Brak wpisu godzin" ma sens tylko dla dnia, który już się odbył — dla
       // przyszłych zmian (cały nadchodzący miesiąc na starcie) nikt jeszcze
@@ -153,7 +171,7 @@ export default async function WynagrodzeniaPage({
         flag = "odbiega od grafiku";
       }
 
-      return { date, scheduled, scheduledList, dayEntries, workedHours, flag };
+      return { date, scheduled, scheduledList, dayEntries, workedHours, scheduledHours, flag };
     });
 
     const totalHours = Math.round(days.reduce((sum, d) => sum + d.workedHours, 0) * 100) / 100;
@@ -263,6 +281,7 @@ export default async function WynagrodzeniaPage({
                           : d.flag === "brak w grafiku"
                             ? "bg-violet-100 text-violet-700"
                             : "bg-amber-100 text-amber-700";
+                      const diffLabel = d.flag === "odbiega od grafiku" ? formatHourDiff(d.workedHours - d.scheduledHours) : "";
                       return (
                         <div key={d.date} className={`rounded-lg border p-2.5 text-xs ${flagStyle}`}>
                           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
@@ -272,7 +291,10 @@ export default async function WynagrodzeniaPage({
                                 ({weekdayLabel(d.scheduled?.weekday ?? new Date(d.date + "T00:00:00").getDay()).slice(0, 3)})
                               </span>
                             </span>
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${badgeStyle}`}>⚠ {d.flag}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${badgeStyle}`}>
+                              ⚠ {d.flag}
+                              {diffLabel && ` (${diffLabel})`}
+                            </span>
                           </div>
                           <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                             <div>
