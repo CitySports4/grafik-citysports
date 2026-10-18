@@ -241,6 +241,10 @@ export async function KidsClassesContent({
 
       {tab === "zgloszenia" && (
         <Card className="!p-0 overflow-hidden">
+          {/* overflow-x-auto na wrapperze (nie samo "overflow-hidden" na Card) —
+              8 kolumn nie zmieści się na telefonie; bez tego Card obcinałby
+              resztę tabeli zamiast dać ją przewinąć w bok. */}
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
               <tr>
@@ -284,8 +288,18 @@ export async function KidsClassesContent({
                       <form action={toggleUsedTrial}>
                         <input type="hidden" name="id" value={e.id} />
                         <input type="hidden" name="value" value={String(!e.used_trial)} />
-                        <button type="submit" className={`h-5 w-5 rounded border-2 ${e.used_trial ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"}`}>
-                          {e.used_trial ? "✓" : ""}
+                        {/* Ta komórka (px-4 py-2.5) ma dość miejsca, żeby powiększyć
+                            obszar dotyku ujemnym marginesem bez nachodzenia na
+                            sąsiadów — ten sam trik co w CleaningDayList. */}
+                        <button
+                          type="submit"
+                          className="-m-2 flex items-center justify-center rounded p-2"
+                        >
+                          <span
+                            className={`flex h-5 w-5 items-center justify-center rounded border-2 ${e.used_trial ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"}`}
+                          >
+                            {e.used_trial ? "✓" : ""}
+                          </span>
                         </button>
                       </form>
                       {e.trial_date && (
@@ -352,6 +366,7 @@ export async function KidsClassesContent({
               )}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
@@ -449,6 +464,7 @@ export async function KidsClassesContent({
           {waiting.length === 0 ? (
             <p className="text-sm text-zinc-400">Nikt obecnie nie czeka.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 <tr>
@@ -482,6 +498,7 @@ export async function KidsClassesContent({
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </Card>
       )}

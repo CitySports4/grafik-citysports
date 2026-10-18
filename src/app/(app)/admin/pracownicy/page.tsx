@@ -110,6 +110,10 @@ export default async function EmployeesPage() {
       </Card>
 
       <Card className="!p-0 overflow-hidden">
+        {/* overflow-x-auto na wrapperze, nie samo "overflow-hidden" na Card —
+            9 kolumn może nie zmieścić się na mniejszym ekranie laptopa
+            (1280px), "overflow-hidden" by je po prostu obcinał. */}
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
             <tr>
@@ -176,6 +180,7 @@ export default async function EmployeesPage() {
             )}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   );
