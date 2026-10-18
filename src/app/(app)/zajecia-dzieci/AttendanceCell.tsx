@@ -38,12 +38,17 @@ export function AttendanceCell({ enrollmentId, sessionDate, present }: { enrollm
   }
 
   return (
+    // Siatka dziecko×data ma kolumny tylko 1.5 jednostki szerokości (patrz
+    // KidsClassesContent.tsx) — powiększanie obszaru dotyku ujemnym
+    // marginesem (jak np. w CleaningDayList) nachodziłoby na sąsiednie
+    // komórki, więc zamiast tego po prostu nieco większy sam kwadrat
+    // (20px → 24px), wciąż bez kolizji z sąsiadami.
     <button
       type="button"
       onClick={handleClick}
       disabled={pending}
       title={optimisticPresent === null ? "nieoznaczone" : optimisticPresent ? "obecny" : "nieobecny"}
-      className={`mx-auto flex h-5 w-5 items-center justify-center rounded border-2 disabled:opacity-60 ${
+      className={`mx-auto flex h-6 w-6 items-center justify-center rounded border-2 disabled:opacity-60 ${
         optimisticPresent === true
           ? "border-emerald-600 bg-emerald-600 text-white"
           : optimisticPresent === false

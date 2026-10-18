@@ -35,11 +35,13 @@ export function PaymentCell({ registrationId, monthIndex, paid }: { registration
   }
 
   return (
+    // Patrz komentarz w AttendanceCell — kolumny siatki są zbyt wąskie dla
+    // ujemnego marginesu, więc tylko lekko większy kwadrat (20px → 24px).
     <button
       type="button"
       onClick={handleClick}
       disabled={pending}
-      className={`mx-auto flex h-5 w-5 items-center justify-center rounded border-2 disabled:opacity-60 ${
+      className={`mx-auto flex h-6 w-6 items-center justify-center rounded border-2 disabled:opacity-60 ${
         optimisticPaid ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300"
       }`}
     >

@@ -47,10 +47,10 @@ export default async function RecepcjaGrafikPage({
           Grafik pracy — {monthLabel(month)} {year} <span className="text-sm font-normal text-zinc-400">(tylko podgląd)</span>
         </h1>
         <div className="flex items-center gap-2 text-sm">
-          <Link href={prevLink} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+          <Link href={prevLink} className="rounded-lg px-3 py-2 hover:bg-zinc-100">
             ← poprzedni
           </Link>
-          <Link href={nextLink} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+          <Link href={nextLink} className="rounded-lg px-3 py-2 hover:bg-zinc-100">
             następny →
           </Link>
         </div>

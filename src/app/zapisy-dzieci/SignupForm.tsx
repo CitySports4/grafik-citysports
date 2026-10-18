@@ -6,8 +6,11 @@ import { submitRegistration, findChildrenByPhone, type SignupInput, type Returni
 import { groupLabel, feeForGroupCount, STATUS_LABELS, type KidsClassGroup, type PriceTier } from "@/lib/kids-classes";
 import { Banner } from "@/components/Banner";
 
+// text-base (16px), nie text-sm — pole mniejsze niż 16px wywołuje
+// automatyczne przybliżenie przy focusie na iOS Safari, a to formularz,
+// który rodzic wypełnia głównie na telefonie.
 const INPUT =
-  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
+  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-base outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const LABEL = "text-sm font-semibold text-zinc-900";
 const PRIMARY_BTN =
   "mt-1.5 rounded-xl bg-brand-orange px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
@@ -171,6 +174,8 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
           <div className="flex gap-2">
             <input
               type="tel"
+              inputMode="tel"
+              autoComplete="tel"
               placeholder="Numer telefonu"
               value={phoneQuery}
               onChange={(e) => setPhoneQuery(e.target.value)}
@@ -180,7 +185,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
               type="button"
               onClick={handleLookup}
               disabled={lookupPending || !phoneQuery}
-              className="shrink-0 rounded-xl bg-zinc-800 px-3 py-2 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50"
+              className="shrink-0 rounded-xl bg-zinc-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-50"
             >
               {lookupPending ? "Szukam…" : "Sprawdź"}
             </button>
@@ -219,6 +224,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
           <label className={LABEL}>Imię i nazwisko dziecka</label>
           <input
             required
+            autoComplete="off"
             value={form.childName}
             onChange={(e) => {
               // Ręczna zmiana imienia po wybraniu wracającego dziecka
@@ -238,11 +244,25 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
         </div>
         <div className="flex flex-col gap-1.5">
           <label className={LABEL}>Imię i nazwisko rodzica/opiekuna</label>
-          <input required value={form.parentName} onChange={(e) => set("parentName", e.target.value)} className={INPUT} />
+          <input
+            required
+            autoComplete="name"
+            value={form.parentName}
+            onChange={(e) => set("parentName", e.target.value)}
+            className={INPUT}
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <label className={LABEL}>Telefon</label>
-          <input required value={form.phone} onChange={(e) => set("phone", e.target.value)} className={INPUT} />
+          <input
+            required
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={form.phone}
+            onChange={(e) => set("phone", e.target.value)}
+            className={INPUT}
+          />
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-700">
           <input type="checkbox" checked={form.whatsappContact} onChange={(e) => set("whatsappContact", e.target.checked)} className="h-4 w-4" />
@@ -299,7 +319,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                   {selected && !full && !skipTrial && (
                     <div className="ml-1 flex flex-col gap-1.5 rounded-xl bg-zinc-50 p-3">
                       <span className="text-xs font-semibold text-zinc-600">Termin bezpłatnych zajęć próbnych:</span>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-2">
                         {groupTrialDates.map((date) => {
                           const dateChosen = trialDates[group.id] === date;
                           return (
@@ -307,7 +327,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                               type="button"
                               key={date}
                               onClick={() => setTrialDate(group.id, date)}
-                              className={`rounded-lg border-2 px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                              className={`rounded-lg border-2 px-3 py-2.5 text-xs font-semibold transition-colors ${
                                 dateChosen ? "border-brand-orange bg-white text-brand-orange" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
                               }`}
                             >
