@@ -8,8 +8,10 @@ import { Banner } from "@/components/Banner";
 
 type Step = "phone" | "set_password" | "login";
 
+// text-base (16px), nie text-sm — pole mniejsze niż 16px wywołuje
+// automatyczne przybliżenie przy focusie na iOS Safari.
 const INPUT =
-  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
+  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-base outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const PRIMARY_BTN =
   "mt-1.5 rounded-xl bg-brand-orange px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
 
@@ -78,6 +80,9 @@ export function LoginForm() {
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-semibold text-zinc-900">Numer telefonu</label>
               <input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 required
@@ -97,12 +102,12 @@ export function LoginForm() {
             <input type="hidden" name="phone" value={phone} />
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-semibold text-zinc-900">Nowe hasło</label>
-              <input type="password" name="password" required minLength={6} className={INPUT} />
+              <input type="password" name="password" autoComplete="new-password" required minLength={6} className={INPUT} />
               <p className="text-xs text-zinc-500">{PASSWORD_HINT}</p>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-semibold text-zinc-900">Powtórz nowe hasło</label>
-              <input type="password" name="password_confirm" required minLength={6} className={INPUT} />
+              <input type="password" name="password_confirm" autoComplete="new-password" required minLength={6} className={INPUT} />
             </div>
             <button type="submit" disabled={pending} className={PRIMARY_BTN}>
               {pending ? "Zapisywanie…" : "Ustaw hasło i zaloguj"}
@@ -110,7 +115,7 @@ export function LoginForm() {
             <button
               type="button"
               onClick={() => setStep("phone")}
-              className="text-sm text-zinc-500 hover:text-brand-orange hover:underline"
+              className="self-start py-1.5 text-sm text-zinc-500 hover:text-brand-orange hover:underline"
             >
               ← wróć
             </button>
@@ -122,7 +127,7 @@ export function LoginForm() {
             <input type="hidden" name="phone" value={phone} />
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-semibold text-zinc-900">Hasło</label>
-              <input type="password" name="password" required className={INPUT} />
+              <input type="password" name="password" autoComplete="current-password" required className={INPUT} />
             </div>
             <button type="submit" disabled={pending} className={PRIMARY_BTN}>
               {pending ? "Logowanie…" : "Zaloguj"}
@@ -130,7 +135,7 @@ export function LoginForm() {
             <button
               type="button"
               onClick={() => setStep("phone")}
-              className="text-sm text-zinc-500 hover:text-brand-orange hover:underline"
+              className="self-start py-1.5 text-sm text-zinc-500 hover:text-brand-orange hover:underline"
             >
               ← wróć
             </button>

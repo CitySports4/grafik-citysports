@@ -96,10 +96,10 @@ export default async function RecepcjaTreningiPage({
           <Link href="/recepcja/treningi/rozliczenia" className="rounded-lg bg-brand-orange px-3 py-1.5 font-semibold text-white hover:bg-brand-orange-dark">
             Rozliczenia
           </Link>
-          <Link href={`?monday=${prevMonday}`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+          <Link href={`?monday=${prevMonday}`} className="rounded-lg px-3 py-2 font-semibold text-zinc-500 hover:bg-zinc-100">
             ← poprzedni tydzień
           </Link>
-          <Link href={`?monday=${nextMonday}`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+          <Link href={`?monday=${nextMonday}`} className="rounded-lg px-3 py-2 font-semibold text-zinc-500 hover:bg-zinc-100">
             następny tydzień →
           </Link>
         </div>
@@ -163,7 +163,7 @@ export default async function RecepcjaTreningiPage({
                     </span>
                     <form action={deleteRoomBlock}>
                       <input type="hidden" name="id" value={b.id} />
-                      <button type="submit" className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">
+                      <button type="submit" className="rounded-lg px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50">
                         Usuń
                       </button>
                     </form>
