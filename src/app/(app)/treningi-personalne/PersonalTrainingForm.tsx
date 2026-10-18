@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PT_DURATIONS_MIN, maxConcurrentClients, minutesToTime, type RoomWindow } from "@/lib/personal-training";
+import { PT_DURATIONS_MIN, maxConcurrentClients, intervalsOverlap, minutesToTime, type RoomWindow } from "@/lib/personal-training";
 import { timeToMinutes } from "@/lib/time";
 import type { CreateSessionResult } from "./actions";
 
 const INPUT = "w-full rounded-lg border-[1.5px] border-zinc-300 px-2.5 py-1.5 text-sm";
 const LABEL = "text-xs font-semibold text-zinc-600";
 
-type ExistingSession = { start_time: string; duration_minutes: number; client_count: number };
+type ExistingSession = { start_time: string; duration_minutes: number; client_count: number; trainer_employee_id: string };
 
 // Krok siatki godzin do wyboru — grubszy niż PT_SLOT_STEP_MIN (5 min, do
 // precyzyjnego szukania wolnego terminu na serwerze), żeby nie wypisywać
@@ -30,6 +30,7 @@ export function NewPersonalTrainingForm({
   defaultDate,
   roomCapacity,
   trainerOptions,
+  currentEmployeeId,
   dayWindows,
   daySessions,
 }: {
@@ -39,10 +40,15 @@ export function NewPersonalTrainingForm({
   // konkretnej godziny (np. inny dzień niż defaultDate) — patrz freeAtSelection.
   roomCapacity: number;
   trainerOptions?: { id: string; name: string }[];
+  // Id trenera, gdy formularz NIE pokazuje wyboru trenera (trainerOptions
+  // nieustawione — trener zarządza wyłącznie swoim własnym grafikiem) —
+  // potrzebne, żeby siatka wiedziała, KTÓRE z daySessions są "moje" przy
+  // wykrywaniu nakładających się własnych treningów (patrz ownConflict niżej).
+  currentEmployeeId?: string;
   dayWindows?: RoomWindow[];
   daySessions?: ExistingSession[];
 }) {
-  const [trainerId, setTrainerId] = useState(trainerOptions?.[0]?.id ?? "");
+  const [trainerId, setTrainerId] = useState(trainerOptions?.[0]?.id ?? currentEmployeeId ?? "");
   const [date, setDate] = useState(defaultDate);
   const [startTime, setStartTime] = useState("");
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
@@ -77,11 +83,20 @@ export function NewPersonalTrainingForm({
     return dayWindows.map((w) => {
       const startMin = timeToMinutes(w.start_time);
       const endMin = timeToMinutes(w.end_time);
-      const hourGroups: { hour: string; slots: { time: string; free: number }[] }[] = [];
+      const hourGroups: { hour: string; slots: { time: string; free: number; ownConflict: boolean }[] }[] = [];
       for (let t = startMin; t + durationMinutes <= endMin; t += GRID_STEP_MIN) {
         const occupied = maxConcurrentClients(t, t + durationMinutes, daySessions ?? []);
         const time = minutesToTime(t);
-        const slot = { time, free: Math.max(0, roomCapacity - occupied) };
+        // Nakłada się na inny trening TEGO SAMEGO trenera — osobny warunek od
+        // samego obłożenia sali (free), bo to nie "sala dzielona z kimś"
+        // (normalne, dozwolone), a fizyczna niemożność prowadzenia dwóch
+        // treningów naraz. Pokazywanie tego tylko przez kolor/hover (title)
+        // było mylące i niewidoczne na dotyku — stąd osobny, zawsze widoczny
+        // komunikat (patrz legenda i przyciski niżej).
+        const ownConflict = (daySessions ?? []).some(
+          (s) => s.trainer_employee_id === trainerId && intervalsOverlap(t, durationMinutes, timeToMinutes(s.start_time), s.duration_minutes)
+        );
+        const slot = { time, free: Math.max(0, roomCapacity - occupied), ownConflict };
         const hour = time.slice(0, 2);
         const lastGroup = hourGroups[hourGroups.length - 1];
         if (lastGroup && lastGroup.hour === hour) lastGroup.slots.push(slot);
@@ -89,7 +104,7 @@ export function NewPersonalTrainingForm({
       }
       return { window: w, hourGroups };
     });
-  }, [hasGridData, dayWindows, daySessions, roomCapacity, durationMinutes]);
+  }, [hasGridData, dayWindows, daySessions, roomCapacity, durationMinutes, trainerId]);
 
   // Ile miejsc naprawdę zostało wolnych DLA WYBRANEJ godziny — to samo, co
   // liczy siatka dla godzin z jej kroku (GRID_STEP_MIN), ale działa też dla
@@ -102,6 +117,18 @@ export function NewPersonalTrainingForm({
     const occupied = maxConcurrentClients(startMin, startMin + durationMinutes, daySessions ?? []);
     return Math.max(0, roomCapacity - occupied);
   }, [hasGridData, startTime, durationMinutes, daySessions, roomCapacity]);
+
+  // To samo sprawdzenie co w siatce (ownConflict), ale dla "Dokładnej
+  // godziny" wpisanej ręcznie — tego pola nie da się po prostu "disabled"
+  // jak przycisku w siatce, więc ostrzeżenie pokazuje się jako tekst niżej
+  // (patrz render), zamiast tylko kolorem/hoverem.
+  const ownConflictAtSelection = useMemo(() => {
+    if (!hasGridData || !startTime) return false;
+    const startMin = timeToMinutes(startTime);
+    return (daySessions ?? []).some(
+      (s) => s.trainer_employee_id === trainerId && intervalsOverlap(startMin, durationMinutes, timeToMinutes(s.start_time), s.duration_minutes)
+    );
+  }, [hasGridData, startTime, durationMinutes, daySessions, trainerId]);
 
   // Pochodna, wyliczana na bieżąco przy renderze zamiast trzymana w osobnym
   // stanie synchronizowanym efektem — jeśli po zmianie godziny/czasu trwania
@@ -189,43 +216,65 @@ export function NewPersonalTrainingForm({
           slotsByWindow.length === 0 ? (
             <p className="text-xs text-zinc-400">Sala niedostępna tego dnia.</p>
           ) : (
-            <div className="flex flex-col gap-2.5">
-              {slotsByWindow.map(({ window, hourGroups }) => (
-                <div key={`${window.start_time}-${window.end_time}`} className="flex flex-col gap-1">
-                  {hourGroups.map(({ hour, slots }) => (
-                    <div key={hour} className="flex items-start gap-2">
-                      <span className="mt-1 w-9 shrink-0 text-[11px] font-semibold text-zinc-400">{hour}:xx</span>
-                      <div className="flex flex-wrap gap-1">
-                        {slots.map((slot) => {
-                          const isFull = slot.free === 0;
-                          const isSelected = slot.time === startTime;
-                          return (
-                            <button
-                              key={slot.time}
-                              type="button"
-                              disabled={isFull}
-                              title={isFull ? "Brak wolnych miejsc o tej porze" : `Wolne miejsca: ${slot.free}/${roomCapacity}`}
-                              onClick={() => setStartTime(slot.time)}
-                              className={`rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
-                                isSelected
-                                  ? "bg-brand-orange text-white"
-                                  : isFull
-                                    ? "cursor-not-allowed bg-red-50 text-red-300 line-through"
-                                    : slot.free < roomCapacity
-                                      ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
-                                      : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                              }`}
-                            >
-                              {slot.time}
-                            </button>
-                          );
-                        })}
+            <>
+              <div className="flex flex-col gap-2.5">
+                {slotsByWindow.map(({ window, hourGroups }) => (
+                  <div key={`${window.start_time}-${window.end_time}`} className="flex flex-col gap-1">
+                    {hourGroups.map(({ hour, slots }) => (
+                      <div key={hour} className="flex items-start gap-2">
+                        <span className="mt-1 w-9 shrink-0 text-[11px] font-semibold text-zinc-400">{hour}:xx</span>
+                        <div className="flex flex-wrap gap-1">
+                          {slots.map((slot) => {
+                            const isFull = slot.free === 0;
+                            const isSelected = slot.time === startTime;
+                            return (
+                              <button
+                                key={slot.time}
+                                type="button"
+                                disabled={isFull || slot.ownConflict}
+                                title={
+                                  slot.ownConflict
+                                    ? "Nakłada się z Twoim innym treningiem"
+                                    : isFull
+                                      ? "Brak wolnych miejsc o tej porze"
+                                      : `Wolne miejsca: ${slot.free}/${roomCapacity}`
+                                }
+                                onClick={() => setStartTime(slot.time)}
+                                className={`rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
+                                  isSelected
+                                    ? "bg-brand-orange text-white"
+                                    : slot.ownConflict
+                                      ? "cursor-not-allowed bg-rose-100 text-rose-500 line-through"
+                                      : isFull
+                                        ? "cursor-not-allowed bg-red-50 text-red-300 line-through"
+                                        : slot.free < roomCapacity
+                                          ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                          : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                }`}
+                              >
+                                {slot.ownConflict ? "⚠ " : ""}
+                                {slot.time}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              {/* Zawsze widoczna legenda (nie hover/title) — "częściowo
+                  zajęte" i "nakłada się z Twoim treningiem" wyglądały
+                  podobnie (amber), a to dwie zupełnie różne sytuacje: dzielenie
+                  sali z kimś innym jest normalne, nakładanie się własnych
+                  treningów jest błędem i nie da się tak zapisać. */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
+                <span>🟢 wolne</span>
+                <span>🟠 częściowo zajęte (dzielisz salę z kimś innym)</span>
+                <span className="font-semibold text-rose-600">⚠ Twoje treningi nachodzą na siebie</span>
+                <span>🔴 sala pełna</span>
+              </div>
+            </>
           )
         ) : (
           <input type="time" step={300} value={startTime} onChange={(e) => setStartTime(e.target.value)} className={`${INPUT} w-[110px]`} />
@@ -250,6 +299,9 @@ export function NewPersonalTrainingForm({
           </select>
         </div>
       </div>
+      {ownConflictAtSelection && (
+        <p className="text-xs font-semibold text-rose-600">⚠ Twoje treningi nachodzą na siebie o tej godzinie — wybierz inną.</p>
+      )}
       <div className="flex flex-col gap-1">
         <label className={LABEL}>Imię klienta (widoczne tylko dla Ciebie, opcjonalnie)</label>
         <input value={clientName} onChange={(e) => setClientName(e.target.value)} className={INPUT} />
