@@ -112,6 +112,13 @@ export function maxFittingDuration(
   return null;
 }
 
+// Czy dwa przedziały czasu (start + czas trwania) nachodzą na siebie —
+// pół-otwarte interwały [start, start+duration), więc trening kończący się
+// akurat w momencie startu drugiego NIE jest konfliktem.
+export function intervalsOverlap(aStartMin: number, aDurationMin: number, bStartMin: number, bDurationMin: number): boolean {
+  return aStartMin < bStartMin + bDurationMin && bStartMin < aStartMin + aDurationMin;
+}
+
 export function minutesToTime(min: number): string {
   const h = Math.floor(min / 60)
     .toString()

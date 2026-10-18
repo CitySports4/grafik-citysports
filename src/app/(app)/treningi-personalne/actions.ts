@@ -12,6 +12,7 @@ import {
   maxConcurrentClients,
   findAvailableStart,
   maxFittingDuration,
+  intervalsOverlap,
   minutesToTime,
   weeklyOccurrenceDates,
   sessionAmount,
@@ -126,6 +127,12 @@ async function getSettings(supabase: Supabase) {
 // cyklicznym — każde wystąpienie osobno, bo obłożenie sali różni się dzień
 // do dnia). Przy konflikcie zwraca podpowiedź najbliższego wolnego terminu
 // dla PIERWSZEJ kolidującej daty.
+//
+// Konflikt "trainer" (ten sam trener ma już inny trening w tym czasie) jest
+// sprawdzany JAKO PIERWSZY, osobno od limitu sali — bez tego, gdy w sali
+// było jeszcze miejsce dla innych klientów, system pozwalał trenerowi
+// zapisać się na dwa nakładające się treningi naraz (fizycznie niewykonalne),
+// bo liczył tylko łączne obłożenie, nie to, KTO konkretnie zajmuje slot.
 async function checkAvailability(
   supabase: Supabase,
   dates: string[],
@@ -134,24 +141,43 @@ async function checkAvailability(
   durationMin: number,
   clientCount: number,
   roomCapacity: number,
+  trainerId: string,
   excludeSessionId?: string,
   // Przy przenoszeniu CAŁEJ serii na nową godzinę seria nie może kolidować
   // sama ze sobą — wyklucza wszystkie wystąpienia tej serii z konfliktu,
   // zostawiając w sprawdzeniu wszystko inne (inni trenerzy, inne treningi
   // tego samego trenera spoza tej serii).
   excludeSeriesId?: string
-): Promise<{ ok: true } | { ok: false; conflictDate: string; suggestionStart: string | null; suggestionDuration: number | null }> {
+): Promise<
+  | { ok: true }
+  | { ok: false; reason: "trainer"; conflictDate: string; trainerConflictLabel: string }
+  | { ok: false; reason: "capacity"; conflictDate: string; suggestionStart: string | null; suggestionDuration: number | null }
+> {
   const windows = await getRoomWindows(supabase, weekday);
 
   for (const date of dates) {
     let query = supabase
       .from("personal_training_session")
-      .select("start_time, duration_minutes, client_count")
+      .select("trainer_employee_id, start_time, duration_minutes, client_count")
       .eq("date", date)
       .eq("status", "scheduled");
     if (excludeSessionId) query = query.neq("id", excludeSessionId);
     if (excludeSeriesId) query = query.or(`series_id.is.null,series_id.neq.${excludeSeriesId}`);
     const { data: existing } = await query;
+
+    const trainerConflict = (existing ?? []).find(
+      (s) => s.trainer_employee_id === trainerId && intervalsOverlap(startMin, durationMin, timeToMinutes(s.start_time), s.duration_minutes)
+    );
+    if (trainerConflict) {
+      const conflictEndMin = timeToMinutes(trainerConflict.start_time) + trainerConflict.duration_minutes;
+      return {
+        ok: false,
+        reason: "trainer",
+        conflictDate: date,
+        trainerConflictLabel: `${trainerConflict.start_time.slice(0, 5)}–${minutesToTime(conflictEndMin)}`,
+      };
+    }
+
     const blocks = await getRoomBlocksAsFullSessions(supabase, date, roomCapacity);
     const existingWithBlocks = [...(existing ?? []), ...blocks];
 
@@ -163,6 +189,7 @@ async function checkAvailability(
     const suggestionDuration = maxFittingDuration(startMin, durationMin, clientCount, roomCapacity, windows, existingWithBlocks);
     return {
       ok: false,
+      reason: "capacity",
       conflictDate: date,
       suggestionStart: suggestionMin === null ? null : minutesToTime(suggestionMin),
       suggestionDuration,
@@ -260,10 +287,16 @@ export async function createPersonalTrainingSession(formData: FormData): Promise
       return { ok: false, error: `Za dużo osób — limit sali to ${settings.room_capacity} naraz, a podano ${clientCount}.` };
     }
 
-    const availability = await checkAvailability(supabase, dates, weekday, startMin, durationMinutes, clientCount, settings.room_capacity);
+    const availability = await checkAvailability(supabase, dates, weekday, startMin, durationMinutes, clientCount, settings.room_capacity, trainerId);
     if (!availability.ok) {
-      const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
       const dateLabel = new Date(availability.conflictDate + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+      if (availability.reason === "trainer") {
+        return {
+          ok: false,
+          error: `Masz już inny trening w tym czasie (${dateLabel}, ${availability.trainerConflictLabel}) — Twoje treningi nie mogą się nakładać.`,
+        };
+      }
+      const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
       return { ok: false, error: `Sala pełna o tej porze (${dateLabel}) — przekroczony limit osób lub poza godzinami otwarcia.${suggestionText}` };
     }
 
@@ -325,8 +358,11 @@ export async function updatePersonalTrainingSession(formData: FormData) {
     throw new Error(`Za dużo osób — limit sali to ${settings.room_capacity} naraz, a podano ${clientCount}.`);
   }
 
-  const availability = await checkAvailability(supabase, [date], weekday, startMin, durationMinutes, clientCount, settings.room_capacity, id);
+  const availability = await checkAvailability(supabase, [date], weekday, startMin, durationMinutes, clientCount, settings.room_capacity, trainerId, id);
   if (!availability.ok) {
+    if (availability.reason === "trainer") {
+      throw new Error(`Masz już inny trening w tym czasie (${availability.trainerConflictLabel}) — Twoje treningi nie mogą się nakładać.`);
+    }
     const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
     throw new Error(`Sala pełna o tej porze.${suggestionText}`);
   }
@@ -386,12 +422,16 @@ export async function movePersonalTrainingSeries(formData: FormData) {
       s.duration_minutes,
       s.client_count,
       settings.room_capacity,
+      trainerId,
       undefined,
       seriesId
     );
     if (!availability.ok) {
-      const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
       const dateLabel = new Date(s.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+      if (availability.reason === "trainer") {
+        throw new Error(`Nowa godzina koliduje z Twoim innym treningiem (${dateLabel}, ${availability.trainerConflictLabel}).`);
+      }
+      const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
       throw new Error(`Nowa godzina koliduje z inną rezerwacją (${dateLabel}).${suggestionText}`);
     }
   }
@@ -455,12 +495,16 @@ export async function extendPersonalTrainingSeries(formData: FormData) {
     last.duration_minutes,
     last.client_count,
     settings.room_capacity,
+    trainerId,
     undefined,
     seriesId
   );
   if (!availability.ok) {
-    const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
     const dateLabel = new Date(availability.conflictDate + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+    if (availability.reason === "trainer") {
+      throw new Error(`Masz już inny trening w tym czasie (${dateLabel}, ${availability.trainerConflictLabel}) — Twoje treningi nie mogą się nakładać.`);
+    }
+    const suggestionText = availabilitySuggestionText(availability.suggestionDuration, availability.suggestionStart);
     throw new Error(`Sala pełna o tej porze (${dateLabel}) — przekroczony limit osób lub poza godzinami otwarcia.${suggestionText}`);
   }
 

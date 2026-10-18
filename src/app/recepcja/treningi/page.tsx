@@ -211,6 +211,7 @@ export default async function RecepcjaTreningiPage({
                       start_time: s.start_time,
                       duration_minutes: s.duration_minutes,
                       client_count: s.client_count,
+                      trainer_employee_id: s.trainer_employee_id,
                     }))}
                   />
                 </div>
