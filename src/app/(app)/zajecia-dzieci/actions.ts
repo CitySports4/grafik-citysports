@@ -9,7 +9,6 @@ import { toDateKey } from "@/lib/schedule-month";
 import {
   SEASON_MONTHS,
   isEnrollmentEffective,
-  currentSeasonMonthIndex,
   computeCommittedOccupancy,
   computeTrialBookingCounts,
   hasTrialDateCapacity,
@@ -99,19 +98,23 @@ export async function assignTrialDate(formData: FormData) {
   if (!group) throw new Error("Nie znaleziono grupy.");
 
   const today = toDateKey(new Date());
-  const [{ data: allEnrollments }, { data: paymentsRaw }] = await Promise.all([
-    supabase.from("kids_class_enrollment").select("id, group_id, registration_id, status, effective_from, effective_until, trial_date"),
-    supabase.from("kids_class_payment").select("registration_id, months"),
-  ]);
-  const paymentsByRegistration = new Map((paymentsRaw ?? []).map((p) => [p.registration_id, p.months as boolean[]]));
-  const committedOccupancy = computeCommittedOccupancy(allEnrollments ?? [], paymentsByRegistration, today, currentSeasonMonthIndex(today));
+  const { data: allEnrollments } = await supabase
+    .from("kids_class_enrollment")
+    .select("id, group_id, registration_id, status, effective_from, effective_until, trial_date, from_waitlist");
+  const committedOccupancy = computeCommittedOccupancy(allEnrollments ?? [], today);
   const trialBookingCounts = computeTrialBookingCounts(allEnrollments ?? []);
   const bookedForDate = trialBookingCounts.get(group.id)?.get(trialDate) ?? 0;
   if (!hasTrialDateCapacity(group, committedOccupancy, bookedForDate)) {
     throw new Error("Ten termin właśnie się zapełnił — wybierz inny.");
   }
 
-  const { error } = await supabase.from("kids_class_enrollment").update({ status: "nowe", trial_date: trialDate }).eq("id", id);
+  // from_waitlist: true — to przyjęcie z listy oczekujących ma liczyć się
+  // do obłożenia grupy OD RAZU (patrz komentarz przy computeCommittedOccupancy),
+  // w odróżnieniu od zwykłego, samodzielnego zgłoszenia rodzica na próbne.
+  const { error } = await supabase
+    .from("kids_class_enrollment")
+    .update({ status: "nowe", trial_date: trialDate, from_waitlist: true })
+    .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
 
   revalidatePath("/zajecia-dzieci");

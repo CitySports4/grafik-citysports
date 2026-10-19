@@ -47,15 +47,6 @@ export function currentSeasonMonthIndex(todayKey: string): number | null {
   return idx === -1 ? null : idx;
 }
 
-// Czy opłata za KONKRETNY miesiąc sezonu jest zaznaczona — płatność jest
-// NIEZALEŻNA per miesiąc (dziecko może zapłacić we wrześniu, nie zapłacić
-// w październiku, zapłacić znowu w listopadzie), więc to zawsze pytanie o
-// JEDEN konkretny miesiąc, nigdy ogólne "czy płaci".
-export function isPaidForMonth(months: boolean[] | null | undefined, monthIdx: number | null): boolean {
-  if (monthIdx === null) return false;
-  return months?.[monthIdx] === true;
-}
-
 // Zgłoszenie zostawione w statusie "Nowe" (nikt nie kliknął "Opłacono" ani
 // "Brak opłaty") dłużej niż tyle dni — widoczne przypomnienie, żeby żadne
 // nie "zgubiło się" bez decyzji.
@@ -185,30 +176,35 @@ export function hasGroupCapacity(group: KidsClassGroup, occupancy: Map<string, n
   return (occupancy.get(group.id) ?? 0) < group.capacity;
 }
 
-// Miejsca zajęte na STAŁE, na KAŻDYCH zajęciach tej grupy W DANYM MIESIĄCU
-// — status "Aktywny" (z zaznaczoną opłatą za TEN miesiąc, patrz
-// isPaidForMonth — brak opłaty zwalnia miejsce, ale status się nie zmienia)
-// ORAZ "Nowe" BEZ terminu próbnego. "Nowe" z terminem próbnym (zwykłe nowe
-// zgłoszenie) świadomie pominięte: próbne zajmuje miejsce tylko na SWÓJ
+// Miejsca zajęte na STAŁE, na KAŻDYCH zajęciach tej grupy — status
+// "Aktywny" ZAWSZE się liczy, niezależnie od zaznaczonej opłaty za bieżący
+// miesiąc: zwolnienie miejsca za brak opłaty to świadoma, ręczna decyzja
+// personelu (przycisk "Brak opłaty" w changeEnrollmentStatus), nie coś, co
+// ma się dziać samo w tle przez odhaczenie/nieodhaczenie checkboxa w
+// Płatnościach — automatyczne odejmowanie stąd dawało dokładnie to, co
+// wyglądało jak błąd: dziecko realnie przyjęte do grupy, a publiczny
+// formularz i tak pokazywał wolne miejsce. Liczy się też "Nowe" BEZ terminu
+// próbnego (dziecko wraca i już wykorzystało swoje bezpłatne wejście —
+// patrz findChildrenByPhone/submitRegistration) oraz "Nowe" przyjęte Z
+// LISTY OCZEKUJĄCYCH (from_waitlist, patrz assignTrialDate w
+// (app)/zajecia-dzieci/actions.ts) — to świadoma decyzja personelu "to
+// miejsce jest już zajęte", mimo wybranego terminu próbnych. Zwykłe,
+// samodzielne zgłoszenie rodzica na próbne (status "Nowe" z trial_date, bez
+// from_waitlist) ŚWIADOMIE pominięte: próbne zajmuje miejsce tylko na SWÓJ
 // konkretny termin (patrz computeTrialBookingCounts), nie na każdych
 // zajęciach tej grupy — inaczej 2 dzieci próbujące w RÓŻNYCH terminach
 // zamykałyby grupę na cały miesiąc, mimo wolnych miejsc na większości
-// terminów. Ale "Nowe" BEZ terminu (dziecko wraca i już wykorzystało swoje
-// bezpłatne wejście — patrz findChildrenByPhone/submitRegistration w
-// zapisy-dzieci/actions.ts) nie ma żadnego jednorazowego terminu do
-// zajęcia — zajmuje więc zwykłe, stałe miejsce od razu, tak jak "Aktywny".
+// terminów.
 export function computeCommittedOccupancy(
-  enrollments: (Enrollment & { registration_id: string; trial_date: string | null })[],
-  paymentsByRegistration: Map<string, boolean[]>,
-  todayKey: string,
-  monthIdx: number | null
+  enrollments: (Enrollment & { registration_id: string; trial_date: string | null; from_waitlist?: boolean })[],
+  todayKey: string
 ): Map<string, number> {
   const occupancy = new Map<string, number>();
   for (const e of enrollments) {
-    const isOngoingClaim = e.status === "aktywny" || (e.status === "nowe" && e.trial_date === null);
+    const isOngoingClaim =
+      e.status === "aktywny" || (e.status === "nowe" && (e.trial_date === null || e.from_waitlist === true));
     if (!isOngoingClaim) continue;
     if (!isEnrollmentEffective(e, todayKey)) continue;
-    if (e.status === "aktywny" && !isPaidForMonth(paymentsByRegistration.get(e.registration_id), monthIdx)) continue;
     occupancy.set(e.group_id, (occupancy.get(e.group_id) ?? 0) + 1);
   }
   return occupancy;

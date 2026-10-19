@@ -9,7 +9,6 @@ import {
   computeCommittedOccupancy,
   computeTrialBookingCounts,
   hasTrialDateCapacity,
-  currentSeasonMonthIndex,
   groupLabel,
   type KidsClassGroup,
   type KidsClassStatus,
@@ -56,22 +55,20 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
   }
 
   const supabase = createServerSupabaseClient();
-  const [{ data: groupsData }, { data: enrollmentsData }, { data: existingByPhone }, { data: paymentsData }] = await Promise.all([
+  const [{ data: groupsData }, { data: enrollmentsData }, { data: existingByPhone }] = await Promise.all([
     supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").in("id", input.groupIds),
-    supabase.from("kids_class_enrollment").select("id, group_id, registration_id, status, effective_from, effective_until, trial_date"),
+    supabase
+      .from("kids_class_enrollment")
+      .select("id, group_id, registration_id, status, effective_from, effective_until, trial_date, from_waitlist"),
     supabase.from("kids_class_registration").select("id, child_name").eq("phone", phone),
-    supabase.from("kids_class_payment").select("registration_id, months"),
   ]);
   const groups = (groupsData ?? []) as KidsClassGroup[];
   if (groups.length !== input.groupIds.length) {
     return { ok: false, error: "Wybrana grupa już nie istnieje — odśwież stronę i spróbuj ponownie." };
   }
-  // Aktywny (stały) + opłacony bieżący miesiąc zajmuje miejsce na każdych
-  // zajęciach; Nowe (próbne) tylko na swój termin — patrz komentarz przy
-  // hasTrialDateCapacity.
-  const currentMonthIdx = currentSeasonMonthIndex(today);
-  const paymentsByRegistration = new Map((paymentsData ?? []).map((p) => [p.registration_id, p.months as boolean[]]));
-  const committedOccupancy = computeCommittedOccupancy(enrollmentsData ?? [], paymentsByRegistration, today, currentMonthIdx);
+  // Aktywny (stały) zajmuje miejsce na każdych zajęciach; Nowe (próbne)
+  // tylko na swój termin — patrz komentarz przy hasTrialDateCapacity.
+  const committedOccupancy = computeCommittedOccupancy(enrollmentsData ?? [], today);
   const trialBookingCounts = computeTrialBookingCounts(enrollmentsData ?? []);
 
   // Buduje plan zapisów: dla każdej grupy sprawdza, czy WYBRANY przez

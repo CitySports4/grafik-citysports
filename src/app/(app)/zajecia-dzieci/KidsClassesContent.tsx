@@ -11,7 +11,6 @@ import {
   feeForGroupCount,
   sessionDatesInMonth,
   currentSeasonMonthIndex,
-  isPaidForMonth,
   isStaleNew,
   STATUS_LABELS,
   SEASON_MONTHS,
@@ -81,22 +80,6 @@ function statusActions(status: KidsClassStatus): { label: string; next: KidsClas
   return [{ label: "♻️ Przywróć → Aktywny", next: "aktywny", variant: "green" }];
 }
 
-// Czy ten zapis liczy się jako ZAJMUJĄCY miejsce w KONKRETNYM miesiącu
-// sezonu — "Nowe" (próbne) zawsze tak (zajmuje miejsce na swój termin
-// próbny, niezależnie od płatności miesięcznej), "Aktywny" tylko jeśli
-// opłata za TEN miesiąc jest zaznaczona. Brak opłaty = miejsce się zwalnia
-// (dla kogoś innego), ale status dziecka się NIE zmienia samoczynnie — to
-// może być chwilowe opóźnienie (zapłaci za kilka dni), nie rezygnacja;
-// jeśli zapłaci w kolejnym miesiącu, miejsce zajmuje znowu. Używane zamiast
-// samego statusu wszędzie, gdzie liczy się AKTUALNE obłożenie grupy
-// (odznaki na górze, lista frekwencji) — NIE w Płatnościach, gdzie trzeba
-// widzieć WSZYSTKICH, żeby móc ich dopilnować.
-function occupiesMonth(e: EnrollmentRow, monthIdx: number | null, paymentsByRegistration: Map<string, boolean[]>): boolean {
-  if (e.status === "nowe") return true;
-  if (e.status !== "aktywny") return false;
-  return isPaidForMonth(paymentsByRegistration.get(e.kids_class_registration.id), monthIdx);
-}
-
 const BTN_GREEN = "rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100";
 const BTN_RED = "rounded-lg bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700 hover:bg-red-100";
 const INPUT_SM = "rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-xs";
@@ -112,6 +95,7 @@ type EnrollmentRow = {
   paid_trial_fee: boolean;
   trial_date: string | null;
   needs_parent_contact: boolean;
+  from_waitlist: boolean;
   kids_class_registration: {
     id: string;
     child_name: string;
@@ -150,7 +134,7 @@ export async function KidsClassesContent({
     supabase
       .from("kids_class_enrollment")
       .select(
-        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, trial_date, needs_parent_contact, kids_class_registration(id, child_name, birth_date, parent_name, phone)"
+        "id, group_id, status, created_at, effective_from, effective_until, used_trial, paid_trial_fee, trial_date, needs_parent_contact, from_waitlist, kids_class_registration(id, child_name, birth_date, parent_name, phone)"
       )
       .order("created_at"),
     supabase.from("kids_class_payment").select("registration_id, months"),
@@ -184,8 +168,9 @@ export async function KidsClassesContent({
     effective_until: e.effective_until,
     registration_id: e.kids_class_registration.id,
     trial_date: e.trial_date,
+    from_waitlist: e.from_waitlist,
   }));
-  const committedOccupancyNow = computeCommittedOccupancy(enrollmentsWithRegId, paymentsByRegistration, today, currentMonthIdx);
+  const committedOccupancyNow = computeCommittedOccupancy(enrollmentsWithRegId, today);
   const trialBookingCounts = computeTrialBookingCounts(enrollmentsWithRegId);
   const trialDateOptionsByGroup = new Map(
     groups.map((g) => [
@@ -194,14 +179,10 @@ export async function KidsClassesContent({
     ])
   );
 
-  // Obłożenie grup TERAZ — "Nowe" zawsze liczy się (próbne), "Aktywny"
-  // tylko jeśli opłata za bieżący miesiąc jest zaznaczona (patrz
-  // occupiesMonth) — brak opłaty zwalnia miejsce.
-  const occupancy = new Map<string, number>();
-  for (const e of currentEnrollments) {
-    if (!occupiesMonth(e, currentMonthIdx, paymentsByRegistration)) continue;
-    occupancy.set(e.group_id, (occupancy.get(e.group_id) ?? 0) + 1);
-  }
+  // Obłożenie grup TERAZ — ta sama funkcja co na publicznym formularzu
+  // zapisu (patrz computeCommittedOccupancy), żeby odznaki tutaj nigdy nie
+  // rozjechały się z tym, co widzi rodzic.
+  const occupancy = committedOccupancyNow;
 
   const needsContact = enrollments.filter((e) => e.needs_parent_contact);
   const staleNew = currentEnrollments.filter((e) => isStaleNew(e.status, e.created_at, today));
