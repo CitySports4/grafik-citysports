@@ -329,7 +329,7 @@ export function ScheduleTable({
         )}
 
         {scheduleMonthStatus === "draft" && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3">
             <span
               className="flex cursor-help items-center gap-1.5 text-sm font-semibold text-zinc-900"
               title="AI samo układa cały przydział (uwzględnia dyspozycyjność, zajęcia instruktorów, cele godzinowe) i MOŻE przełożyć już przypisane zmiany, jeśli znajdzie lepszy układ. Każda propozycja jest w pełni sprawdzona pod kątem twardych reguł (dostępność, 7 dni, dzień wolny, przerwy) i odrzucona z powrotem do AI do poprawy, jeśli je łamie — zapisuje się tylko to, co realnie się zmieniło."
@@ -348,7 +348,7 @@ export function ScheduleTable({
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-2xl bg-white">
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
               <tr>
@@ -628,7 +628,7 @@ export function ScheduleTable({
       </div>
 
       <div className="flex flex-col gap-4">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl bg-white p-4">
           <h2 className="mb-2 font-semibold text-zinc-900">Suma godzin</h2>
           <ul className="flex flex-col gap-2">
             {employees.map((e) => {
@@ -679,7 +679,7 @@ export function ScheduleTable({
           })()}
         </div>
 
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl bg-white p-4">
           {scheduleMonthStatus === "draft" ? (
             <button
               type="button"

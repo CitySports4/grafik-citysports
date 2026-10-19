@@ -31,7 +31,7 @@ export function KioskPinForm({ action }: { action: (formData: FormData) => Promi
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-xs flex-col items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+    <form onSubmit={handleSubmit} className="flex w-full max-w-xs flex-col items-center gap-4 rounded-2xl bg-white p-6">
       <Image src="/logo.png" alt="City Sports" width={160} height={35} className="h-9 w-auto" priority />
       <div className="text-center">
         <h1 className="text-base font-bold text-zinc-900">Ogólny podgląd — recepcja</h1>
