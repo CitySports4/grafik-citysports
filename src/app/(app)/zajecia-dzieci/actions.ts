@@ -6,7 +6,15 @@ import { requireAdmin } from "@/lib/session";
 import { hasKioskSession } from "@/lib/kiosk-session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { toDateKey } from "@/lib/schedule-month";
-import { SEASON_MONTHS, isEnrollmentEffective, type KidsClassStatus } from "@/lib/kids-classes";
+import {
+  SEASON_MONTHS,
+  isEnrollmentEffective,
+  currentSeasonMonthIndex,
+  computeCommittedOccupancy,
+  computeTrialBookingCounts,
+  hasTrialDateCapacity,
+  type KidsClassStatus,
+} from "@/lib/kids-classes";
 
 // Bieżąca obsługa (status, grupa, płatność, frekwencja) — recepcja przez
 // kiosk PIN (/recepcja/zajecia-dzieci) ALBO admin zalogowany w pełnej
@@ -57,6 +65,54 @@ export async function changeEnrollmentStatus(formData: FormData) {
         .eq("id", nextInLine.id);
     }
   }
+
+  revalidatePath("/zajecia-dzieci");
+  revalidatePath("/recepcja/zajecia-dzieci");
+}
+
+// Przydziela dziecku z listy oczekujących termin zajęć próbnych — zamiast
+// od razu przeskakiwać na "Aktywny" (co pomijało próbne i fałszywie
+// pokazywało brak opłaty za bieżący miesiąc, patrz toggleUsedTrial), zapis
+// przechodzi na "Nowe" z wybranym trial_date, dokładnie tak samo jak nowe
+// zgłoszenie z formularza publicznego. "Nowe" liczy się od razu w
+// occupiesMonth/computeCommittedOccupancy niezależnie od płatności, więc
+// dziecko od razu widać we frekwencji i w realnym obłożeniu grupy.
+// Pojemność na WYBRANY termin sprawdzana tu jeszcze raz po stronie serwera
+// (nie ufamy samej liście opcji z formularza) — to te same funkcje, co przy
+// publicznym zapisie.
+export async function assignTrialDate(formData: FormData) {
+  await requireKidsClassManager();
+  const id = String(formData.get("id") ?? "");
+  const trialDate = String(formData.get("trial_date") ?? "");
+  if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(trialDate)) throw new Error("Wybierz termin.");
+
+  const supabase = createServerSupabaseClient();
+  const { data: enrollment } = await supabase.from("kids_class_enrollment").select("id, group_id, status").eq("id", id).single();
+  if (!enrollment) throw new Error("Nie znaleziono zgłoszenia.");
+  if (enrollment.status !== "oczekuje") throw new Error("To zgłoszenie nie jest już na liście oczekujących.");
+
+  const { data: group } = await supabase
+    .from("kids_class_group")
+    .select("id, weekday, start_time, end_time, label, capacity, active, sort_order")
+    .eq("id", enrollment.group_id)
+    .single();
+  if (!group) throw new Error("Nie znaleziono grupy.");
+
+  const today = toDateKey(new Date());
+  const [{ data: allEnrollments }, { data: paymentsRaw }] = await Promise.all([
+    supabase.from("kids_class_enrollment").select("id, group_id, registration_id, status, effective_from, effective_until, trial_date"),
+    supabase.from("kids_class_payment").select("registration_id, months"),
+  ]);
+  const paymentsByRegistration = new Map((paymentsRaw ?? []).map((p) => [p.registration_id, p.months as boolean[]]));
+  const committedOccupancy = computeCommittedOccupancy(allEnrollments ?? [], paymentsByRegistration, today, currentSeasonMonthIndex(today));
+  const trialBookingCounts = computeTrialBookingCounts(allEnrollments ?? []);
+  const bookedForDate = trialBookingCounts.get(group.id)?.get(trialDate) ?? 0;
+  if (!hasTrialDateCapacity(group, committedOccupancy, bookedForDate)) {
+    throw new Error("Ten termin właśnie się zapełnił — wybierz inny.");
+  }
+
+  const { error } = await supabase.from("kids_class_enrollment").update({ status: "nowe", trial_date: trialDate }).eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
 
   revalidatePath("/zajecia-dzieci");
   revalidatePath("/recepcja/zajecia-dzieci");
