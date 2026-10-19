@@ -4,7 +4,6 @@ import {
   computeCommittedOccupancy,
   computeTrialBookingCounts,
   hasTrialDateCapacity,
-  currentSeasonMonthIndex,
   upcomingSessionDates,
   type KidsClassGroup,
   type PriceTier,
@@ -19,23 +18,22 @@ export const dynamic = "force-dynamic";
 
 export default async function ZapisyDzieciPage() {
   const supabase = createServerSupabaseClient();
-  const [{ data: groups }, { data: enrollments }, { data: priceTiers }, { data: payments }] = await Promise.all([
+  const [{ data: groups }, { data: enrollments }, { data: priceTiers }] = await Promise.all([
     supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").eq("active", true).order("sort_order"),
-    supabase.from("kids_class_enrollment").select("id, group_id, registration_id, status, effective_from, effective_until, trial_date"),
+    supabase
+      .from("kids_class_enrollment")
+      .select("id, group_id, registration_id, status, effective_from, effective_until, trial_date, from_waitlist"),
     supabase.from("kids_class_price_tier").select("group_count, monthly_fee").order("group_count"),
-    supabase.from("kids_class_payment").select("registration_id, months"),
   ]);
 
   const today = toDateKey(new Date());
-  const currentMonthIdx = currentSeasonMonthIndex(today);
-  const paymentsByRegistration = new Map((payments ?? []).map((p) => [p.registration_id, p.months as boolean[]]));
-  // Miejsce zajęte NA STAŁE (Aktywny + opłacony bieżący miesiąc) liczy się
-  // do każdych zajęć tej grupy — brak opłaty zwalnia miejsce (patrz
-  // isPaidForMonth); dziecko "na próbnym" (Nowe) zajmuje miejsce TYLKO na
-  // swój wybrany termin — inaczej dwoje dzieci próbujących w różnych
-  // terminach zamykałoby grupę na cały miesiąc mimo wolnych miejsc na
-  // większości terminów (patrz hasTrialDateCapacity w kids-classes.ts).
-  const committedOccupancy = computeCommittedOccupancy(enrollments ?? [], paymentsByRegistration, today, currentMonthIdx);
+  // Miejsce zajęte NA STAŁE liczy się do każdych zajęć tej grupy; dziecko
+  // "na próbnym" (Nowe, bez from_waitlist) zajmuje miejsce TYLKO na swój
+  // wybrany termin — inaczej dwoje dzieci próbujących w różnych terminach
+  // zamykałoby grupę na cały miesiąc mimo wolnych miejsc na większości
+  // terminów (patrz hasTrialDateCapacity i computeCommittedOccupancy w
+  // kids-classes.ts).
+  const committedOccupancy = computeCommittedOccupancy(enrollments ?? [], today);
   const trialBookingCounts = computeTrialBookingCounts(enrollments ?? []);
 
   const groupsWithFreeSpots = ((groups ?? []) as KidsClassGroup[]).map((g) => {
