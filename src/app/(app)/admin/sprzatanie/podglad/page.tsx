@@ -120,7 +120,7 @@ export default async function CleaningMonthPreviewPage({
                     }
                     return (
                       <div key={slot} className="min-w-[160px]">
-                        <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-zinc-400">{SLOT_LABELS[slot]}</p>
+                        <p className="mb-1 text-xs font-bold text-zinc-500">{SLOT_LABELS[slot]}</p>
                         <div className="flex flex-col gap-1">
                           {[...byAssignee.values()].map((a) => {
                             const over = a.budget !== null && a.minutes > a.budget;

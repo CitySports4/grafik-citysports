@@ -57,7 +57,7 @@ export function PoolList({ items, today, freqLabels }: { items: PoolItem[]; toda
       />
       {[...groups.entries()].map(([freq, freqItems]) => (
         <div key={freq}>
-          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-zinc-400">{freqLabels[freq] ?? freq}</h3>
+          <h3 className="mb-2 text-xs font-bold text-zinc-500">{freqLabels[freq] ?? freq}</h3>
           <div className="flex flex-col gap-1.5">
             {freqItems.map((item) => {
               const isDone = doneIds.has(item.id);

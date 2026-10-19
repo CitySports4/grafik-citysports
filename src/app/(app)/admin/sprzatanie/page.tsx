@@ -271,7 +271,7 @@ export default async function CleaningConfigPage({
               return (
                 <div key={zone.id} className="flex flex-col gap-3">
                   {showGroupHeader && (
-                    <h3 className="mt-1 text-xs font-bold uppercase tracking-wide text-zinc-400">{zone.group_code}</h3>
+                    <h3 className="mt-1 text-xs font-bold text-zinc-500">{zone.group_code}</h3>
                   )}
                   <Card className="!p-0">
                   <details className="group">

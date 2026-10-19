@@ -531,7 +531,7 @@ export function ScheduleTable({
                             </div>
 
                             <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-2.5">
-                              <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">Zmiany</p>
+                              <p className="text-xs font-bold text-zinc-500">Zmiany</p>
                               <div className="flex flex-col gap-1.5">
                                 {day.shifts.length === 0 && <span className="text-zinc-300">Brak zmian tego dnia.</span>}
                                 {day.shifts.map((shift) => (
@@ -553,7 +553,7 @@ export function ScheduleTable({
                             </div>
 
                             <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-2.5">
-                              <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">Wydarzenia</p>
+                              <p className="text-xs font-bold text-zinc-500">Wydarzenia</p>
                               <div className="flex flex-col gap-2">
                                 {day.events.length === 0 && <span className="text-zinc-300">Brak wydarzeń tego dnia.</span>}
                                 {day.events.map((ev) => {

@@ -255,7 +255,7 @@ export default async function AdminAvailabilityOverviewPage({
                   <div className="mt-2 flex flex-col gap-2">
                     {patternLines.length > 0 && (
                       <div>
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                        <div className="mb-1 text-xs font-semibold text-zinc-500">
                           Cyklicznie (zajęcia/reguła)
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -269,7 +269,7 @@ export default async function AdminAvailabilityOverviewPage({
                     )}
                     {wholeRanges.length > 0 && (
                       <div>
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-red-500">
+                        <div className="mb-1 text-xs font-semibold text-red-600">
                           🚫 Cały dzień niedostępny/a
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -286,7 +286,7 @@ export default async function AdminAvailabilityOverviewPage({
                     )}
                     {partialDays.length > 0 && (
                       <div>
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-500">
+                        <div className="mb-1 text-xs font-semibold text-amber-600">
                           ◐ Częściowo niedostępny/a
                         </div>
                         <div className="flex flex-wrap gap-1.5">

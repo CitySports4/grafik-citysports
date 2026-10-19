@@ -217,7 +217,7 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
         return (
           <div key={slot}>
             <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-400">{SLOT_LABELS[slot]}</h3>
+              <h3 className="text-xs font-bold text-zinc-500">{SLOT_LABELS[slot]}</h3>
               {[...totalsByAssignee.values()].map((t) => {
                 const over = t.budget !== null && t.minutes > t.budget;
                 return (
@@ -236,7 +236,7 @@ export function CleaningDayList({ date, items }: { date: string; items: Item[] }
             <div className="flex flex-col gap-2">{mandatoryItems.map((it) => renderCard(it))}</div>
             {poolItems.length > 0 && (
               <div className="mt-3 rounded-xl border border-dashed border-violet-200 bg-violet-50/40 p-3">
-                <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-violet-500">
+                <h4 className="mb-2 text-xs font-bold text-violet-600">
                   Do wyboru — zrób 1-2, ile się zmieści w budżecie
                 </h4>
                 <div className="flex flex-col gap-2">{poolItems.map((it) => renderCard(it))}</div>
