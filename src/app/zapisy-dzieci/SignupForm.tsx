@@ -133,7 +133,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
     return (
       <div className="mx-auto flex w-full max-w-md flex-col gap-6">
         <Logo />
-        <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-7 text-center shadow-sm">
+        <div className="flex flex-col gap-3 rounded-2xl bg-white p-7 text-center">
           <span className="text-3xl">🏸</span>
           <h1 className="text-lg font-bold text-zinc-900">Zgłoszenie wysłane!</h1>
           <ul className="flex flex-col gap-1.5 text-left text-sm text-zinc-700">
@@ -165,7 +165,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6">
       <Logo />
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-2xl bg-white p-7">
         <h1 className="text-lg font-bold text-zinc-900">Zapisy — Zajęcia Badmintona dla dzieci</h1>
         {error && <Banner variant="error">{error}</Banner>}
 

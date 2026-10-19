@@ -72,7 +72,7 @@ export function LoginForm() {
         <p className="text-sm font-semibold text-zinc-500">Grafik pracy</p>
       </div>
 
-      <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm">
+      <div className="flex flex-col gap-4 rounded-2xl bg-white p-7">
         {error && <Banner variant="error">{error}</Banner>}
 
         {step === "phone" && (
