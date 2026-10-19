@@ -1,7 +1,11 @@
 import Link from "next/link";
 
-const BASE =
-  "rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition-all duration-150";
+// Karty oddzielają się od tła STOPNIEM TONU (strona jest #f7f8fa, karta
+// biała), nie ramką/cieniem w spoczynku — ramka+shadow-sm na każdej karcie
+// w całej appce to dekoracja, nie informacja. Cień zostaje tylko jako
+// chwilowa, ruchowa odpowiedź na hover u CardLink (sygnalizuje "to jest
+// klikalne"), nigdy w stanie spoczynku.
+const BASE = "rounded-2xl bg-white p-4 transition-all duration-150";
 
 export function Card({
   children,
@@ -25,7 +29,7 @@ export function CardLink({
   return (
     <Link
       href={href}
-      className={`${BASE} block hover:-translate-y-0.5 hover:border-brand-blue-light hover:shadow-md active:translate-y-0 ${className ?? ""}`}
+      className={`${BASE} block hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${className ?? ""}`}
     >
       {children}
     </Link>

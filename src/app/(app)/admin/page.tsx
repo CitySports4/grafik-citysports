@@ -1,6 +1,6 @@
 import { CardLink } from "@/components/Card";
 
-const SECTION_LABEL = "mb-2 text-xs font-bold uppercase tracking-wide text-zinc-400";
+const SECTION_LABEL = "mb-2 text-sm font-bold text-zinc-500";
 
 export default function AdminHomePage() {
   return (
