@@ -17,6 +17,10 @@ import {
   SEASON_MONTHS,
   OCCUPYING_STATUSES,
   isEnrollmentEffective,
+  computeCommittedOccupancy,
+  computeTrialBookingCounts,
+  hasTrialDateCapacity,
+  upcomingSessionDates,
   type KidsClassGroup,
   type KidsClassStatus,
   type PriceTier,
@@ -31,6 +35,7 @@ import {
   addGroup,
   updateGroup,
   toggleGroupActive,
+  assignTrialDate,
 } from "./actions";
 import { FrekwencjaFilters } from "./FrekwencjaFilters";
 import { AttendanceCell } from "./AttendanceCell";
@@ -166,6 +171,28 @@ export async function KidsClassesContent({
   const currentEnrollments = enrollments.filter((e) => isEnrollmentEffective(e, today));
   const waiting = currentEnrollments.filter((e) => e.status === "oczekuje");
   const visibleTabs = TABS.filter((t) => t.key !== "grupy" || canEditGroups);
+
+  // Dostępne terminy zajęć próbnych do przydzielenia komuś z listy
+  // oczekujących (patrz assignTrialDate) — ta sama logika obłożenia co na
+  // publicznym formularzu zapisu, więc admin nie zobaczy jako "dostępny"
+  // terminu, który w rzeczywistości jest już pełny.
+  const enrollmentsWithRegId = enrollments.map((e) => ({
+    id: e.id,
+    group_id: e.group_id,
+    status: e.status,
+    effective_from: e.effective_from,
+    effective_until: e.effective_until,
+    registration_id: e.kids_class_registration.id,
+    trial_date: e.trial_date,
+  }));
+  const committedOccupancyNow = computeCommittedOccupancy(enrollmentsWithRegId, paymentsByRegistration, today, currentMonthIdx);
+  const trialBookingCounts = computeTrialBookingCounts(enrollmentsWithRegId);
+  const trialDateOptionsByGroup = new Map(
+    groups.map((g) => [
+      g.id,
+      upcomingSessionDates(g.weekday, today, (date) => hasTrialDateCapacity(g, committedOccupancyNow, trialBookingCounts.get(g.id)?.get(date) ?? 0)),
+    ])
+  );
 
   // Obłożenie grup TERAZ — "Nowe" zawsze liczy się (próbne), "Aktywny"
   // tylko jeśli opłata za bieżący miesiąc jest zaznaczona (patrz
@@ -447,7 +474,6 @@ export async function KidsClassesContent({
         <FrekwencjaTab
           groups={activeGroups}
           enrollments={currentEnrollments}
-          paymentsByRegistration={paymentsByRegistration}
           selectedGroupId={params.frekwencja_grupa}
           selectedMonth={params.frekwencja_miesiac}
           today={today}
@@ -478,6 +504,7 @@ export async function KidsClassesContent({
               <tbody className="divide-y divide-zinc-100">
                 {waiting.map((e) => {
                   const group = groupById.get(e.group_id);
+                  const trialDateOptions = trialDateOptionsByGroup.get(e.group_id) ?? [];
                   return (
                     <tr key={e.id}>
                       <td className="py-1.5 pr-3 font-medium text-zinc-900">{e.kids_class_registration.child_name}</td>
@@ -485,13 +512,43 @@ export async function KidsClassesContent({
                       <td className="py-1.5 pr-3 text-zinc-600">{group ? groupLabel(group) : "?"}</td>
                       <td className="py-1.5 pr-3 text-zinc-600">{new Date(e.created_at).toLocaleDateString("pl-PL")}</td>
                       <td className="py-1.5 pr-3">
-                        <form action={changeEnrollmentStatus}>
-                          <input type="hidden" name="id" value={e.id} />
-                          <input type="hidden" name="status" value="aktywny" />
-                          <ConfirmButton confirmText={`Zaakceptować ${e.kids_class_registration.child_name}?`} className={BTN_GREEN}>
-                            ✅ Zaakceptuj
-                          </ConfirmButton>
-                        </form>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {trialDateOptions.length > 0 ? (
+                            <details className="inline-block">
+                              <summary className="cursor-pointer rounded-lg bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 [&::-webkit-details-marker]:hidden">
+                                📅 Przydziel termin próbny
+                              </summary>
+                              <form action={assignTrialDate} className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                <input type="hidden" name="id" value={e.id} />
+                                <select name="trial_date" required className={INPUT_SM} defaultValue="">
+                                  <option value="" disabled>
+                                    wybierz termin…
+                                  </option>
+                                  {trialDateOptions.map((d) => (
+                                    <option key={d} value={d}>
+                                      {new Date(d + "T00:00:00").toLocaleDateString("pl-PL", { weekday: "short", day: "numeric", month: "short" })}
+                                    </option>
+                                  ))}
+                                </select>
+                                <SubmitButton className="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
+                                  Przydziel
+                                </SubmitButton>
+                              </form>
+                            </details>
+                          ) : (
+                            <span className="text-xs text-zinc-400">brak wolnych terminów próbnych</span>
+                          )}
+                          <form action={changeEnrollmentStatus}>
+                            <input type="hidden" name="id" value={e.id} />
+                            <input type="hidden" name="status" value="aktywny" />
+                            <ConfirmButton
+                              confirmText={`Zaakceptować ${e.kids_class_registration.child_name} od razu jako Aktywny, bez zajęć próbnych?`}
+                              className={BTN_GREEN}
+                            >
+                              ✅ Zaakceptuj bez próbnych
+                            </ConfirmButton>
+                          </form>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -661,7 +718,6 @@ function nearestGroupId(groups: KidsClassGroup[], todayKey: string): string | un
 async function FrekwencjaTab({
   groups,
   enrollments,
-  paymentsByRegistration,
   selectedGroupId,
   selectedMonth,
   today,
@@ -669,7 +725,6 @@ async function FrekwencjaTab({
 }: {
   groups: KidsClassGroup[];
   enrollments: EnrollmentRow[];
-  paymentsByRegistration: Map<string, boolean[]>;
   selectedGroupId?: string;
   selectedMonth?: string;
   today: string;
@@ -679,13 +734,15 @@ async function FrekwencjaTab({
   const group = groups.find((g) => g.id === groupId);
   const monthKey = selectedMonth && /^\d{4}-\d{2}$/.test(selectedMonth) ? selectedMonth : today.slice(0, 7);
   const [year, month] = monthKey.split("-").map(Number);
-  // Sezonowy indeks WYBRANEGO miesiąca (nie dzisiejszego) — frekwencja za
-  // wrzesień patrzy na opłatę za wrzesień, za październik na opłatę za
-  // październik, niezależnie od tego, jaki miesiąc jest dziś.
-  const monthSeasonIdx = currentSeasonMonthIndex(`${monthKey}-01`);
 
+  // Celowo NIE occupiesMonth (payment-gated) — frekwencja ma pokazywać
+  // KAŻDE dziecko, które faktycznie ma przyjść na zajęcia tej grupy, czy
+  // już zapłaciło za ten miesiąc, czy nie (to osobna sprawa, widoczna w
+  // Płatnościach) — inaczej dziecko świeżo zaakceptowane/aktywne, ale
+  // jeszcze bez zaznaczonej opłaty, w ogóle nie dałoby się odhaczyć jako
+  // obecne na własnych zajęciach. Ten sam zestaw statusów co w Płatnościach.
   const children = group
-    ? enrollments.filter((e) => e.group_id === group.id && occupiesMonth(e, monthSeasonIdx, paymentsByRegistration))
+    ? enrollments.filter((e) => e.group_id === group.id && OCCUPYING_STATUSES.includes(e.status))
     : [];
   const dates = group ? sessionDatesInMonth(group.weekday, year, month) : [];
 
