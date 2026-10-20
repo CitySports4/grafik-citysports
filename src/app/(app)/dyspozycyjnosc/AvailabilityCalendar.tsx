@@ -14,6 +14,7 @@ export function AvailabilityCalendar({
   entriesByDate,
   shiftsByWeekday,
   absenceDates = [],
+  closedDates = [],
 }: {
   scheduleMonthId: string;
   days: { dateKey: string; day: number; weekday: number }[];
@@ -24,10 +25,15 @@ export function AvailabilityCalendar({
   // dawać do ręcznego zaznaczenia (i tak liczą się jak "cały dzień" przy
   // układaniu grafiku, patrz applyPlannedAbsences w lib/unavailability.ts).
   absenceDates?: string[];
+  // Dni, które admin już zamknął odgórnie w układaniu grafiku (święto, dzień
+  // wolny klubu) — każdy ma tam wolne z automatu, więc zamiast dawać do
+  // ręcznego zaznaczenia pokazujemy to jako informację.
+  closedDates?: string[];
 }) {
   const [state, setState] = useState(entriesByDate);
   const [, startTransition] = useTransition();
   const absenceSet = new Set(absenceDates);
+  const closedSet = new Set(closedDates);
 
   function handleWholeDay(dateKey: string) {
     setState((prev) => {
@@ -73,6 +79,23 @@ export function AvailabilityCalendar({
         {days.map(({ dateKey, day, weekday }) => {
           const entry = state[dateKey];
           const slots = shiftsByWeekday[weekday] ?? [];
+
+          if (closedSet.has(dateKey)) {
+            return (
+              <div
+                key={dateKey}
+                className="flex flex-col gap-1.5 rounded-xl border border-zinc-200 bg-zinc-100 p-2 text-xs sm:min-h-[92px] sm:gap-1 sm:p-1.5"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-zinc-700">{day}</span>
+                  <span className="text-[11px] capitalize text-zinc-400 sm:hidden">{weekdayLabel(weekday)}</span>
+                </div>
+                <span className="rounded-lg bg-zinc-200 px-2 py-1.5 text-[12px] font-semibold text-zinc-600 sm:px-1.5 sm:py-1 sm:text-[11px]">
+                  🔒 Klub zamknięty — masz wolne
+                </span>
+              </div>
+            );
+          }
 
           if (absenceSet.has(dateKey)) {
             return (
@@ -139,8 +162,8 @@ export function AvailabilityCalendar({
       </div>
       <p className="mt-3 text-xs text-zinc-500">
         Jeśli nie będzie Cię cały dzień, zaznacz &quot;Cały dzień&quot; zamiast każdej zmiany osobno. Dni
-        zgłoszonego urlopu (zakładka &quot;Urlopy i nieobecności&quot;) oznaczają się tu same — nie trzeba ich
-        dodatkowo zaznaczać.
+        zgłoszonego urlopu (zakładka &quot;Urlopy i nieobecności&quot;) i dni, w które klub jest zamknięty,
+        oznaczają się tu same — nie trzeba ich dodatkowo zaznaczać.
       </p>
     </div>
   );
