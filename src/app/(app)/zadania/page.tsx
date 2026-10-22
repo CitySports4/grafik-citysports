@@ -16,7 +16,7 @@ export default async function ZadaniaPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-lg font-bold text-zinc-900">Zadania</h1>
+        <h1 className="text-lg font-bold text-zinc-900">Sprzątanie</h1>
         <p className="text-sm text-zinc-500">Zadania sprzątania na dziś.</p>
       </div>
 

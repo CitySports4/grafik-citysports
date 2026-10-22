@@ -17,7 +17,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Godziny pracy wpisuje się teraz bezpośrednio przy swojej zmianie w "Mój
   // grafik" (mniej klikania niż osobna strona) — /godziny zostaje jako
   // działający adres, ale bez własnej pozycji w menu, żeby nie dublować.
-  // Zadania to teraz jedna strona (sprzątanie + inne), nie grupa.
+  // /zadania to jedna strona, wyłącznie sprzątanie — etykieta w menu to
+  // "Sprzątanie" (adres zostaje /zadania, żeby nie zrywać istniejących
+  // linków). Marketing ma swoje własne, zupełnie osobne zadania pod
+  // /marketing (inna tabela, inna rola), niepowiązane z tymi tutaj.
   // Ktoś wyłącznie z rolą trenera personalnego nie ma normalnego grafiku
   // zmian ani zadań — po zalogowaniu widzi WYŁĄCZNIE grafik treningów
   // personalnych (patrz app/page.tsx dla przekierowania po loginie).
@@ -36,7 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         },
       ];
   const trailingLinks: { href: string; label: string }[] = [];
-  if (!isTrainerOnly) trailingLinks.push({ href: "/zadania", label: "Zadania" });
+  if (!isTrainerOnly) trailingLinks.push({ href: "/zadania", label: "Sprzątanie" });
   if (canSeePersonalTraining) trailingLinks.push({ href: "/treningi-personalne", label: "Treningi personalne" });
   if (canAccessMarketing(employee)) trailingLinks.push({ href: "/marketing", label: "Marketing" });
   // Zajęcia dla dzieci — bieżącą obsługę recepcja robi przez kiosk PIN
