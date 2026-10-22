@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, canAccessMarketing } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { PLATFORM_LABELS, type ContentPlatform } from "@/lib/marketing";
+import { extractMarketingImport } from "@/lib/marketing-import";
 
 // Bramka wspólna dla wszystkich akcji tego modułu — rola marketing albo
 // admin (patrz canAccessMarketing), ta sama reguła co przy wejściu na samą
@@ -246,4 +247,111 @@ export async function deletePlan(formData: FormData) {
   const { error } = await supabase.from("marketing_plan").delete().eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
+}
+
+// ---------- Import z pliku ----------
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export type ImportResult = {
+  tasksCount: number;
+  contentCount: number;
+  contentSkipped: number;
+  plansCount: number;
+  unmatchedNames: string[];
+};
+
+// Wrzucony plik (patrz IMPORT_TEMPLATE) trafia od razu do systemu — bez
+// osobnego ekranu "zatwierdź podgląd" (świadoma decyzja: wszystko i tak da
+// się potem poprawić przez zwykłe Edytuj, plik ma tylko przyspieszyć
+// pierwsze wpisanie, nie być jedynym źródłem prawdy). Nazwa osoby z pliku
+// dopasowywana jest do rzeczywistych kont z rolą marketing PO TEKŚCIE
+// (dokładne dopasowanie, bez rozróżniania wielkości liter) — bez trafienia
+// wpis zostaje nieprzypisany, nigdy nie zgaduje "najbliższej" osoby.
+export async function importMarketingFile(formData: FormData): Promise<ImportResult> {
+  const employee = await requireMarketingAccess();
+  const file = formData.get("file") as File | null;
+  if (!file || file.size === 0) throw new Error("Wybierz plik.");
+  const text = await file.text();
+  if (!text.trim()) throw new Error("Plik jest pusty.");
+
+  const supabase = createServerSupabaseClient();
+  const { data: assigneesRaw } = await supabase
+    .from("employee")
+    .select("id, name, employee_role!inner(role)")
+    .eq("active", true)
+    .eq("employee_role.role", "marketing");
+  const assignees = (assigneesRaw ?? []) as { id: string; name: string }[];
+
+  const extracted = await extractMarketingImport(text);
+
+  const unmatchedNames = new Set<string>();
+  function resolveAssignee(name: string | undefined): string | null {
+    const trimmed = name?.trim();
+    if (!trimmed) return null;
+    const match = assignees.find((a) => a.name.toLowerCase() === trimmed.toLowerCase());
+    if (match) return match.id;
+    unmatchedNames.add(trimmed);
+    return null;
+  }
+
+  let tasksCount = 0;
+  for (const t of extracted.tasks) {
+    if (!t.title?.trim()) continue;
+    const { error } = await supabase.from("marketing_task").insert({
+      title: t.title.trim(),
+      description: t.description?.trim() ?? "",
+      priority: t.priority ?? "normal",
+      due_date: t.due_date && DATE_RE.test(t.due_date) ? t.due_date : null,
+      assignee_employee_id: resolveAssignee(t.assignee_name),
+      created_by_employee_id: employee.id,
+    });
+    if (!error) tasksCount++;
+  }
+
+  let contentCount = 0;
+  let contentSkipped = 0;
+  for (const c of extracted.content) {
+    if (!c.title?.trim() || !c.scheduled_date || !DATE_RE.test(c.scheduled_date)) {
+      contentSkipped++;
+      continue;
+    }
+    const assignee_employee_id = resolveAssignee(c.assignee_name);
+    const { data, error } = await supabase
+      .from("marketing_content")
+      .insert({
+        title: c.title.trim(),
+        platform: c.platform ?? "inne",
+        scheduled_date: c.scheduled_date,
+        status: c.status ?? "pomysl",
+        notes: c.notes?.trim() ?? "",
+        assignee_employee_id,
+        created_by_employee_id: employee.id,
+      })
+      .select("id")
+      .single();
+    if (error || !data) {
+      contentSkipped++;
+      continue;
+    }
+    contentCount++;
+    if (assignee_employee_id) {
+      await createLinkedTaskIfNeeded(supabase, data.id, c.title.trim(), c.platform ?? "inne", c.scheduled_date, assignee_employee_id, employee.id);
+    }
+  }
+
+  let plansCount = 0;
+  for (const p of extracted.plans) {
+    if (!p.title?.trim()) continue;
+    const { error } = await supabase.from("marketing_plan").insert({
+      title: p.title.trim(),
+      body: p.body?.trim() ?? "",
+      type: p.type ?? "plan",
+      created_by_employee_id: employee.id,
+    });
+    if (!error) plansCount++;
+  }
+
+  revalidateMarketing();
+  return { tasksCount, contentCount, contentSkipped, plansCount, unmatchedNames: Array.from(unmatchedNames) };
 }
