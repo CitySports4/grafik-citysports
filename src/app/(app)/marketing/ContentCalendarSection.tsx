@@ -1,22 +1,11 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { SubmitButton } from "@/components/SubmitButton";
-import { ConfirmButton } from "@/components/ConfirmButton";
-import { ColorDot } from "@/components/ColorDot";
-import { BTN_PRIMARY_SM, BTN_GHOST_DANGER } from "@/components/button-styles";
 import { toDateKey, daysInMonth, monthLabel, currentMonth } from "@/lib/schedule-month";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
-import {
-  PLATFORM_LABELS,
-  PLATFORM_ICONS,
-  CONTENT_STATUS_LABELS,
-  CONTENT_STATUS_ORDER,
-  type ContentPlatform,
-  type ContentStatus,
-} from "@/lib/marketing";
-import { createContent, updateContent, setContentStatus, deleteContent } from "./actions";
-
-const INPUT_SM = "rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-xs";
+import { CONTENT_STATUS_LABELS, CONTENT_STATUS_ORDER, type ContentPlatform, type ContentStatus } from "@/lib/marketing";
+import { setContentStatus } from "./actions";
+import { ContentItemChip } from "./ContentItemChip";
+import { AddContentButton } from "./AddContentButton";
 
 type ContentItem = {
   id: string;
@@ -29,13 +18,6 @@ type ContentItem = {
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
-
-const STATUS_PILL: Record<ContentStatus, string> = {
-  pomysl: "bg-zinc-100 text-zinc-600",
-  w_przygotowaniu: "bg-amber-100 text-amber-700",
-  gotowe: "bg-sky-100 text-sky-700",
-  opublikowane: "bg-emerald-100 text-emerald-700",
-};
 
 const STATUS_DOT: Record<ContentStatus, string> = {
   pomysl: "bg-zinc-400",
@@ -78,7 +60,6 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
 
   const content = (contentRaw ?? []) as ContentItem[];
   const assignees = (assigneesRaw ?? []) as Assignee[];
-  const assigneeById = new Map(assignees.map((a) => [a.id, a]));
   const contentIdsWithTask = new Set((linkedTasksRaw ?? []).map((t) => t.content_id as string));
   const byDate = new Map<string, ContentItem[]>();
   for (const c of content) {
@@ -138,6 +119,7 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
           const weekday = d.getDay();
           const items = byDate.get(date) ?? [];
           const isToday = date === today;
+          const dateLabel = d.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
 
           return (
             <div
@@ -153,16 +135,12 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
 
               <div className="flex flex-col gap-1">
                 {items.map((item) => {
-                  const assignee = item.assignee_employee_id ? assigneeById.get(item.assignee_employee_id) : null;
                   const published = item.status === "opublikowane";
                   return (
                     <div key={item.id} className="flex items-start gap-1">
                       {/* Checkbox jednym kliknięciem — odznacza "Opublikowane"
                           (odpowiednik "zrobione" dla treści) bez otwierania
-                          szczegółów. Celowo POZA <details>, żeby klik na
-                          checkboxie nie otwierał/zamykał rozwijanych
-                          szczegółów obok (zagnieżdżony przycisk w <summary>
-                          i tak by to zrobił). */}
+                          pełnej edycji. */}
                       <form action={setContentStatus} className="pt-0.5">
                         <input type="hidden" name="id" value={item.id} />
                         <input type="hidden" name="status" value={published ? "gotowe" : "opublikowane"} />
@@ -176,101 +154,18 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
                           {published && "✓"}
                         </button>
                       </form>
-                      <details className="min-w-0 flex-1">
-                        <summary
-                          className={`cursor-pointer truncate rounded px-1.5 py-1 text-[11px] font-medium [&::-webkit-details-marker]:hidden ${STATUS_PILL[item.status]} ${published ? "line-through opacity-70" : ""}`}
-                        >
-                          {PLATFORM_ICONS[item.platform]} {item.title}
-                          {contentIdsWithTask.has(item.id) && <span title="Ma powiązane zadanie w Zadaniach"> 📋</span>}
-                        </summary>
-                      <div className="mt-1 flex flex-col gap-1.5 rounded-lg bg-zinc-50 p-2">
-                        <p className={`rounded-full self-start px-2 py-0.5 text-[10px] font-bold ${STATUS_PILL[item.status]}`}>
-                          {CONTENT_STATUS_LABELS[item.status]}
-                        </p>
-                        {contentIdsWithTask.has(item.id) && (
-                          <p className="text-[11px] text-zinc-500">📋 Ma powiązane zadanie w zakładce Zadania.</p>
-                        )}
-                        {assignee && (
-                          <span className="flex items-center gap-1 text-[11px] text-zinc-500">
-                            <ColorDot color={assignee.color_hex} />
-                            {assignee.name}
-                          </span>
-                        )}
-                        {item.notes && <p className="text-[11px] text-zinc-500">{item.notes}</p>}
-                        <form action={updateContent} className="flex flex-col gap-1.5">
-                          <input type="hidden" name="id" value={item.id} />
-                          <input name="title" defaultValue={item.title} required className={INPUT_SM} placeholder="Tytuł" />
-                          <select name="platform" defaultValue={item.platform} className={INPUT_SM}>
-                            {(Object.entries(PLATFORM_LABELS) as [ContentPlatform, string][]).map(([v, l]) => (
-                              <option key={v} value={v}>
-                                {l}
-                              </option>
-                            ))}
-                          </select>
-                          <select name="status" defaultValue={item.status} className={INPUT_SM}>
-                            {(Object.entries(CONTENT_STATUS_LABELS) as [ContentStatus, string][]).map(([v, l]) => (
-                              <option key={v} value={v}>
-                                {l}
-                              </option>
-                            ))}
-                          </select>
-                          <input type="date" name="scheduled_date" defaultValue={item.scheduled_date} required className={INPUT_SM} />
-                          <select name="assignee_employee_id" defaultValue={item.assignee_employee_id ?? ""} className={INPUT_SM}>
-                            <option value="">— nieprzypisane —</option>
-                            {assignees.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.name}
-                              </option>
-                            ))}
-                          </select>
-                          <textarea name="notes" defaultValue={item.notes} rows={2} className={INPUT_SM} placeholder="Notatki" />
-                          <div className="flex items-center gap-2">
-                            <SubmitButton className="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
-                              Zapisz
-                            </SubmitButton>
-                            <ConfirmButton formAction={deleteContent} confirmText={`Usunąć "${item.title}"?`} className={BTN_GHOST_DANGER}>
-                              Usuń
-                            </ConfirmButton>
-                          </div>
-                        </form>
+                      {/* Pełna edycja otwiera się jako pływające okno (Modal)
+                          zamiast rozwijać się w tej ciasnej komórce siatki —
+                          patrz ContentItemChip. */}
+                      <div className="min-w-0 flex-1">
+                        <ContentItemChip item={item} assignees={assignees} hasLinkedTask={contentIdsWithTask.has(item.id)} />
                       </div>
-                      </details>
                     </div>
                   );
                 })}
               </div>
 
-              <details className="mt-auto">
-                <summary className="cursor-pointer text-[11px] font-semibold text-brand-orange [&::-webkit-details-marker]:hidden">
-                  + Dodaj
-                </summary>
-                <form action={createContent} className="mt-1.5 flex flex-col gap-1.5">
-                  <input type="hidden" name="scheduled_date" value={date} />
-                  {/* Status celowo pominięty tu — nowy wpis zaczyna jako
-                      "Pomysł" (domyślna wartość w createContent), bez
-                      zmuszania do wyboru przy szybkim dodawaniu; zmienia się
-                      potem jednym klikiem (checkbox) albo w Edytuj. */}
-                  <input name="title" required className={INPUT_SM} placeholder="Tytuł" />
-                  <select name="platform" defaultValue="instagram" className={INPUT_SM}>
-                    {(Object.entries(PLATFORM_LABELS) as [ContentPlatform, string][]).map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                  <select name="assignee_employee_id" defaultValue="" className={INPUT_SM}>
-                    <option value="">— nieprzypisane —</option>
-                    {assignees.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                  <div>
-                    <SubmitButton className={BTN_PRIMARY_SM}>Dodaj</SubmitButton>
-                  </div>
-                </form>
-              </details>
+              <AddContentButton date={date} dateLabel={dateLabel} assignees={assignees} />
             </div>
           );
         })}
