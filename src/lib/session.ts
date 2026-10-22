@@ -45,13 +45,14 @@ export async function clearSession() {
   store.delete(COOKIE_NAME);
 }
 
-export type EmployeeRole = "recepcja" | "sprzatanie" | "admin" | "trener_personalny";
+export type EmployeeRole = "recepcja" | "sprzatanie" | "admin" | "trener_personalny" | "marketing";
 
 export const ROLE_LABELS: Record<EmployeeRole, string> = {
   recepcja: "Recepcja",
   sprzatanie: "Sprzątanie",
   admin: "Administrator",
   trener_personalny: "Trener Personalny",
+  marketing: "Marketing",
 };
 
 export type PtBillingCycle = "weekly" | "monthly";
@@ -117,6 +118,12 @@ export function canPreviewPersonalTraining(employee: SessionEmployee): boolean {
 // Czy pracownik rozlicza się godzinowo — patrz komentarz przy hourlyRate.
 export function tracksHours(employee: SessionEmployee): boolean {
   return employee.hourlyRate > 0;
+}
+
+// Dostęp do /marketing — rola marketing, plus admin (tak jak wszędzie
+// indziej w appce admin widzi/zarządza każdą sekcją).
+export function canAccessMarketing(employee: SessionEmployee): boolean {
+  return employee.roles.includes("marketing") || employee.roles.includes("admin");
 }
 
 export async function requireEmployee(): Promise<SessionEmployee> {
