@@ -6,8 +6,15 @@ import { ColorDot } from "@/components/ColorDot";
 import { BTN_PRIMARY_SM, BTN_GHOST_DANGER } from "@/components/button-styles";
 import { toDateKey, daysInMonth, monthLabel, currentMonth } from "@/lib/schedule-month";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
-import { PLATFORM_LABELS, CONTENT_STATUS_LABELS, type ContentPlatform, type ContentStatus } from "@/lib/marketing";
-import { createContent, updateContent, deleteContent } from "./actions";
+import {
+  PLATFORM_LABELS,
+  PLATFORM_ICONS,
+  CONTENT_STATUS_LABELS,
+  CONTENT_STATUS_ORDER,
+  type ContentPlatform,
+  type ContentStatus,
+} from "@/lib/marketing";
+import { createContent, updateContent, setContentStatus, deleteContent } from "./actions";
 
 const INPUT_SM = "rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-xs";
 
@@ -30,13 +37,11 @@ const STATUS_PILL: Record<ContentStatus, string> = {
   opublikowane: "bg-emerald-100 text-emerald-700",
 };
 
-const PLATFORM_SHORT: Record<ContentPlatform, string> = {
-  instagram: "IG",
-  facebook: "FB",
-  tiktok: "TT",
-  strona_www: "WWW",
-  email: "Mail",
-  inne: "Inne",
+const STATUS_DOT: Record<ContentStatus, string> = {
+  pomysl: "bg-zinc-400",
+  w_przygotowaniu: "bg-amber-500",
+  gotowe: "bg-sky-500",
+  opublikowane: "bg-emerald-500",
 };
 
 export async function ContentCalendarSection({ yearParam, monthParam }: { yearParam?: string; monthParam?: string }) {
@@ -96,6 +101,18 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
         </div>
       </div>
 
+      {/* Legenda statusów — same kolory w chipach poniżej byłyby czytelne
+          tylko po otwarciu szczegółów; tu widać od razu, co dany kolor
+          znaczy, bez klikania. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
+        {CONTENT_STATUS_ORDER.map((s) => (
+          <span key={s} className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${STATUS_DOT[s]}`} />
+            {CONTENT_STATUS_LABELS[s]}
+          </span>
+        ))}
+      </div>
+
       {/* Nagłówek dni tygodnia — tylko od tabletu wzwyż, bo na telefonie
           kalendarz jest listą jednokolumnową (nazwa dnia jest wtedy w
           każdej karcie), nie siatką — ten sam wzorzec co
@@ -131,13 +148,34 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
               <div className="flex flex-col gap-1">
                 {items.map((item) => {
                   const assignee = item.assignee_employee_id ? assigneeById.get(item.assignee_employee_id) : null;
+                  const published = item.status === "opublikowane";
                   return (
-                    <details key={item.id}>
-                      <summary
-                        className={`cursor-pointer truncate rounded px-1.5 py-1 text-[11px] font-medium [&::-webkit-details-marker]:hidden ${STATUS_PILL[item.status]}`}
-                      >
-                        {PLATFORM_SHORT[item.platform]}: {item.title}
-                      </summary>
+                    <div key={item.id} className="flex items-start gap-1">
+                      {/* Checkbox jednym kliknięciem — odznacza "Opublikowane"
+                          (odpowiednik "zrobione" dla treści) bez otwierania
+                          szczegółów. Celowo POZA <details>, żeby klik na
+                          checkboxie nie otwierał/zamykał rozwijanych
+                          szczegółów obok (zagnieżdżony przycisk w <summary>
+                          i tak by to zrobił). */}
+                      <form action={setContentStatus} className="pt-0.5">
+                        <input type="hidden" name="id" value={item.id} />
+                        <input type="hidden" name="status" value={published ? "gotowe" : "opublikowane"} />
+                        <button
+                          type="submit"
+                          aria-label={published ? "Cofnij na Gotowe" : "Oznacz jako opublikowane"}
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[9px] ${
+                            published ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
+                          }`}
+                        >
+                          {published && "✓"}
+                        </button>
+                      </form>
+                      <details className="min-w-0 flex-1">
+                        <summary
+                          className={`cursor-pointer truncate rounded px-1.5 py-1 text-[11px] font-medium [&::-webkit-details-marker]:hidden ${STATUS_PILL[item.status]} ${published ? "line-through opacity-70" : ""}`}
+                        >
+                          {PLATFORM_ICONS[item.platform]} {item.title}
+                        </summary>
                       <div className="mt-1 flex flex-col gap-1.5 rounded-lg bg-zinc-50 p-2">
                         <p className={`rounded-full self-start px-2 py-0.5 text-[10px] font-bold ${STATUS_PILL[item.status]}`}>
                           {CONTENT_STATUS_LABELS[item.status]}
@@ -186,7 +224,8 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
                           </div>
                         </form>
                       </div>
-                    </details>
+                      </details>
+                    </div>
                   );
                 })}
               </div>
@@ -197,16 +236,13 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
                 </summary>
                 <form action={createContent} className="mt-1.5 flex flex-col gap-1.5">
                   <input type="hidden" name="scheduled_date" value={date} />
+                  {/* Status celowo pominięty tu — nowy wpis zaczyna jako
+                      "Pomysł" (domyślna wartość w createContent), bez
+                      zmuszania do wyboru przy szybkim dodawaniu; zmienia się
+                      potem jednym klikiem (checkbox) albo w Edytuj. */}
                   <input name="title" required className={INPUT_SM} placeholder="Tytuł" />
                   <select name="platform" defaultValue="instagram" className={INPUT_SM}>
                     {(Object.entries(PLATFORM_LABELS) as [ContentPlatform, string][]).map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                  <select name="status" defaultValue="pomysl" className={INPUT_SM}>
-                    {(Object.entries(CONTENT_STATUS_LABELS) as [ContentStatus, string][]).map(([v, l]) => (
                       <option key={v} value={v}>
                         {l}
                       </option>

@@ -26,6 +26,16 @@ export const PLATFORM_LABELS: Record<ContentPlatform, string> = {
   email: "E-mail",
   inne: "Inne",
 };
+// Ikona rozpoznawalna na pierwszy rzut oka w ciasnej komórce kalendarza —
+// szybsza do wyłapania wzrokiem niż sam skrót tekstowy.
+export const PLATFORM_ICONS: Record<ContentPlatform, string> = {
+  instagram: "📸",
+  facebook: "👍",
+  tiktok: "🎵",
+  strona_www: "🌐",
+  email: "✉️",
+  inne: "📌",
+};
 
 export type ContentStatus = "pomysl" | "w_przygotowaniu" | "gotowe" | "opublikowane";
 export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
@@ -34,6 +44,7 @@ export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
   gotowe: "Gotowe",
   opublikowane: "Opublikowane",
 };
+export const CONTENT_STATUS_ORDER: ContentStatus[] = ["pomysl", "w_przygotowaniu", "gotowe", "opublikowane"];
 
 export type PlanType = "strategia" | "plan";
 export const PLAN_TYPE_LABELS: Record<PlanType, string> = {

@@ -86,6 +86,20 @@ export async function deleteTask(formData: FormData) {
 
 // ---------- Kalendarz treści ----------
 
+// Szybkie odznaczenie statusu jednym kliknięciem (patrz checkbox-przycisk w
+// ContentCalendarSection) — bez otwierania pełnego formularza edycji.
+export async function setContentStatus(formData: FormData) {
+  await requireMarketingAccess();
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!id || !status) throw new Error("Brak danych.");
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("marketing_content").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidateMarketing();
+}
+
 export async function createContent(formData: FormData) {
   const employee = await requireMarketingAccess();
   const title = String(formData.get("title") ?? "").trim();
