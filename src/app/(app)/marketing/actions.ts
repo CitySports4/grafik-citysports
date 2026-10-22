@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, canAccessMarketing } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
+import { PLATFORM_LABELS, type ContentPlatform } from "@/lib/marketing";
 
 // Bramka wspólna dla wszystkich akcji tego modułu — rola marketing albo
 // admin (patrz canAccessMarketing), ta sama reguła co przy wejściu na samą
@@ -100,6 +101,31 @@ export async function setContentStatus(formData: FormData) {
   revalidateMarketing();
 }
 
+// Treść z przypisaną osobą dostaje automatycznie powiązane zadanie (patrz
+// migracja 0054) — bez przypisanej osoby nie ma kogo by miał dotyczyć, więc
+// nic się nie tworzy. Zadanie żyje potem niezależnie: nie odznacza się samo,
+// gdy treść dostanie status "Opublikowane", i odwrotnie — to świadomie dwie
+// osobne rzeczy do odhaczenia.
+async function createLinkedTaskIfNeeded(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  contentId: string,
+  title: string,
+  platform: string,
+  scheduled_date: string,
+  assignee_employee_id: string,
+  created_by_employee_id: string
+) {
+  const { error } = await supabase.from("marketing_task").insert({
+    title,
+    description: `Z kalendarza treści — ${PLATFORM_LABELS[platform as ContentPlatform] ?? platform}, publikacja ${scheduled_date}.`,
+    due_date: scheduled_date,
+    assignee_employee_id,
+    content_id: contentId,
+    created_by_employee_id,
+  });
+  if (error) throw new Error(dbErrorMessage(error));
+}
+
 export async function createContent(formData: FormData) {
   const employee = await requireMarketingAccess();
   const title = String(formData.get("title") ?? "").trim();
@@ -111,21 +137,29 @@ export async function createContent(formData: FormData) {
   if (!title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
 
   const supabase = createServerSupabaseClient();
-  const { error } = await supabase.from("marketing_content").insert({
-    title,
-    platform,
-    scheduled_date,
-    status,
-    notes,
-    assignee_employee_id,
-    created_by_employee_id: employee.id,
-  });
-  if (error) throw new Error(dbErrorMessage(error));
+  const { data, error } = await supabase
+    .from("marketing_content")
+    .insert({
+      title,
+      platform,
+      scheduled_date,
+      status,
+      notes,
+      assignee_employee_id,
+      created_by_employee_id: employee.id,
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw new Error(dbErrorMessage(error));
+
+  if (assignee_employee_id) {
+    await createLinkedTaskIfNeeded(supabase, data.id, title, platform, scheduled_date, assignee_employee_id, employee.id);
+  }
   revalidateMarketing();
 }
 
 export async function updateContent(formData: FormData) {
-  await requireMarketingAccess();
+  const employee = await requireMarketingAccess();
   const id = String(formData.get("id") ?? "");
   const title = String(formData.get("title") ?? "").trim();
   const platform = String(formData.get("platform") ?? "inne");
@@ -141,6 +175,16 @@ export async function updateContent(formData: FormData) {
     .update({ title, platform, scheduled_date, status, notes, assignee_employee_id, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
+
+  // Osoba przypisana dopiero teraz (przy tworzeniu nie było komu dać
+  // zadania) — dociąga je, ale tylko jeśli jeszcze nie istnieje (patrz
+  // content_id), żeby edycja w kółko nie mnożyła duplikatów.
+  if (assignee_employee_id) {
+    const { data: existingTask } = await supabase.from("marketing_task").select("id").eq("content_id", id).maybeSingle();
+    if (!existingTask) {
+      await createLinkedTaskIfNeeded(supabase, id, title, platform, scheduled_date, assignee_employee_id, employee.id);
+    }
+  }
   revalidateMarketing();
 }
 

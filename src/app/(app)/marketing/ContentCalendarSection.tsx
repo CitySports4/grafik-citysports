@@ -56,7 +56,7 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
   const nextLink = month === 12 ? `?tab=kalendarz&year=${year + 1}&month=1` : `?tab=kalendarz&year=${year}&month=${month + 1}`;
 
   const supabase = createServerSupabaseClient();
-  const [{ data: contentRaw }, { data: assigneesRaw }] = await Promise.all([
+  const [{ data: contentRaw }, { data: assigneesRaw }, { data: linkedTasksRaw }] = await Promise.all([
     supabase
       .from("marketing_content")
       .select("id, title, platform, scheduled_date, status, notes, assignee_employee_id")
@@ -69,11 +69,17 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
       .eq("active", true)
       .eq("employee_role.role", "marketing")
       .order("name"),
+    // Które wpisy mają już automatycznie utworzone zadanie (patrz
+    // createLinkedTaskIfNeeded w actions.ts) — tylko żeby pokazać małą
+    // plakietkę "zadanie dodane", bez tego dodanie zadania byłoby
+    // niewidocznym efektem ubocznym.
+    supabase.from("marketing_task").select("content_id").not("content_id", "is", null),
   ]);
 
   const content = (contentRaw ?? []) as ContentItem[];
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const assigneeById = new Map(assignees.map((a) => [a.id, a]));
+  const contentIdsWithTask = new Set((linkedTasksRaw ?? []).map((t) => t.content_id as string));
   const byDate = new Map<string, ContentItem[]>();
   for (const c of content) {
     if (!byDate.has(c.scheduled_date)) byDate.set(c.scheduled_date, []);
@@ -175,11 +181,15 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
                           className={`cursor-pointer truncate rounded px-1.5 py-1 text-[11px] font-medium [&::-webkit-details-marker]:hidden ${STATUS_PILL[item.status]} ${published ? "line-through opacity-70" : ""}`}
                         >
                           {PLATFORM_ICONS[item.platform]} {item.title}
+                          {contentIdsWithTask.has(item.id) && <span title="Ma powiązane zadanie w Zadaniach"> 📋</span>}
                         </summary>
                       <div className="mt-1 flex flex-col gap-1.5 rounded-lg bg-zinc-50 p-2">
                         <p className={`rounded-full self-start px-2 py-0.5 text-[10px] font-bold ${STATUS_PILL[item.status]}`}>
                           {CONTENT_STATUS_LABELS[item.status]}
                         </p>
+                        {contentIdsWithTask.has(item.id) && (
+                          <p className="text-[11px] text-zinc-500">📋 Ma powiązane zadanie w zakładce Zadania.</p>
+                        )}
                         {assignee && (
                           <span className="flex items-center gap-1 text-[11px] text-zinc-500">
                             <ColorDot color={assignee.color_hex} />
