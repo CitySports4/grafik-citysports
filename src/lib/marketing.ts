@@ -17,11 +17,11 @@ export const TASK_PRIORITY_LABELS: Record<MarketingTaskPriority, string> = {
   high: "Wysoki",
 };
 
-export type ContentPlatform = "instagram" | "facebook" | "tiktok" | "strona_www" | "email" | "inne";
+// Bez TikToka — klub tam nic nie publikuje (patrz migracja 0053).
+export type ContentPlatform = "instagram" | "facebook" | "strona_www" | "email" | "inne";
 export const PLATFORM_LABELS: Record<ContentPlatform, string> = {
   instagram: "Instagram",
   facebook: "Facebook",
-  tiktok: "TikTok",
   strona_www: "Strona WWW",
   email: "E-mail",
   inne: "Inne",
@@ -31,7 +31,6 @@ export const PLATFORM_LABELS: Record<ContentPlatform, string> = {
 export const PLATFORM_ICONS: Record<ContentPlatform, string> = {
   instagram: "📸",
   facebook: "👍",
-  tiktok: "🎵",
   strona_www: "🌐",
   email: "✉️",
   inne: "📌",
