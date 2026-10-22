@@ -160,9 +160,20 @@ export function isEnrollmentEffective(enrollment: { effective_from: string; effe
   return true;
 }
 
-// Ile miejsc w KAŻDEJ grupie zajmują aktualnie obowiązujące zapisy (patrz
-// isEnrollmentEffective) ze statusem z OCCUPYING_STATUSES.
-export function computeGroupOccupancy(enrollments: Enrollment[], todayKey: string): Map<string, number> {
+// Miejsca zajęte w KAŻDEJ grupie — każdy zapis ze statusem z
+// OCCUPYING_STATUSES liczy się OD RAZU: stały "Aktywny" niezależnie od
+// zaznaczonej opłaty za bieżący miesiąc (zwolnienie miejsca za brak opłaty
+// to świadoma, ręczna decyzja personelu — przycisk "Brak opłaty" w
+// changeEnrollmentStatus, nie coś, co dzieje się samo w tle przez sam
+// checkbox w Płatnościach), i "Nowe" już od momentu wyboru terminu
+// próbnych, nie dopiero gdy dziecko faktycznie przyjdzie/zapłaci —
+// zapisanie się na próbne blokuje miejsce aż do jawnej rezygnacji
+// (changeEnrollmentStatus → "rezygnacja"). Który konkretnie dzień próbnych
+// dziecko wybrało jest więc wyłącznie informacją "kiedy pierwszy raz
+// przyjdzie" (trial_date), nie osobnym, niezależnym limitem miejsc — stąd
+// jeden wspólny licznik na całą grupę, bez rozbijania po konkretnych
+// terminach.
+export function computeCommittedOccupancy(enrollments: Enrollment[], todayKey: string): Map<string, number> {
   const occupancy = new Map<string, number>();
   for (const e of enrollments) {
     if (!OCCUPYING_STATUSES.includes(e.status)) continue;
@@ -174,61 +185,6 @@ export function computeGroupOccupancy(enrollments: Enrollment[], todayKey: strin
 
 export function hasGroupCapacity(group: KidsClassGroup, occupancy: Map<string, number>): boolean {
   return (occupancy.get(group.id) ?? 0) < group.capacity;
-}
-
-// Miejsca zajęte na STAŁE, na KAŻDYCH zajęciach tej grupy — status
-// "Aktywny" ZAWSZE się liczy, niezależnie od zaznaczonej opłaty za bieżący
-// miesiąc: zwolnienie miejsca za brak opłaty to świadoma, ręczna decyzja
-// personelu (przycisk "Brak opłaty" w changeEnrollmentStatus), nie coś, co
-// ma się dziać samo w tle przez odhaczenie/nieodhaczenie checkboxa w
-// Płatnościach — automatyczne odejmowanie stąd dawało dokładnie to, co
-// wyglądało jak błąd: dziecko realnie przyjęte do grupy, a publiczny
-// formularz i tak pokazywał wolne miejsce. Liczy się też "Nowe" BEZ terminu
-// próbnego (dziecko wraca i już wykorzystało swoje bezpłatne wejście —
-// patrz findChildrenByPhone/submitRegistration) oraz "Nowe" przyjęte Z
-// LISTY OCZEKUJĄCYCH (from_waitlist, patrz assignTrialDate w
-// (app)/zajecia-dzieci/actions.ts) — to świadoma decyzja personelu "to
-// miejsce jest już zajęte", mimo wybranego terminu próbnych. Zwykłe,
-// samodzielne zgłoszenie rodzica na próbne (status "Nowe" z trial_date, bez
-// from_waitlist) ŚWIADOMIE pominięte: próbne zajmuje miejsce tylko na SWÓJ
-// konkretny termin (patrz computeTrialBookingCounts), nie na każdych
-// zajęciach tej grupy — inaczej 2 dzieci próbujące w RÓŻNYCH terminach
-// zamykałyby grupę na cały miesiąc, mimo wolnych miejsc na większości
-// terminów.
-export function computeCommittedOccupancy(
-  enrollments: (Enrollment & { registration_id: string; trial_date: string | null; from_waitlist?: boolean })[],
-  todayKey: string
-): Map<string, number> {
-  const occupancy = new Map<string, number>();
-  for (const e of enrollments) {
-    const isOngoingClaim =
-      e.status === "aktywny" || (e.status === "nowe" && (e.trial_date === null || e.from_waitlist === true));
-    if (!isOngoingClaim) continue;
-    if (!isEnrollmentEffective(e, todayKey)) continue;
-    occupancy.set(e.group_id, (occupancy.get(e.group_id) ?? 0) + 1);
-  }
-  return occupancy;
-}
-
-// Ile dzieci ma już zarezerwowany dany termin próbny w danej grupie
-// (status "Nowe", bo tylko one są jeszcze "na próbę" — "Aktywny" już
-// liczy się do committedOccupancy, nie do konkretnego terminu).
-export function computeTrialBookingCounts(enrollments: { group_id: string; status: KidsClassStatus; trial_date: string | null }[]): Map<string, Map<string, number>> {
-  const counts = new Map<string, Map<string, number>>();
-  for (const e of enrollments) {
-    if (e.status !== "nowe" || !e.trial_date) continue;
-    const perGroup = counts.get(e.group_id) ?? new Map<string, number>();
-    perGroup.set(e.trial_date, (perGroup.get(e.trial_date) ?? 0) + 1);
-    counts.set(e.group_id, perGroup);
-  }
-  return counts;
-}
-
-// Czy na DANY termin (nie w całej grupie) jest jeszcze miejsce — suma
-// stałych członków ("Aktywny") i dzieci już zapisanych na próbne WŁAŚNIE
-// na ten dzień musi zmieścić się w pojemności sali.
-export function hasTrialDateCapacity(group: KidsClassGroup, committedOccupancy: Map<string, number>, trialBookingsForDate: number): boolean {
-  return (committedOccupancy.get(group.id) ?? 0) + trialBookingsForDate < group.capacity;
 }
 
 // Wszystkie daty konkretnego dnia tygodnia w danym miesiącu (np. każdy
@@ -248,11 +204,13 @@ export function sessionDatesInMonth(weekday: number, year: number, month: number
 // JUTRA (nie od dziś — zgłoszenie złożone dziś po zajęciach nie powinno
 // proponować terminu "dziś") do końca miesiąca — do wyboru zajęć próbnych
 // w formularzu zapisu. Pod koniec miesiąca lista naturalnie się kurczy.
-// `isDateAvailable` odsiewa terminy, na które limit próbnych już się
-// wyczerpał (patrz wywołanie w page.tsx) — każdy termin to OSOBNE zajęcia,
-// więc "pełny" jeden czwartek nie blokuje innego. Jeśli po odsianiu w tym
-// miesiącu nic nie zostało (albo dzień tygodnia się już skończył, albo
-// wszystkie jego terminy są pełne), pokazujemy cały następny miesiąc.
+// `isDateAvailable` sprawdza, czy grupa MA JESZCZE WOLNE MIEJSCE (patrz
+// hasGroupCapacity) — to jeden wspólny limit na całą grupę, nie osobny per
+// termin: zapisanie się na próbne zajmuje miejsce od razu (patrz
+// computeCommittedOccupancy), więc albo wszystkie najbliższe terminy są
+// dostępne, albo żaden. Jeśli po odsianiu w tym miesiącu nic nie zostało
+// (dzień tygodnia się już skończył, albo grupa jest pełna), pokazujemy cały
+// następny miesiąc.
 export function upcomingSessionDates(weekday: number, todayKey: string, isDateAvailable: (dateKey: string) => boolean = () => true): string[] {
   const today = new Date(todayKey + "T00:00:00");
   const tomorrow = new Date(today);

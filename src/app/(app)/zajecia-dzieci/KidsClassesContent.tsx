@@ -17,8 +17,7 @@ import {
   OCCUPYING_STATUSES,
   isEnrollmentEffective,
   computeCommittedOccupancy,
-  computeTrialBookingCounts,
-  hasTrialDateCapacity,
+  hasGroupCapacity,
   upcomingSessionDates,
   type KidsClassGroup,
   type KidsClassStatus,
@@ -158,25 +157,11 @@ export async function KidsClassesContent({
 
   // Dostępne terminy zajęć próbnych do przydzielenia komuś z listy
   // oczekujących (patrz assignTrialDate) — ta sama logika obłożenia co na
-  // publicznym formularzu zapisu, więc admin nie zobaczy jako "dostępny"
-  // terminu, który w rzeczywistości jest już pełny.
-  const enrollmentsWithRegId = enrollments.map((e) => ({
-    id: e.id,
-    group_id: e.group_id,
-    status: e.status,
-    effective_from: e.effective_from,
-    effective_until: e.effective_until,
-    registration_id: e.kids_class_registration.id,
-    trial_date: e.trial_date,
-    from_waitlist: e.from_waitlist,
-  }));
-  const committedOccupancyNow = computeCommittedOccupancy(enrollmentsWithRegId, today);
-  const trialBookingCounts = computeTrialBookingCounts(enrollmentsWithRegId);
+  // publicznym formularzu zapisu, więc admin nie zobaczy jako "dostępną"
+  // grupę, która w rzeczywistości jest już pełna.
+  const committedOccupancyNow = computeCommittedOccupancy(enrollments, today);
   const trialDateOptionsByGroup = new Map(
-    groups.map((g) => [
-      g.id,
-      upcomingSessionDates(g.weekday, today, (date) => hasTrialDateCapacity(g, committedOccupancyNow, trialBookingCounts.get(g.id)?.get(date) ?? 0)),
-    ])
+    groups.map((g) => [g.id, hasGroupCapacity(g, committedOccupancyNow) ? upcomingSessionDates(g.weekday, today) : []])
   );
 
   // Obłożenie grup TERAZ — ta sama funkcja co na publicznym formularzu

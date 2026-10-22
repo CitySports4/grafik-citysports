@@ -10,8 +10,7 @@ import {
   SEASON_MONTHS,
   isEnrollmentEffective,
   computeCommittedOccupancy,
-  computeTrialBookingCounts,
-  hasTrialDateCapacity,
+  hasGroupCapacity,
   type KidsClassStatus,
 } from "@/lib/kids-classes";
 
@@ -70,15 +69,13 @@ export async function changeEnrollmentStatus(formData: FormData) {
 }
 
 // Przydziela dziecku z listy oczekujących termin zajęć próbnych — zamiast
-// od razu przeskakiwać na "Aktywny" (co pomijało próbne i fałszywie
-// pokazywało brak opłaty za bieżący miesiąc, patrz toggleUsedTrial), zapis
-// przechodzi na "Nowe" z wybranym trial_date, dokładnie tak samo jak nowe
-// zgłoszenie z formularza publicznego. "Nowe" liczy się od razu w
-// occupiesMonth/computeCommittedOccupancy niezależnie od płatności, więc
-// dziecko od razu widać we frekwencji i w realnym obłożeniu grupy.
-// Pojemność na WYBRANY termin sprawdzana tu jeszcze raz po stronie serwera
-// (nie ufamy samej liście opcji z formularza) — to te same funkcje, co przy
-// publicznym zapisie.
+// od razu przeskakiwać na "Aktywny" (co pomijało próbne), zapis przechodzi
+// na "Nowe" z wybranym trial_date, dokładnie tak samo jak nowe zgłoszenie z
+// formularza publicznego. Zajmuje miejsce w grupie OD RAZU (patrz
+// computeCommittedOccupancy) — wybrany termin to tylko informacja "kiedy
+// pierwszy raz przyjdzie". Pojemność sprawdzana tu jeszcze raz po stronie
+// serwera (nie ufamy samej liście opcji z formularza) — ta sama funkcja, co
+// przy publicznym zapisie.
 export async function assignTrialDate(formData: FormData) {
   await requireKidsClassManager();
   const id = String(formData.get("id") ?? "");
@@ -100,17 +97,15 @@ export async function assignTrialDate(formData: FormData) {
   const today = toDateKey(new Date());
   const { data: allEnrollments } = await supabase
     .from("kids_class_enrollment")
-    .select("id, group_id, registration_id, status, effective_from, effective_until, trial_date, from_waitlist");
+    .select("id, group_id, status, effective_from, effective_until");
   const committedOccupancy = computeCommittedOccupancy(allEnrollments ?? [], today);
-  const trialBookingCounts = computeTrialBookingCounts(allEnrollments ?? []);
-  const bookedForDate = trialBookingCounts.get(group.id)?.get(trialDate) ?? 0;
-  if (!hasTrialDateCapacity(group, committedOccupancy, bookedForDate)) {
-    throw new Error("Ten termin właśnie się zapełnił — wybierz inny.");
+  if (!hasGroupCapacity(group, committedOccupancy)) {
+    throw new Error("Grupa właśnie się zapełniła.");
   }
 
-  // from_waitlist: true — to przyjęcie z listy oczekujących ma liczyć się
-  // do obłożenia grupy OD RAZU (patrz komentarz przy computeCommittedOccupancy),
-  // w odróżnieniu od zwykłego, samodzielnego zgłoszenia rodzica na próbne.
+  // from_waitlist: true — oznacza, że to przyjęcie z listy oczekujących
+  // (metadane do historii zapisu, bez wpływu na liczenie obłożenia —
+  // wszystkie "Nowe" liczą się tak samo, patrz computeCommittedOccupancy).
   const { error } = await supabase
     .from("kids_class_enrollment")
     .update({ status: "nowe", trial_date: trialDate, from_waitlist: true })

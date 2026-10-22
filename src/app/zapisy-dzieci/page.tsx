@@ -2,8 +2,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { toDateKey } from "@/lib/schedule-month";
 import {
   computeCommittedOccupancy,
-  computeTrialBookingCounts,
-  hasTrialDateCapacity,
+  hasGroupCapacity,
   upcomingSessionDates,
   type KidsClassGroup,
   type PriceTier,
@@ -20,29 +19,23 @@ export default async function ZapisyDzieciPage() {
   const supabase = createServerSupabaseClient();
   const [{ data: groups }, { data: enrollments }, { data: priceTiers }] = await Promise.all([
     supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").eq("active", true).order("sort_order"),
-    supabase
-      .from("kids_class_enrollment")
-      .select("id, group_id, registration_id, status, effective_from, effective_until, trial_date, from_waitlist"),
+    supabase.from("kids_class_enrollment").select("id, group_id, status, effective_from, effective_until"),
     supabase.from("kids_class_price_tier").select("group_count, monthly_fee").order("group_count"),
   ]);
 
   const today = toDateKey(new Date());
-  // Miejsce zajęte NA STAŁE liczy się do każdych zajęć tej grupy; dziecko
-  // "na próbnym" (Nowe, bez from_waitlist) zajmuje miejsce TYLKO na swój
-  // wybrany termin — inaczej dwoje dzieci próbujących w różnych terminach
-  // zamykałoby grupę na cały miesiąc mimo wolnych miejsc na większości
-  // terminów (patrz hasTrialDateCapacity i computeCommittedOccupancy w
-  // kids-classes.ts).
+  // Zapisanie się choćby na próbne zajmuje miejsce w grupie OD RAZU, aż do
+  // jawnej rezygnacji (patrz computeCommittedOccupancy w kids-classes.ts) —
+  // jeden wspólny limit na grupę, nie osobny per termin próbnych.
   const committedOccupancy = computeCommittedOccupancy(enrollments ?? [], today);
-  const trialBookingCounts = computeTrialBookingCounts(enrollments ?? []);
 
   const groupsWithFreeSpots = ((groups ?? []) as KidsClassGroup[]).map((g) => {
     const freeSpots = Math.max(0, g.capacity - (committedOccupancy.get(g.id) ?? 0));
-    const booked = trialBookingCounts.get(g.id);
+    const hasCapacity = hasGroupCapacity(g, committedOccupancy);
     return {
       group: g,
       freeSpots,
-      trialDates: upcomingSessionDates(g.weekday, today, (date) => hasTrialDateCapacity(g, committedOccupancy, booked?.get(date) ?? 0)),
+      trialDates: hasCapacity ? upcomingSessionDates(g.weekday, today) : [],
     };
   });
 

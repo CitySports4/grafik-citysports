@@ -7,8 +7,6 @@ import { toDateKey } from "@/lib/schedule-month";
 import {
   checkAgeEligibility,
   computeCommittedOccupancy,
-  computeTrialBookingCounts,
-  hasTrialDateCapacity,
   groupLabel,
   type KidsClassGroup,
   type KidsClassStatus,
@@ -57,42 +55,25 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
   const supabase = createServerSupabaseClient();
   const [{ data: groupsData }, { data: enrollmentsData }, { data: existingByPhone }] = await Promise.all([
     supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").in("id", input.groupIds),
-    supabase
-      .from("kids_class_enrollment")
-      .select("id, group_id, registration_id, status, effective_from, effective_until, trial_date, from_waitlist"),
+    supabase.from("kids_class_enrollment").select("id, group_id, status, effective_from, effective_until"),
     supabase.from("kids_class_registration").select("id, child_name").eq("phone", phone),
   ]);
   const groups = (groupsData ?? []) as KidsClassGroup[];
   if (groups.length !== input.groupIds.length) {
     return { ok: false, error: "Wybrana grupa już nie istnieje — odśwież stronę i spróbuj ponownie." };
   }
-  // Aktywny (stały) zajmuje miejsce na każdych zajęciach; Nowe (próbne)
-  // tylko na swój termin — patrz komentarz przy hasTrialDateCapacity.
+  // Zapisanie się choćby na próbne zajmuje miejsce w grupie od razu, tak
+  // samo jak "Aktywny" — patrz computeCommittedOccupancy w kids-classes.ts.
   const committedOccupancy = computeCommittedOccupancy(enrollmentsData ?? [], today);
-  const trialBookingCounts = computeTrialBookingCounts(enrollmentsData ?? []);
 
-  // Buduje plan zapisów: dla każdej grupy sprawdza, czy WYBRANY przez
-  // rodzica termin nadal ma miejsce (przeliczane na świeżo z bazy — klient
-  // mógł mieć nieaktualną listę), i mutuje trialBookingCounts na bieżąco,
-  // żeby rodzeństwo wybierające TEN SAM termin w jednym zgłoszeniu nie
-  // zmieściło się oboje na ostatnie miejsce. `skipTrial` (dziecko już
-  // kiedyś wykorzystało bezpłatne wejście próbne — patrz hasUsedTrial
-  // niżej) pomija termin całkowicie i sprawdza zwykłe, stałe miejsce.
-  function planGroup(g: KidsClassGroup, skipTrial = false) {
-    if (skipTrial) {
-      const current = committedOccupancy.get(g.id) ?? 0;
-      const fits = current < g.capacity;
-      if (fits) committedOccupancy.set(g.id, current + 1);
-      return { group: g, fits };
-    }
-    const date = input.trialDates[g.id];
-    const perGroupBookings = trialBookingCounts.get(g.id) ?? new Map<string, number>();
-    const bookedForDate = date ? (perGroupBookings.get(date) ?? 0) : 0;
-    const fits = hasTrialDateCapacity(g, committedOccupancy, bookedForDate);
-    if (fits && date) {
-      perGroupBookings.set(date, bookedForDate + 1);
-      trialBookingCounts.set(g.id, perGroupBookings);
-    }
+  // Buduje plan zapisów: dla każdej grupy sprawdza, czy JEST JESZCZE
+  // MIEJSCE (przeliczane na świeżo z bazy — klient mógł mieć nieaktualną
+  // listę), i mutuje committedOccupancy na bieżąco, żeby rodzeństwo w
+  // jednym zgłoszeniu nie zmieściło się oboje na ostatnie miejsce.
+  function planGroup(g: KidsClassGroup) {
+    const current = committedOccupancy.get(g.id) ?? 0;
+    const fits = current < g.capacity;
+    if (fits) committedOccupancy.set(g.id, current + 1);
     return { group: g, fits };
   }
 
@@ -124,7 +105,7 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     // bezpłatne wejście próbne, nie dostaje go drugi raz — pomijamy
     // wybór terminu całkowicie, od razu liczy się zwykłe miejsce.
     const hasUsedTrial = (existingEnrollments ?? []).some((e) => e.used_trial);
-    const plan = newGroups.map((g) => planGroup(g, hasUsedTrial));
+    const plan = newGroups.map((g) => planGroup(g));
     const missingTrialDate = hasUsedTrial ? undefined : plan.find((p) => p.fits && !input.trialDates[p.group.id]);
     if (missingTrialDate) {
       return { ok: false, error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(missingTrialDate.group)}.` };
