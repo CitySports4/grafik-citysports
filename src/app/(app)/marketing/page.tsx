@@ -3,6 +3,7 @@ import { requireEmployee, canAccessMarketing } from "@/lib/session";
 import { TasksSection } from "./TasksSection";
 import { ContentCalendarSection } from "./ContentCalendarSection";
 import { PlansSection } from "./PlansSection";
+import { ImportFromFile } from "./ImportFromFile";
 
 const TABS = [
   { key: "zadania", label: "Zadania" },
@@ -34,6 +35,8 @@ export default async function MarketingPage({
         <h1 className="text-lg font-bold text-zinc-900">📣 Marketing</h1>
         <p className="text-sm text-zinc-500">Zadania, kalendarz treści oraz strategie i plany zespołu marketingu.</p>
       </div>
+
+      <ImportFromFile />
 
       <div className="flex flex-wrap gap-1 border-b border-zinc-200">
         {TABS.map((t) => (
