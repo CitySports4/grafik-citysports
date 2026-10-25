@@ -17,11 +17,20 @@ import { consecutiveDaysBefore, tooCloseForDoubleShift, type Employee } from "@/
 // ODRZUCANY z powrotem do AI do poprawy, jeśli łamie twardą regułę. Nic
 // nieprawidłowego nigdy nie trafia do bazy.
 //
-// Świadomie POZA zakresem: dni podzielone na pół (split-shift, gdy tylko 2
-// osoby są dostępne na 3 zmiany pon-czw) — to precyzyjna matematyka minut,
-// nie osąd, więc zostaje przy zwykłym generatorze; AI dostaje tylko zmiany
-// o już ustalonych, stałych godzinach. Sobotnie sprzątanie (osobny
-// mechanizm, patrz cleaning.ts) też nie wchodzi w zakres tego pliku.
+// Sobotnie sprzątanie (osobny mechanizm, patrz cleaning.ts) nie wchodzi w
+// zakres tego pliku — ale poza tym KAŻDA otwarta, niezablokowana zmiana (w
+// tym zwykłe 3 zmiany pon-czw) trafia do AI do przydziału. Wcześniej
+// istniało tu wyłączenie "dni podzielonych na pół" (pon-czw z dokładnie 3
+// pustymi zmianami, odłożone do osobnego, "zwykłego" generatora obsługującego
+// matematykę minut przy niedoborze obsady) — ten drugi generator nigdy nie
+// powstał (generateMonthStructure w schedule-generator.ts tylko tworzy puste
+// zmiany z szablonu, nic nie przydziela), a warunek wyłączenia dopasowywał
+// się do KAŻDEGO zwykłego dnia pon-czw przed pierwszym przydziałem, nie tylko
+// do rzadkiego przypadku niedoboru — w efekcie generator AI milcząco
+// pomijał prawie wszystkie poniedziałki-czwartki, zostawiając je puste bez
+// końca. Usunięte; przypadek "za mało osób na 3 zmiany" to teraz zwykłe,
+// pojedyncze puste zmiany po przebiegu AI (widoczne, do ręcznej decyzji
+// admina), tak jak każdy inny brak obsady.
 
 const MAX_AI_ROUNDS = 3;
 const AI_MODEL = "claude-opus-5"; // cięższe zadanie niż podsumowania askWithContext — pełna, wielodniowa kombinatoryka
@@ -205,17 +214,11 @@ async function gatherContext(scheduleMonthId: string) {
   // przydzielane od nowa, ale MUSZĄ zostać wliczone w kontekst (godziny,
   // seria dni, dzień wolny), inaczej AI planowałoby resztę miesiąca w
   // oderwaniu od tego, co już naprawdę pracuje.
-  //
-  // Osobno pomijamy dni "podzielone na pół" (pon-czw, dokładnie 2 osoby
-  // dostępne na cały dzień na 3 zmiany), bo to zostaje przy deterministycznym
-  // generatorze — precyzyjna matematyka minut, nie osąd.
   const shiftsToAssign: ShiftToAssign[] = [];
   const lockedShifts: LockedShift[] = [];
   const shiftMetaById = new Map<string, ShiftToAssign>();
   for (const day of days ?? []) {
     const open = (day.schedule_shift ?? []).filter((s) => !s.is_closed);
-    const isSplitCandidate = day.weekday >= 1 && day.weekday <= 4 && open.length === 3 && open.every((s) => !s.employee_id);
-    if (isSplitCandidate) continue;
     for (const s of open) {
       const meta: ShiftToAssign = {
         shiftId: s.id,
