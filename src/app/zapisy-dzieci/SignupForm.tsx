@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { submitRegistration, findChildrenByPhone, type SignupInput, type ReturningChildMatch } from "./actions";
+import {
+  submitRegistration,
+  findChildrenByPhone,
+  type SignupInput,
+  type ReturningChildMatch,
+  type GroupResolutionOverride,
+} from "./actions";
 import { groupLabel, feeForGroupCount, STATUS_LABELS, type KidsClassGroup, type PriceTier } from "@/lib/kids-classes";
 import { Banner } from "@/components/Banner";
 
@@ -15,8 +21,14 @@ const LABEL = "text-sm font-semibold text-zinc-900";
 const PRIMARY_BTN =
   "mt-1.5 rounded-xl bg-brand-orange px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
 
-type GroupOption = { group: KidsClassGroup; freeSpots: number; trialDates: string[] };
-type FormState = Omit<SignupInput, "groupIds" | "trialDates">;
+type GroupOption = { group: KidsClassGroup; freeSpots: number; trialDates: string[]; thisMonthExhausted: boolean };
+type FormState = Omit<SignupInput, "groupIds" | "trialDates" | "resolutionOverrides">;
+// Dla grupy, w której w tym miesiącu zabrakło terminów próbnych:
+// "default" = zwykła ścieżka, termin z trialDates (ten sam picker co
+// zawsze — w tym przypadku pokazuje już automatycznie kolejny miesiąc);
+// "elsewhere" = próbne w innej, wolnej jeszcze w tym miesiącu grupie, start
+// w grupie docelowej od kolejnego miesiąca; "skip" = bez próbnych w ogóle.
+type ExhaustedResolution = "default" | "elsewhere" | "skip";
 
 const EMPTY: FormState = {
   childName: "",
@@ -33,6 +45,8 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
   const [form, setForm] = useState<FormState>(EMPTY);
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [trialDates, setTrialDates] = useState<Record<string, string>>({});
+  const [exhaustedResolution, setExhaustedResolution] = useState<Record<string, ExhaustedResolution>>({});
+  const [elsewhereChoice, setElsewhereChoice] = useState<Record<string, { groupId: string; date: string }>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<{ label: string; waitlisted: boolean }[] | null>(null);
@@ -75,6 +89,10 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
     setTrialDates((prev) => ({ ...prev, [groupId]: date }));
   }
 
+  function setElsewhere(groupId: string, elsewhereGroupId: string, date: string) {
+    setElsewhereChoice((prev) => ({ ...prev, [groupId]: { groupId: elsewhereGroupId, date } }));
+  }
+
   // Strona żyje w <iframe> o STAŁEJ wysokości ustawionej ręcznie na stronie
   // klubu (WordPress) — bez tego treść krótsza/dłuższa niż ta stała
   // wysokość albo ucina się, albo zostawia puste miejsce. WordPress dostaje
@@ -105,17 +123,41 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
     // Termin próbnych ma sens tylko tam, gdzie jest wolne miejsce — pełna
     // grupa (lista oczekujących) nie ma wolnego terminu na próbne. Dziecko,
     // które już kiedyś wykorzystało bezpłatne wejście (skipTrial), nie
-    // wybiera terminu wcale — serwer i tak by go zignorował.
+    // wybiera terminu wcale — serwer i tak by go zignorował. Grupa, w której
+    // w tym miesiącu zabrakło terminów, ma TRZY możliwe rozwiązania — patrz
+    // resolutionOverrides niżej — każde z nich liczy się jako "uzupełnione".
+    const resolutionOverrides: Record<string, GroupResolutionOverride> = {};
     if (!skipTrial) {
-      const groupsNeedingTrialDate = groups.filter((g) => groupIds.includes(g.group.id) && g.freeSpots > 0);
-      if (groupsNeedingTrialDate.some((g) => !trialDates[g.group.id])) {
-        setError("Wybierz termin zajęć próbnych dla każdej wybranej grupy z wolnym miejscem.");
-        return;
+      const groupsNeedingResolution = groups.filter((g) => groupIds.includes(g.group.id) && g.freeSpots > 0);
+      for (const g of groupsNeedingResolution) {
+        if (!g.thisMonthExhausted) {
+          if (!trialDates[g.group.id]) {
+            setError("Wybierz termin zajęć próbnych dla każdej wybranej grupy z wolnym miejscem.");
+            return;
+          }
+          continue;
+        }
+        const resolution = exhaustedResolution[g.group.id] ?? "default";
+        if (resolution === "default") {
+          if (!trialDates[g.group.id]) {
+            setError(`Wybierz termin zajęć próbnych dla grupy: ${groupLabel(g.group)}.`);
+            return;
+          }
+        } else if (resolution === "elsewhere") {
+          const choice = elsewhereChoice[g.group.id];
+          if (!choice) {
+            setError(`Wybierz grupę i termin, w którym dziecko skorzysta z próbnych dla: ${groupLabel(g.group)}.`);
+            return;
+          }
+          resolutionOverrides[g.group.id] = { mode: "trial_elsewhere", elsewhereGroupId: choice.groupId, elsewhereDate: choice.date };
+        } else {
+          resolutionOverrides[g.group.id] = { mode: "skip_trial" };
+        }
       }
     }
     setPending(true);
     try {
-      const res = await submitRegistration({ ...form, groupIds, trialDates });
+      const res = await submitRegistration({ ...form, groupIds, trialDates, resolutionOverrides });
       if (res.ok) {
         setResult(res.groupResults);
       } else {
@@ -272,9 +314,17 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
         <div className="flex flex-col gap-1.5">
           <label className={LABEL}>Grupa (można wybrać kilka)</label>
           <div className="flex flex-col gap-2">
-            {groups.map(({ group, freeSpots, trialDates: groupTrialDates }) => {
+            {groups.map(({ group, freeSpots, trialDates: groupTrialDates, thisMonthExhausted }) => {
               const full = freeSpots <= 0;
               const selected = groupIds.includes(group.id);
+              // Inne grupy, które W TYM MIESIĄCU wciąż mają wolny termin
+              // próbnych — do zaoferowania jako "wykorzystaj próbne tam",
+              // gdy grupa docelowa akurat na ten miesiąc już nie ma wolnego
+              // terminu (ale nie jest pełna — to dwie różne rzeczy).
+              const elsewhereOptions = groups.filter(
+                (g) => g.group.id !== group.id && g.freeSpots > 0 && !g.thisMonthExhausted && g.trialDates.length > 0
+              );
+              const resolution = exhaustedResolution[group.id] ?? "default";
               return (
                 <div key={group.id} className="flex flex-col gap-1.5">
                   <button
@@ -316,7 +366,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                       razu jako zwykły zapis.
                     </p>
                   )}
-                  {selected && !full && !skipTrial && (
+                  {selected && !full && !skipTrial && !thisMonthExhausted && (
                     <div className="ml-1 flex flex-col gap-1.5 rounded-xl bg-zinc-50 p-3">
                       <span className="text-xs font-semibold text-zinc-600">Termin bezpłatnych zajęć próbnych:</span>
                       <div className="flex flex-wrap gap-2">
@@ -336,6 +386,101 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                           );
                         })}
                       </div>
+                    </div>
+                  )}
+                  {/* Brak wolnych terminów próbnych na TEN miesiąc (grupa wciąż
+                      ma wolne miejsce — to nie to samo co "pełna") — trzy
+                      rozwiązania do wyboru zamiast cichego przełożenia na
+                      kolejny miesiąc. */}
+                  {selected && !full && !skipTrial && thisMonthExhausted && (
+                    <div className="ml-1 flex flex-col gap-2.5 rounded-xl bg-zinc-50 p-3">
+                      <p className="text-xs text-amber-700">
+                        W tym miesiącu nie ma już wolnych terminów próbnych na tę grupę.
+                      </p>
+
+                      <label className="flex items-start gap-2 text-xs text-zinc-700">
+                        <input
+                          type="radio"
+                          name={`resolution-${group.id}`}
+                          checked={resolution === "default"}
+                          onChange={() => setExhaustedResolution((prev) => ({ ...prev, [group.id]: "default" }))}
+                          className="mt-0.5 h-3.5 w-3.5"
+                        />
+                        Dołącz od kolejnego miesiąca
+                      </label>
+                      {resolution === "default" && (
+                        <div className="ml-5 flex flex-wrap gap-2">
+                          {groupTrialDates.map((date) => {
+                            const dateChosen = trialDates[group.id] === date;
+                            return (
+                              <button
+                                type="button"
+                                key={date}
+                                onClick={() => setTrialDate(group.id, date)}
+                                className={`rounded-lg border-2 px-3 py-2.5 text-xs font-semibold transition-colors ${
+                                  dateChosen ? "border-brand-orange bg-white text-brand-orange" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                                }`}
+                              >
+                                {formatTrialDate(date)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {elsewhereOptions.length > 0 && (
+                        <>
+                          <label className="flex items-start gap-2 text-xs text-zinc-700">
+                            <input
+                              type="radio"
+                              name={`resolution-${group.id}`}
+                              checked={resolution === "elsewhere"}
+                              onChange={() => setExhaustedResolution((prev) => ({ ...prev, [group.id]: "elsewhere" }))}
+                              className="mt-0.5 h-3.5 w-3.5"
+                            />
+                            Wykorzystaj bezpłatne wejście już teraz, w innej grupie — dołączysz do {groupLabel(group)} od
+                            kolejnego miesiąca
+                          </label>
+                          {resolution === "elsewhere" && (
+                            <div className="ml-5 flex flex-col gap-2">
+                              {elsewhereOptions.map((og) => (
+                                <div key={og.group.id} className="flex flex-col gap-1">
+                                  <span className="text-xs font-semibold text-zinc-600">{groupLabel(og.group)}</span>
+                                  <div className="flex flex-wrap gap-2">
+                                    {og.trialDates.map((date) => {
+                                      const chosen =
+                                        elsewhereChoice[group.id]?.groupId === og.group.id && elsewhereChoice[group.id]?.date === date;
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={date}
+                                          onClick={() => setElsewhere(group.id, og.group.id, date)}
+                                          className={`rounded-lg border-2 px-3 py-2.5 text-xs font-semibold transition-colors ${
+                                            chosen ? "border-brand-orange bg-white text-brand-orange" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                                          }`}
+                                        >
+                                          {formatTrialDate(date)}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      <label className="flex items-start gap-2 text-xs text-zinc-700">
+                        <input
+                          type="radio"
+                          name={`resolution-${group.id}`}
+                          checked={resolution === "skip"}
+                          onChange={() => setExhaustedResolution((prev) => ({ ...prev, [group.id]: "skip" }))}
+                          className="mt-0.5 h-3.5 w-3.5"
+                        />
+                        Dołącz bez zajęć próbnych, od razu
+                      </label>
                     </div>
                   )}
                 </div>

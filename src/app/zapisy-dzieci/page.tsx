@@ -32,10 +32,18 @@ export default async function ZapisyDzieciPage() {
   const groupsWithFreeSpots = ((groups ?? []) as KidsClassGroup[]).map((g) => {
     const freeSpots = Math.max(0, g.capacity - (committedOccupancy.get(g.id) ?? 0));
     const hasCapacity = hasGroupCapacity(g, committedOccupancy);
+    const trialDates = hasCapacity ? upcomingSessionDates(g.weekday, today) : [];
+    // upcomingSessionDates cicho przeskakuje na KOLEJNY miesiąc, gdy w tym
+    // nic już nie zostało (patrz komentarz w kids-classes.ts) — po samej
+    // liście dat nie da się tego odróżnić od "są jeszcze terminy w tym
+    // miesiącu", a formularz (SignupForm) musi to rozróżnić, żeby
+    // zaproponować rodzicowi świadomy wybór zamiast cichego przełożenia.
+    const thisMonthExhausted = trialDates.length > 0 && trialDates[0].slice(0, 7) !== today.slice(0, 7);
     return {
       group: g,
       freeSpots,
-      trialDates: hasCapacity ? upcomingSessionDates(g.weekday, today) : [],
+      trialDates,
+      thisMonthExhausted,
     };
   });
 
