@@ -12,6 +12,15 @@ import {
   type KidsClassStatus,
 } from "@/lib/kids-classes";
 
+// Specjalne rozwiązanie dla grupy, w której w TYM miesiącu zabrakło już
+// terminów próbnych (patrz thisMonthExhausted w zapisy-dzieci/page.tsx) —
+// zamiast cichego przełożenia na kolejny miesiąc w TEJ SAMEJ grupie
+// (zwykła ścieżka, wciąż dostępna i niewymagająca żadnego z poniższych),
+// rodzic może świadomie wybrać jedną z dwóch alternatyw.
+export type GroupResolutionOverride =
+  | { mode: "trial_elsewhere"; elsewhereGroupId: string; elsewhereDate: string }
+  | { mode: "skip_trial" };
+
 export type SignupInput = {
   childName: string;
   birthDate: string;
@@ -20,6 +29,7 @@ export type SignupInput = {
   whatsappContact: boolean;
   groupIds: string[];
   trialDates: Record<string, string>;
+  resolutionOverrides: Record<string, GroupResolutionOverride>;
   hasExperience: boolean;
   rodoConsent: boolean;
   termsConsent: boolean;
@@ -28,6 +38,102 @@ export type SignupInput = {
 export type SignupResult =
   | { ok: true; groupResults: { label: string; waitlisted: boolean }[] }
   | { ok: false; error: string };
+
+function nextMonthFirstDay(todayKey: string): string {
+  const d = new Date(todayKey + "T00:00:00");
+  const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  return toDateKey(next);
+}
+
+type EnrollmentInsertRow = {
+  group_id: string;
+  status: "nowe" | "oczekuje";
+  trial_date: string | null;
+  effective_from?: string;
+};
+
+// Buduje wiersze zapisów dla wszystkich wybranych grup naraz, z uwzględnieniem
+// resolutionOverrides — wspólne dla nowego dziecka i powracającego, dlatego
+// osobna funkcja zamiast powielania w obu gałęziach submitRegistration.
+// Mutuje `committedOccupancy` na bieżąco (ten sam obiekt współdzielony przez
+// cały request), żeby rodzeństwo w jednym zgłoszeniu nie zmieściło się oboje
+// na ostatnie miejsce, i żeby "próbne w innej grupie" + "start od kolejnego
+// miesiąca w grupie docelowej" liczyły się jako DWA osobne miejsca.
+function planEnrollments(
+  desiredGroups: KidsClassGroup[],
+  elsewhereGroupsById: Map<string, KidsClassGroup>,
+  committedOccupancy: Map<string, number>,
+  today: string,
+  trialDates: Record<string, string>,
+  resolutionOverrides: Record<string, GroupResolutionOverride>,
+  skipTrialGlobally: boolean
+): { rows: EnrollmentInsertRow[]; groupResults: { label: string; waitlisted: boolean }[] } | { error: string } {
+  function planOne(g: KidsClassGroup): boolean {
+    const current = committedOccupancy.get(g.id) ?? 0;
+    const fits = current < g.capacity;
+    if (fits) committedOccupancy.set(g.id, current + 1);
+    return fits;
+  }
+
+  const rows: EnrollmentInsertRow[] = [];
+  const groupResults: { label: string; waitlisted: boolean }[] = [];
+
+  for (const g of desiredGroups) {
+    const override = resolutionOverrides[g.id];
+
+    if (override?.mode === "trial_elsewhere") {
+      const elsewhereGroup = elsewhereGroupsById.get(override.elsewhereGroupId);
+      if (!elsewhereGroup) {
+        return { error: "Wybrana grupa na próbne już nie istnieje — odśwież stronę i spróbuj ponownie." };
+      }
+      // Grupa docelowa — start dopiero od kolejnego miesiąca, bez własnego
+      // terminu próbnych (próbne wykorzystane w innej grupie, patrz niżej).
+      const fitsDesired = planOne(g);
+      rows.push({
+        group_id: g.id,
+        status: fitsDesired ? "nowe" : "oczekuje",
+        trial_date: null,
+        effective_from: fitsDesired ? nextMonthFirstDay(today) : today,
+      });
+      groupResults.push({ label: `${groupLabel(g)} (od kolejnego miesiąca)`, waitlisted: !fitsDesired });
+
+      // Osobny, dodatkowy zapis na grupę, w której dziecko faktycznie
+      // przyjdzie na próbne — zajmuje miejsce w TEJ grupie już teraz.
+      const fitsElsewhere = planOne(elsewhereGroup);
+      rows.push({
+        group_id: elsewhereGroup.id,
+        status: fitsElsewhere ? "nowe" : "oczekuje",
+        trial_date: fitsElsewhere ? override.elsewhereDate : null,
+      });
+      groupResults.push({ label: `${groupLabel(elsewhereGroup)} (próbne)`, waitlisted: !fitsElsewhere });
+      continue;
+    }
+
+    if (override?.mode === "skip_trial") {
+      const fits = planOne(g);
+      rows.push({ group_id: g.id, status: fits ? "nowe" : "oczekuje", trial_date: null });
+      groupResults.push({ label: groupLabel(g), waitlisted: !fits });
+      continue;
+    }
+
+    // Brak specjalnego rozwiązania — zwykła ścieżka: termin z trialDates (ten
+    // sam miesiąc albo już automatycznie kolejny, patrz upcomingSessionDates),
+    // albo globalne pominięcie próbnych dla powracającego dziecka, które już
+    // je kiedyś wykorzystało.
+    const fits = planOne(g);
+    if (fits && !skipTrialGlobally && !trialDates[g.id]) {
+      return { error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(g)}.` };
+    }
+    rows.push({
+      group_id: g.id,
+      status: fits ? "nowe" : "oczekuje",
+      trial_date: !skipTrialGlobally && fits ? trialDates[g.id] : null,
+    });
+    groupResults.push({ label: groupLabel(g), waitlisted: !fits });
+  }
+
+  return { rows, groupResults };
+}
 
 // Publiczny formularz zapisu — bez logowania (requireEmployee), tak jak
 // dawny formularz w Google Apps Script. Walidacja wieku i limitów miejsc
@@ -52,30 +158,30 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     return { ok: false, error: eligibility.reason };
   }
 
+  // Grupy "gdzie indziej" z resolutionOverrides mogą być inne niż wybrane
+  // (checkbox) grupy — trzeba dociągnąć ich dane osobno, jeśli jeszcze nie
+  // są w input.groupIds.
+  const overrideElsewhereIds = Object.values(input.resolutionOverrides ?? {})
+    .filter((o): o is Extract<GroupResolutionOverride, { mode: "trial_elsewhere" }> => o.mode === "trial_elsewhere")
+    .map((o) => o.elsewhereGroupId);
+  const allGroupIds = [...new Set([...input.groupIds, ...overrideElsewhereIds])];
+
   const supabase = createServerSupabaseClient();
   const [{ data: groupsData }, { data: enrollmentsData }, { data: existingByPhone }] = await Promise.all([
-    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").in("id", input.groupIds),
+    supabase.from("kids_class_group").select("id, weekday, start_time, end_time, label, capacity, active, sort_order").in("id", allGroupIds),
     supabase.from("kids_class_enrollment").select("id, group_id, status, effective_from, effective_until"),
     supabase.from("kids_class_registration").select("id, child_name").eq("phone", phone),
   ]);
-  const groups = (groupsData ?? []) as KidsClassGroup[];
-  if (groups.length !== input.groupIds.length) {
+  const allGroups = (groupsData ?? []) as KidsClassGroup[];
+  const allGroupsById = new Map(allGroups.map((g) => [g.id, g]));
+  const groups = input.groupIds.map((id) => allGroupsById.get(id)).filter((g): g is KidsClassGroup => !!g);
+  if (groups.length !== input.groupIds.length || overrideElsewhereIds.some((id) => !allGroupsById.has(id))) {
     return { ok: false, error: "Wybrana grupa już nie istnieje — odśwież stronę i spróbuj ponownie." };
   }
   // Zapisanie się choćby na próbne zajmuje miejsce w grupie od razu, tak
   // samo jak "Aktywny" — patrz computeCommittedOccupancy w kids-classes.ts.
   const committedOccupancy = computeCommittedOccupancy(enrollmentsData ?? [], today);
-
-  // Buduje plan zapisów: dla każdej grupy sprawdza, czy JEST JESZCZE
-  // MIEJSCE (przeliczane na świeżo z bazy — klient mógł mieć nieaktualną
-  // listę), i mutuje committedOccupancy na bieżąco, żeby rodzeństwo w
-  // jednym zgłoszeniu nie zmieściło się oboje na ostatnie miejsce.
-  function planGroup(g: KidsClassGroup) {
-    const current = committedOccupancy.get(g.id) ?? 0;
-    const fits = current < g.capacity;
-    if (fits) committedOccupancy.set(g.id, current + 1);
-    return { group: g, fits };
-  }
+  const resolutionOverrides = input.resolutionOverrides ?? {};
 
   // Ten sam telefon może mieć kilkoro dzieci (rodzeństwo) — duplikat to
   // dokładnie to samo imię i nazwisko NA TYM SAMYM telefonie, nie sam
@@ -105,31 +211,20 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     // bezpłatne wejście próbne, nie dostaje go drugi raz — pomijamy
     // wybór terminu całkowicie, od razu liczy się zwykłe miejsce.
     const hasUsedTrial = (existingEnrollments ?? []).some((e) => e.used_trial);
-    const plan = newGroups.map((g) => planGroup(g));
-    const missingTrialDate = hasUsedTrial ? undefined : plan.find((p) => p.fits && !input.trialDates[p.group.id]);
-    if (missingTrialDate) {
-      return { ok: false, error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(missingTrialDate.group)}.` };
-    }
+    const planned = planEnrollments(newGroups, allGroupsById, committedOccupancy, today, input.trialDates, resolutionOverrides, hasUsedTrial);
+    if ("error" in planned) return { ok: false, error: planned.error };
 
-    const groupResults = plan.map((p) => ({ label: groupLabel(p.group), waitlisted: !p.fits }));
-    const enrollmentRows = plan.map((p) => ({
-      registration_id: registrationId,
-      group_id: p.group.id,
-      status: p.fits ? "nowe" : "oczekuje",
-      trial_date: !hasUsedTrial && p.fits ? input.trialDates[p.group.id] : null,
-    }));
-    const { error: enrollmentError } = await supabase.from("kids_class_enrollment").insert(enrollmentRows);
+    const { error: enrollmentError } = await supabase
+      .from("kids_class_enrollment")
+      .insert(planned.rows.map((r) => ({ ...r, registration_id: registrationId })));
     if (enrollmentError) return { ok: false, error: dbErrorMessage(enrollmentError) };
-    return { ok: true, groupResults };
+    return { ok: true, groupResults: planned.groupResults };
   }
 
   // Liczone i walidowane PRZED utworzeniem profilu dziecka, żeby błąd
   // walidacji nie zostawiał osieroconego wiersza bez żadnego zapisu na grupę.
-  const plan = groups.map((g) => planGroup(g));
-  const missingTrialDate = plan.find((p) => p.fits && !input.trialDates[p.group.id]);
-  if (missingTrialDate) {
-    return { ok: false, error: `Wybierz termin zajęć próbnych dla grupy: ${groupLabel(missingTrialDate.group)}.` };
-  }
+  const planned = planEnrollments(groups, allGroupsById, committedOccupancy, today, input.trialDates, resolutionOverrides, false);
+  if ("error" in planned) return { ok: false, error: planned.error };
 
   const { data: registration, error: registrationError } = await supabase
     .from("kids_class_registration")
@@ -147,18 +242,12 @@ export async function submitRegistration(input: SignupInput): Promise<SignupResu
     .single();
   if (registrationError || !registration) return { ok: false, error: dbErrorMessage(registrationError) };
 
-  const groupResults = plan.map((p) => ({ label: groupLabel(p.group), waitlisted: !p.fits }));
-  const enrollmentRows = plan.map((p) => ({
-    registration_id: registration.id,
-    group_id: p.group.id,
-    status: p.fits ? "nowe" : "oczekuje",
-    trial_date: p.fits ? input.trialDates[p.group.id] : null,
-  }));
-
-  const { error: enrollmentError } = await supabase.from("kids_class_enrollment").insert(enrollmentRows);
+  const { error: enrollmentError } = await supabase
+    .from("kids_class_enrollment")
+    .insert(planned.rows.map((r) => ({ ...r, registration_id: registration.id })));
   if (enrollmentError) return { ok: false, error: dbErrorMessage(enrollmentError) };
 
-  return { ok: true, groupResults };
+  return { ok: true, groupResults: planned.groupResults };
 }
 
 export type ReturningChildMatch = {
