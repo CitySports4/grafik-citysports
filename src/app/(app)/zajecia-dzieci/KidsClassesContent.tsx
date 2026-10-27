@@ -409,15 +409,40 @@ export async function KidsClassesContent({
                             (oe) => oe.kids_class_registration.id === r.id && OCCUPYING_STATUSES.includes(oe.status)
                           ).length;
                           const fee = feeForGroupCount(priceTiers, groupCount);
+                          // Miesiąc, do którego checkbox płatności ma w ogóle
+                          // sens: nie wcześniej niż dołączenie do TEJ grupy, i
+                          // nie sam miesiąc bezpłatnych zajęć próbnych (ma
+                          // przypisany trial_date) — za próbne się nie płaci,
+                          // więc nie ma czego odznaczać. Liczy się sam fakt
+                          // "miał/a trial_date", NIE bieżący status — inaczej
+                          // promocja na "Aktywny" w kolejnym miesiącu
+                          // odznaczyłaby z powrotem jako płatny miesiąc, który
+                          // naprawdę był darmowy. "Nowe" bez trial_date
+                          // (dziecko wraca, już wykorzystało próbne) płaci od
+                          // razu, bez wyjątku.
+                          const startMonthIdx = currentSeasonMonthIndex(e.effective_from);
+                          const freeTrialMonthIdx = e.trial_date ? currentSeasonMonthIndex(e.trial_date) : null;
                           return (
                             <tr key={e.id}>
                               <td className="py-1.5 pr-3 font-medium text-zinc-900">{r.child_name}</td>
                               <td className="py-1.5 pr-3 text-xs text-zinc-500">{fee !== null ? `${fee} zł` : "brak w cenniku"}</td>
-                              {SEASON_MONTHS.map((m, mi) => (
-                                <td key={m} className="py-1.5 px-1.5 text-center">
-                                  <PaymentCell registrationId={r.id} monthIndex={mi} paid={months[mi]} />
-                                </td>
-                              ))}
+                              {SEASON_MONTHS.map((m, mi) => {
+                                const applicable = (startMonthIdx === null || mi >= startMonthIdx) && mi !== freeTrialMonthIdx;
+                                return (
+                                  <td key={m} className="py-1.5 px-1.5 text-center">
+                                    {applicable ? (
+                                      <PaymentCell registrationId={r.id} monthIndex={mi} paid={months[mi]} />
+                                    ) : (
+                                      <span
+                                        className="mx-auto flex h-6 w-6 items-center justify-center rounded border-2 border-zinc-100 text-zinc-300"
+                                        title={mi === freeTrialMonthIdx ? "Miesiąc zajęć próbnych — bezpłatny" : "Jeszcze nie dołączył/a"}
+                                      >
+                                        –
+                                      </span>
+                                    )}
+                                  </td>
+                                );
+                              })}
                             </tr>
                           );
                         })}
@@ -769,20 +794,42 @@ async function FrekwencjaTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {children.map((c) => (
-                <tr key={c.id}>
-                  <td className="py-1.5 pr-3 font-medium text-zinc-900">{c.kids_class_registration.child_name}</td>
-                  {dates.map((d) => {
-                    const present = presenceByCell.get(`${c.id}|${d}`) ?? null;
-                    const isToday = d === today;
-                    return (
-                      <td key={d} className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-blue bg-blue-50" : ""}`}>
-                        <AttendanceCell enrollmentId={c.id} sessionDate={d} present={present} />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {children.map((c) => {
+                // Dziecko wciąż "Nowe" Z terminem próbnych ma tu znaczenie
+                // TYLKO w dniu swoich zajęć próbnych — poza tym dniem w ogóle
+                // nie było zaproszone na te zajęcia, więc nie ma czego
+                // odhaczać. "Nowe" BEZ trial_date (wraca, już wykorzystało
+                // próbne) i "Aktywny" liczą się normalnie na każdy termin od
+                // dołączenia (effective_from).
+                const onlyTrialDate = c.status === "nowe" ? c.trial_date : null;
+                return (
+                  <tr key={c.id}>
+                    <td className="py-1.5 pr-3 font-medium text-zinc-900">{c.kids_class_registration.child_name}</td>
+                    {dates.map((d) => {
+                      const isToday = d === today;
+                      const applicable = d >= c.effective_from && (onlyTrialDate === null || onlyTrialDate === d);
+                      if (!applicable) {
+                        return (
+                          <td key={d} className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-blue bg-blue-50" : ""}`}>
+                            <span
+                              className="mx-auto flex h-6 w-6 items-center justify-center rounded border-2 border-zinc-100 text-zinc-300"
+                              title="Nie dotyczy"
+                            >
+                              –
+                            </span>
+                          </td>
+                        );
+                      }
+                      const present = presenceByCell.get(`${c.id}|${d}`) ?? null;
+                      return (
+                        <td key={d} className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-blue bg-blue-50" : ""}`}>
+                          <AttendanceCell enrollmentId={c.id} sessionDate={d} present={present} />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
