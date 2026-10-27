@@ -409,22 +409,25 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                         Dołącz od kolejnego miesiąca
                       </label>
                       {resolution === "default" && (
-                        <div className="ml-5 flex flex-wrap gap-2">
-                          {groupTrialDates.map((date) => {
-                            const dateChosen = trialDates[group.id] === date;
-                            return (
-                              <button
-                                type="button"
-                                key={date}
-                                onClick={() => setTrialDate(group.id, date)}
-                                className={`rounded-lg border-2 px-3 py-2.5 text-xs font-semibold transition-colors ${
-                                  dateChosen ? "border-brand-orange bg-white text-brand-orange" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
-                                }`}
-                              >
-                                {formatTrialDate(date)}
-                              </button>
-                            );
-                          })}
+                        <div className="ml-5 flex flex-col gap-1.5">
+                          <span className="text-xs font-semibold text-zinc-600">Wybierz termin w kolejnym miesiącu:</span>
+                          <div className="flex flex-wrap gap-2">
+                            {groupTrialDates.map((date) => {
+                              const dateChosen = trialDates[group.id] === date;
+                              return (
+                                <button
+                                  type="button"
+                                  key={date}
+                                  onClick={() => setTrialDate(group.id, date)}
+                                  className={`rounded-lg border-2 px-3 py-2.5 text-xs font-semibold transition-colors ${
+                                    dateChosen ? "border-brand-orange bg-white text-brand-orange" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                                  }`}
+                                >
+                                  {formatTrialDate(date)}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
 
