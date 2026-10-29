@@ -795,19 +795,24 @@ async function FrekwencjaTab({
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {children.map((c) => {
-                // Dziecko wciąż "Nowe" Z terminem próbnych ma tu znaczenie
-                // TYLKO w dniu swoich zajęć próbnych — poza tym dniem w ogóle
-                // nie było zaproszone na te zajęcia, więc nie ma czego
-                // odhaczać. "Nowe" BEZ trial_date (wraca, już wykorzystało
-                // próbne) i "Aktywny" liczą się normalnie na każdy termin od
-                // dołączenia (effective_from).
-                const onlyTrialDate = c.status === "nowe" ? c.trial_date : null;
+                // W MIESIĄCU zajęć próbnych dziecko ma znaczenie TYLKO w dniu
+                // samej próbnej — status jest tu celowo pomijany (tak samo
+                // jak freeTrialMonthIdx w zakładce Płatności), bo
+                // "Opłacono → Aktywny" (patrz changeEnrollmentStatus) zmienia
+                // sam status, NIE effective_from — bez tego dziecko, które
+                // dopiero było na próbnej np. 15-tego, po zatwierdzeniu
+                // płatności wyglądałoby jak obecne na każdych kolejnych
+                // zajęciach tego samego miesiąca (22, 29...), mimo że
+                // faktycznie dołącza dopiero od kolejnego miesiąca. Poza
+                // miesiącem próbnej liczy się normalnie effective_from.
+                const trialMonth = c.trial_date ? c.trial_date.slice(0, 7) : null;
                 return (
                   <tr key={c.id}>
                     <td className="py-1.5 pr-3 font-medium text-zinc-900">{c.kids_class_registration.child_name}</td>
                     {dates.map((d) => {
                       const isToday = d === today;
-                      const applicable = d >= c.effective_from && (onlyTrialDate === null || onlyTrialDate === d);
+                      const inTrialMonth = trialMonth !== null && d.slice(0, 7) === trialMonth;
+                      const applicable = inTrialMonth ? d === c.trial_date : d >= c.effective_from;
                       if (!applicable) {
                         return (
                           <td key={d} className={`py-1.5 px-1.5 text-center ${isToday ? "border-x-2 border-brand-blue bg-blue-50" : ""}`}>
