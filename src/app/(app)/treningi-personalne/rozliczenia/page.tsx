@@ -100,6 +100,15 @@ export default async function PersonalTrainingBillingPage({
     row.sessions.push({ id: s.id, date: s.date, startTime: s.start_time, clientCount: s.client_count, amount, isSettled: s.is_settled });
   }
   const rows = [...byTrainer.values()].sort((a, b) => a.name.localeCompare(b.name));
+  // Przychód KLUBU (nie trenerów) z treningów personalnych — ta sama kwota
+  // co suma "Do zapłaty łącznie" wszystkich trenerów (stawka × liczba osób
+  // to właśnie to, co trener płaci klubowi za salę), tylko zebrana w jedną
+  // liczbę. Widoczne tylko tam, gdzie i tak widać wszystkich trenerów —
+  // zwykły trener nie ma wglądu w przychód całego klubu, tylko swoje
+  // rozliczenie.
+  const clubTotal = rows.reduce((sum, r) => sum + r.total, 0);
+  const clubSettled = rows.reduce((sum, r) => sum + r.settled, 0);
+  const clubUnpaid = Math.round((clubTotal - clubSettled) * 100) / 100;
 
   return (
     <div className="flex flex-col gap-6">
@@ -123,6 +132,26 @@ export default async function PersonalTrainingBillingPage({
           </Link>
         </div>
       </div>
+
+      {seeAllTrainers && (
+        <Card className="border-2 border-brand-orange">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Przychód klubu z treningów personalnych</p>
+          <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+            <span>
+              <span className="text-zinc-400">Łącznie za miesiąc: </span>
+              <strong className="text-lg text-zinc-900">{clubTotal.toFixed(2)} PLN</strong>
+            </span>
+            <span>
+              <span className="text-zinc-400">Już zebrane: </span>
+              <strong className="text-emerald-700">{clubSettled.toFixed(2)} PLN</strong>
+            </span>
+            <span>
+              <span className="text-zinc-400">Do zebrania: </span>
+              <strong className={clubUnpaid > 0 ? "text-amber-700" : "text-emerald-700"}>{clubUnpaid.toFixed(2)} PLN</strong>
+            </span>
+          </div>
+        </Card>
+      )}
 
       <Card>
         {rows.length === 0 && <p className="text-sm text-zinc-400">Brak treningów w tym miesiącu.</p>}
