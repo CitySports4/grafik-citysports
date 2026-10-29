@@ -3,6 +3,7 @@ import { toDateKey } from "@/lib/schedule-month";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { ColorDot } from "@/components/ColorDot";
 import { addPlannedAbsence, deletePlannedAbsence } from "./actions";
 
 const INPUT =
@@ -18,12 +19,27 @@ export async function PlannedAbsencesSection({ employeeId }: { employeeId: strin
   const supabase = createServerSupabaseClient();
   const today = toDateKey(new Date());
 
-  const { data: absences } = await supabase
-    .from("planned_absence")
-    .select("id, start_date, end_date, note")
-    .eq("employee_id", employeeId)
-    .gte("end_date", today)
-    .order("start_date");
+  const [{ data: absences }, { data: teamAbsencesRaw }] = await Promise.all([
+    supabase
+      .from("planned_absence")
+      .select("id, start_date, end_date, note")
+      .eq("employee_id", employeeId)
+      .gte("end_date", today)
+      .order("start_date"),
+    // Reszta zespołu widzi tylko CUDZE nadchodzące nieobecności (swoje ma
+    // już w karcie wyżej) — chodzi o to, żeby móc samemu zaplanować urlop z
+    // ominięciem terminów, w których ktoś inny już go ma, a nie o
+    // zarządzanie czyimiś zgłoszeniami (stąd brak przycisku "Usuń" tutaj).
+    supabase
+      .from("planned_absence")
+      .select("id, start_date, end_date, note, employee:employee_id(name, color_hex)")
+      .neq("employee_id", employeeId)
+      .gte("end_date", today)
+      .order("start_date"),
+  ]);
+
+  type TeamAbsenceRow = { id: string; start_date: string; end_date: string; note: string | null; employee: { name: string; color_hex: string } | null };
+  const teamAbsences = (teamAbsencesRaw ?? []) as unknown as TeamAbsenceRow[];
 
   return (
     <div className="flex flex-col gap-6">
@@ -72,6 +88,26 @@ export async function PlannedAbsencesSection({ employeeId }: { employeeId: strin
             </li>
           ))}
           {absences?.length === 0 && <li className="text-sm text-zinc-400">Brak zgłoszonych nieobecności.</li>}
+        </ul>
+      </Card>
+
+      <Card>
+        <h2 className="mb-1 font-semibold text-zinc-900">Nieobecności innych pracowników</h2>
+        <p className="mb-3 text-sm text-zinc-500">
+          Nadchodzące urlopy reszty zespołu — podgląd, żeby łatwiej zaplanować swój bez pokrywania się z cudzym.
+        </p>
+        <ul className="flex flex-col gap-2">
+          {teamAbsences.map((a) => (
+            <li key={a.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+              <span className="flex items-center gap-2">
+                <ColorDot color={a.employee?.color_hex ?? "#999"} />
+                <span className="font-medium">{a.employee?.name ?? "?"}</span>
+                <span className="text-zinc-500">{formatRange(a.start_date, a.end_date)}</span>
+                {a.note && <span className="text-zinc-400">({a.note})</span>}
+              </span>
+            </li>
+          ))}
+          {teamAbsences.length === 0 && <li className="text-sm text-zinc-400">Nikt inny nie ma na razie zgłoszonych nieobecności.</li>}
         </ul>
       </Card>
     </div>
