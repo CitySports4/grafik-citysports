@@ -39,7 +39,7 @@ const EVENT_FALLBACK_COLORS: Record<string, string> = {
   sprzatanie: "#7c3aed",
   warsztaty: "#0891b2",
   spotkanie: "#2563eb",
-  custom: "#db2777",
+  custom: "#f06037", // brand-orange
 };
 
 // Średni kolor kilku barw — do doboru czytelnego koloru tekstu na pigułce
