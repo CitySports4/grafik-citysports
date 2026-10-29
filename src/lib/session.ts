@@ -55,7 +55,7 @@ export const ROLE_LABELS: Record<EmployeeRole, string> = {
   marketing: "Marketing",
 };
 
-export type PtBillingCycle = "weekly" | "monthly";
+export type PtBillingCycle = "daily" | "weekly" | "monthly";
 
 export type SessionEmployee = {
   id: string;

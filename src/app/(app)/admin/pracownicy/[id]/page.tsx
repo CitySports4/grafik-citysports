@@ -195,6 +195,7 @@ export default async function EmployeeDetailPage({
             <label className={LABEL}>Cykl rozliczeń treningów personalnych</label>
             <select name="pt_billing_cycle" defaultValue={employee.pt_billing_cycle ?? ""} className={INPUT}>
               <option value="">— nie dotyczy —</option>
+              <option value="daily">Codziennie</option>
               <option value="weekly">Co tydzień</option>
               <option value="monthly">Co miesiąc</option>
             </select>
