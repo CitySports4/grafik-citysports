@@ -8,7 +8,7 @@ import { BackLink } from "@/components/BackLink";
 import { SettleMonthPanel } from "@/app/(app)/treningi-personalne/SettleMonthPanel";
 import { settlePersonalTrainingSessions, settleAllPersonalTrainingForRange } from "@/app/(app)/treningi-personalne/actions";
 
-const CYCLE_LABELS: Record<string, string> = { weekly: "tygodniowo", monthly: "miesięcznie" };
+const CYCLE_LABELS: Record<string, string> = { daily: "codziennie", weekly: "tygodniowo", monthly: "miesięcznie" };
 
 // Ta sama treść co /treningi-personalne/rozliczenia (dla zalogowanego
 // pracownika), ale pod bramką PIN-kiosku (/recepcja/layout.tsx) zamiast

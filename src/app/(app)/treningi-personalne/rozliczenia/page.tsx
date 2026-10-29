@@ -9,7 +9,7 @@ import { BackLink } from "@/components/BackLink";
 import { SettleMonthPanel } from "../SettleMonthPanel";
 import { settlePersonalTrainingSessions, settleAllPersonalTrainingForRange } from "../actions";
 
-const CYCLE_LABELS: Record<string, string> = { weekly: "tygodniowo", monthly: "miesięcznie" };
+const CYCLE_LABELS: Record<string, string> = { daily: "codziennie", weekly: "tygodniowo", monthly: "miesięcznie" };
 
 export default async function PersonalTrainingBillingPage({
   searchParams,
