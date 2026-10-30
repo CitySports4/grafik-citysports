@@ -300,12 +300,28 @@ export default async function PersonalTrainingPage({
                       trainerOptions={isAdmin || canPreview ? trainerOptions : undefined}
                       currentEmployeeId={employee.id}
                       dayWindows={windows}
-                      daySessions={daySessions.map((s) => ({
-                        start_time: s.start_time,
-                        duration_minutes: s.duration_minutes,
-                        client_count: s.client_count,
-                        trainer_employee_id: s.trainer_employee_id,
-                      }))}
+                      // Blokady sali wrzucone do tej samej listy co prawdziwe
+                      // treningi, jako "trening" zajmujący całą salę
+                      // (client_count = limit) — ten sam trik co po stronie
+                      // serwera (patrz getRoomBlocksAsFullSessions), dzięki
+                      // czemu siatka godzin w formularzu sama, bez dodatkowego
+                      // kodu, pokazuje zablokowane godziny jako zajęte zamiast
+                      // "wolne". trainer_employee_id: "" — blokada nie jest
+                      // "własnym treningiem" trenera, nie ma wpadać w ownConflict.
+                      daySessions={[
+                        ...daySessions.map((s) => ({
+                          start_time: s.start_time,
+                          duration_minutes: s.duration_minutes,
+                          client_count: s.client_count,
+                          trainer_employee_id: s.trainer_employee_id,
+                        })),
+                        ...dayBlocks.map((b) => ({
+                          start_time: b.start_time,
+                          duration_minutes: timeToMinutes(b.end_time) - timeToMinutes(b.start_time),
+                          client_count: roomCapacity,
+                          trainer_employee_id: "",
+                        })),
+                      ]}
                     />
                   </div>
                 </details>
