@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { Card } from "@/components/Card";
+import { ColorDot } from "@/components/ColorDot";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
-import { ColorDot } from "@/components/ColorDot";
 import { BTN_PRIMARY, BTN_GHOST, BTN_GHOST_DANGER } from "@/components/button-styles";
 import { toDateKey } from "@/lib/schedule-month";
 import {
@@ -36,7 +37,28 @@ const PRIORITY_BADGE: Record<MarketingTaskPriority, string> = {
   high: "bg-red-50 text-red-600",
 };
 
-export async function TasksSection({ currentEmployeeId }: { currentEmployeeId: string }) {
+// Kolejność priorytetów w obrębie jednej kolumny statusu — bez tego 21
+// zadań w "Do zrobienia" to płaska ściana posortowana tylko po terminie,
+// gdzie pilne "Wysoki" ginie między niskopriorytetowymi. Termin wciąż
+// decyduje przy remisie (patrz zapytanie niżej — sortowanie po due_date jest
+// już zrobione w bazie, tu tylko przestawiamy priorytet NA WIERZCH, zachowując
+// względną kolejność dat w obrębie tego samego priorytetu — Array.sort jest
+// stabilny).
+const PRIORITY_RANK: Record<MarketingTaskPriority, number> = { high: 0, normal: 1, low: 2 };
+
+// Sentinel dla filtra "bez przypisanej osoby" w URL (?osoba=_brak) — osobny
+// od braku parametru w ogóle (które znaczy "wszyscy"), bo po imporcie z
+// pliku część zadań regularnie ląduje bez przypisania (nazwisko z pliku nie
+// pasowało 1:1 do konta w systemie) i to też trzeba dało się przefiltrować.
+const UNASSIGNED = "_brak";
+
+export async function TasksSection({
+  currentEmployeeId,
+  assigneeFilter,
+}: {
+  currentEmployeeId: string;
+  assigneeFilter?: string;
+}) {
   const supabase = createServerSupabaseClient();
   const today = toDateKey(new Date());
   const [{ data: tasksRaw }, { data: assigneesRaw }] = await Promise.all([
@@ -53,12 +75,21 @@ export async function TasksSection({ currentEmployeeId }: { currentEmployeeId: s
       .order("name"),
   ]);
 
-  const tasks = (tasksRaw ?? []) as Task[];
+  const allTasks = (tasksRaw ?? []) as Task[];
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const assigneeById = new Map(assignees.map((a) => [a.id, a]));
 
+  const tasks = !assigneeFilter
+    ? allTasks
+    : assigneeFilter === UNASSIGNED
+      ? allTasks.filter((t) => !t.assignee_employee_id)
+      : allTasks.filter((t) => t.assignee_employee_id === assigneeFilter);
+
   const byStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], done: [] };
   for (const t of tasks) byStatus[t.status].push(t);
+  for (const status of TASK_STATUS_ORDER) {
+    byStatus[status].sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
+  }
 
   const overdueCount = tasks.filter((t) => t.status !== "done" && t.due_date !== null && t.due_date < today).length;
 
@@ -228,25 +259,79 @@ export async function TasksSection({ currentEmployeeId }: { currentEmployeeId: s
         </form>
       </Card>
 
+      {/* Filtr po osobie — bez niego 20+ zadań wszystkich naraz w jednej
+          kolumnie to ściana nie do ogarnięcia. Linki, nie przyciski JS (ten
+          sam wzorzec co prevLink/nextLink w kalendarzu treści) — stan filtra
+          żyje w URL, więc działa bez JS i da się wysłać komuś link "zobacz
+          zadania Oliwii". */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Link
+          href="/marketing?tab=zadania"
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!assigneeFilter ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+        >
+          Wszyscy ({allTasks.length})
+        </Link>
+        {assignees.map((a) => {
+          const count = allTasks.filter((t) => t.assignee_employee_id === a.id).length;
+          return (
+            <Link
+              key={a.id}
+              href={`/marketing?tab=zadania&osoba=${a.id}`}
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                assigneeFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              }`}
+            >
+              <ColorDot color={a.color_hex} />
+              {a.name} ({count})
+            </Link>
+          );
+        })}
+        {(() => {
+          const unassignedCount = allTasks.filter((t) => !t.assignee_employee_id).length;
+          return unassignedCount > 0 ? (
+            <Link
+              href={`/marketing?tab=zadania&osoba=${UNASSIGNED}`}
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                assigneeFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              }`}
+            >
+              Nieprzypisane ({unassignedCount})
+            </Link>
+          ) : null;
+        })()}
+      </div>
+
       {overdueCount > 0 && (
         <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
           ⚠ {overdueCount} {overdueCount === 1 ? "zaległe zadanie" : "zaległych zadań"} — termin już minął.
         </p>
       )}
 
-      {TASK_STATUS_ORDER.map((status) => (
-        <Card key={status}>
-          <h2 className="mb-3 flex items-center gap-2 font-semibold text-zinc-900">
-            {TASK_STATUS_LABELS[status]}
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{byStatus[status].length}</span>
-          </h2>
-          {byStatus[status].length === 0 ? (
-            <p className="text-sm text-zinc-400">Brak zadań.</p>
-          ) : (
-            <div className="flex flex-col gap-2">{byStatus[status].map(renderTask)}</div>
-          )}
-        </Card>
-      ))}
+      {TASK_STATUS_ORDER.map((status) => {
+        const list = byStatus[status];
+        // "Zrobione" zwinięte domyślnie, gdy jest ich sporo — to już
+        // zakończona praca, nie potrzeba jej mieć stale rozwiniętej przed
+        // oczami, ten sam wzorzec co zarchiwizowane plany w PlansSection.
+        const collapsible = status === "done" && list.length > 5;
+        return (
+          <Card key={status}>
+            <h2 className="mb-3 flex items-center gap-2 font-semibold text-zinc-900">
+              {TASK_STATUS_LABELS[status]}
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{list.length}</span>
+            </h2>
+            {list.length === 0 ? (
+              <p className="text-sm text-zinc-400">Brak zadań.</p>
+            ) : collapsible ? (
+              <details>
+                <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Pokaż ({list.length}) ▾</summary>
+                <div className="mt-2 flex flex-col gap-2">{list.map(renderTask)}</div>
+              </details>
+            ) : (
+              <div className="flex flex-col gap-2">{list.map(renderTask)}</div>
+            )}
+          </Card>
+        );
+      })}
     </div>
   );
 }

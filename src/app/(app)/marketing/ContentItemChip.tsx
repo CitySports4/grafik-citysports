@@ -118,14 +118,18 @@ export function ContentItemChip({
 
   return (
     <>
+      {/* Jeden ikon kanału + tytuł — cel materiału i oczekiwanie na
+          akceptację widać w pełnej edycji (patrz niżej), nie trzeba ich
+          stłaczać obok siebie w tej samej, wąskiej etykiece. Oczekiwanie na
+          akceptację sygnalizuje się kolorem obwódki, nie kolejną ikoną. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`w-full truncate rounded px-1.5 py-1 text-left text-[11px] font-medium ${STATUS_PILL[item.status]} ${published ? "line-through opacity-70" : ""}`}
+        title={pendingApproval ? "Czeka na akceptację" : undefined}
+        className={`w-full truncate rounded px-1.5 py-1 text-left text-[11px] font-medium ${STATUS_PILL[item.status]} ${published ? "line-through opacity-70" : ""} ${pendingApproval ? "ring-1 ring-inset ring-amber-400" : ""}`}
       >
-        {PLATFORM_ICONS[item.platform]} {CONTENT_PURPOSE_ICONS[item.purpose]} {item.title}
+        {PLATFORM_ICONS[item.platform]} {item.title}
         {hasLinkedTask && <span title="Ma powiązane zadanie w Zadaniach"> 📋</span>}
-        {pendingApproval && <span title="Czeka na akceptację"> ⏳</span>}
       </button>
 
       {open && (
@@ -133,7 +137,9 @@ export function ContentItemChip({
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-1.5">
               <p className={`rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_PILL[item.status]}`}>{CONTENT_STATUS_LABELS[item.status]}</p>
-              <p className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">{CONTENT_PURPOSE_LABELS[item.purpose]}</p>
+              <p className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">
+                {CONTENT_PURPOSE_ICONS[item.purpose]} {CONTENT_PURPOSE_LABELS[item.purpose]}
+              </p>
             </div>
             {assignee && (
               <span className="flex items-center gap-1.5 text-sm text-zinc-600">
