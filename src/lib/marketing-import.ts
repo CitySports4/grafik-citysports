@@ -142,12 +142,24 @@ export async function extractMarketingImport(fileText: string): Promise<Extracte
   const client = getAnthropicClient();
   const response = await client.messages.create({
     model: "claude-sonnet-5",
-    max_tokens: 8000,
+    // 8000 było za mało dla większego pliku (np. kilkanaście zadań + kilka
+    // dłuższych strategii naraz) — model ucinał odpowiedź w połowie
+    // generowania tool_use, a input.tasks/input.plans po prostu nie istniały
+    // w obciętym JSON-ie, więc treści importowały się OK, a zadania i plany
+    // z TEGO SAMEGO pliku znikały bez żadnego błędu (patrz sprawdzenie
+    // stop_reason niżej — teraz to wykrywa zamiast cicho gubić dane).
+    max_tokens: 32000,
     thinking: { type: "adaptive" },
     system: SYSTEM_PROMPT,
     tools: [IMPORT_TOOL],
     messages: [{ role: "user", content: fileText }],
   });
+
+  if (response.stop_reason === "max_tokens") {
+    throw new Error(
+      "Plik jest za duży/złożony — AI nie zdążyło przetworzyć wszystkiego do końca (ucięte w połowie). Podziel plik na mniejsze części (np. osobno zadania, osobno treści, osobno plany) i wrzuć każdą osobno."
+    );
+  }
 
   const toolUse = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "import_marketing_data");
   if (!toolUse) {
