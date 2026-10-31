@@ -45,6 +45,32 @@ export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
 };
 export const CONTENT_STATUS_ORDER: ContentStatus[] = ["pomysl", "w_przygotowaniu", "gotowe", "opublikowane"];
 
+// Po co powstaje dany materiał — Oliwia (kwestionariusz, październik 2026)
+// potrzebowała dokładnie TEGO jednego rozróżnienia, żeby wiedzieć po co
+// nagrywa: reklama konkretnej usługi/trenera, czy zwykła relacja z życia
+// klubu.
+export type ContentPurpose = "promocja" | "relacja";
+export const CONTENT_PURPOSE_LABELS: Record<ContentPurpose, string> = {
+  promocja: "Promocja",
+  relacja: "Relacja",
+};
+export const CONTENT_PURPOSE_ICONS: Record<ContentPurpose, string> = {
+  promocja: "📣",
+  relacja: "🎥",
+};
+
+// Czy blokada akceptacji (needs_review && !approved) wciąż obowiązuje — NIE
+// blokuje bezterminowo: Krzysztof (kwestionariusz) ma czas do dnia samej
+// publikacji (scheduled_date) na przeczytanie i ewentualną uwagę; jeśli nikt
+// nie zareaguje do tego dnia, treść i tak idzie dalej bez akceptacji — ustalone
+// świadomie, bo bezterminowe czekanie na akceptację realnie blokowało pracę.
+export function isApprovalPending(
+  item: { needs_review: boolean; approved: boolean; scheduled_date: string },
+  today: string
+): boolean {
+  return item.needs_review && !item.approved && item.scheduled_date > today;
+}
+
 export type PlanType = "strategia" | "plan";
 export const PLAN_TYPE_LABELS: Record<PlanType, string> = {
   strategia: "Strategia",

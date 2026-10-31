@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, canAccessMarketing } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
-import { PLATFORM_LABELS, type ContentPlatform } from "@/lib/marketing";
+import { toDateKey } from "@/lib/schedule-month";
+import { PLATFORM_LABELS, isApprovalPending, type ContentPlatform } from "@/lib/marketing";
 import { extractMarketingImport } from "@/lib/marketing-import";
 
 // Bramka wspólna dla wszystkich akcji tego modułu — rola marketing albo
@@ -86,20 +87,68 @@ export async function deleteTask(formData: FormData) {
   revalidateMarketing();
 }
 
+// Szybkie przesunięcie terminu (patrz kwestionariusz Saszy, październik
+// 2026: "system żeby pomagał przesuwać zadania, nie ignorować") — zamiast
+// ręcznej edycji daty, jeden klik dokłada tydzień/miesiąc do ISTNIEJĄCEGO
+// terminu (nie do dzisiejszej daty — przesuwa zaległość do przodu, nie
+// resetuje jej licząc od teraz).
+export async function postponeTask(formData: FormData) {
+  await requireMarketingAccess();
+  const id = String(formData.get("id") ?? "");
+  const currentDueDate = String(formData.get("current_due_date") ?? "");
+  const unit = String(formData.get("unit") ?? "");
+  if (!id || !currentDueDate) throw new Error("Brak danych.");
+
+  const base = new Date(currentDueDate + "T00:00:00");
+  const next = new Date(base);
+  if (unit === "week") next.setDate(next.getDate() + 7);
+  else if (unit === "month") next.setMonth(next.getMonth() + 1);
+  else throw new Error("Nieznana jednostka przesunięcia.");
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("marketing_task")
+    .update({ due_date: toDateKey(next), updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidateMarketing();
+}
+
 // ---------- Kalendarz treści ----------
 
 // Szybkie odznaczenie statusu jednym kliknięciem (patrz checkbox-przycisk w
 // ContentCalendarSection) — bez otwierania pełnego formularza edycji.
 export async function setContentStatus(formData: FormData) {
-  await requireMarketingAccess();
+  const employee = await requireMarketingAccess();
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!id || !status) throw new Error("Brak danych.");
 
   const supabase = createServerSupabaseClient();
+  if (status === "opublikowane" && !employee.roles.includes("admin")) {
+    await assertCanPublish(supabase, id);
+  }
   const { error } = await supabase.from("marketing_content").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
+}
+
+// Blokada akceptacji dotyczy tylko treści oznaczonych needs_review i tylko
+// DO DNIA publikacji — patrz isApprovalPending w lib/marketing.ts (tam jest
+// cała reguła, w tym automatyczne zwolnienie w dniu scheduled_date, żeby
+// zwłoka admina nie blokowała pracy w nieskończoność). Admin może opublikować
+// zawsze — on sam jest osobą akceptującą.
+async function assertCanPublish(supabase: ReturnType<typeof createServerSupabaseClient>, contentId: string) {
+  const { data: current } = await supabase
+    .from("marketing_content")
+    .select("needs_review, approved, scheduled_date")
+    .eq("id", contentId)
+    .single();
+  if (!current) throw new Error("Treść już nie istnieje — odśwież stronę.");
+  const today = toDateKey(new Date());
+  if (isApprovalPending(current, today)) {
+    throw new Error(`Czeka jeszcze na akceptację — zostanie dopuszczona automatycznie ${current.scheduled_date}, jeśli nikt wcześniej nie zareaguje.`);
+  }
 }
 
 // Treść z przypisaną osobą dostaje automatycznie powiązane zadanie (patrz
@@ -133,6 +182,8 @@ export async function createContent(formData: FormData) {
   const platform = String(formData.get("platform") ?? "inne");
   const scheduled_date = String(formData.get("scheduled_date") ?? "");
   const status = String(formData.get("status") ?? "pomysl");
+  const purpose = String(formData.get("purpose") ?? "relacja");
+  const needs_review = formData.get("needs_review") === "on";
   const notes = String(formData.get("notes") ?? "").trim();
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
   if (!title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
@@ -145,6 +196,8 @@ export async function createContent(formData: FormData) {
       platform,
       scheduled_date,
       status,
+      purpose,
+      needs_review,
       notes,
       assignee_employee_id,
       created_by_employee_id: employee.id,
@@ -166,14 +219,19 @@ export async function updateContent(formData: FormData) {
   const platform = String(formData.get("platform") ?? "inne");
   const scheduled_date = String(formData.get("scheduled_date") ?? "");
   const status = String(formData.get("status") ?? "pomysl");
+  const purpose = String(formData.get("purpose") ?? "relacja");
+  const needs_review = formData.get("needs_review") === "on";
   const notes = String(formData.get("notes") ?? "").trim();
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
   if (!id || !title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
 
   const supabase = createServerSupabaseClient();
+  if (status === "opublikowane" && !employee.roles.includes("admin")) {
+    await assertCanPublish(supabase, id);
+  }
   const { error } = await supabase
     .from("marketing_content")
-    .update({ title, platform, scheduled_date, status, notes, assignee_employee_id, updated_at: new Date().toISOString() })
+    .update({ title, platform, scheduled_date, status, purpose, needs_review, notes, assignee_employee_id, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
 
@@ -194,6 +252,33 @@ export async function deleteContent(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const supabase = createServerSupabaseClient();
   const { error } = await supabase.from("marketing_content").delete().eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidateMarketing();
+}
+
+// Akceptacja/uwaga Krzysztofa (kwestionariusz, październik 2026) — tylko
+// admin, bo to on jest osobą akceptującą. Jeden formularz robi oba naraz:
+// zostawienie uwagi (approved zostaje false, treść wraca do autora) albo
+// zaakceptowanie (approved=true, uwaga opcjonalna przy okazji).
+export async function reviewContent(formData: FormData) {
+  const employee = await requireMarketingAccess();
+  if (!employee.roles.includes("admin")) throw new Error("Tylko admin może akceptować treści.");
+  const id = String(formData.get("id") ?? "");
+  const approved = formData.get("approved") === "true";
+  const review_note = String(formData.get("review_note") ?? "").trim();
+  if (!id) throw new Error("Brak danych.");
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("marketing_content")
+    .update({
+      approved,
+      review_note,
+      reviewed_by_employee_id: employee.id,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
 }
@@ -322,6 +407,7 @@ export async function importMarketingFile(formData: FormData): Promise<ImportRes
       .insert({
         title: c.title.trim(),
         platform: c.platform ?? "inne",
+        purpose: c.purpose ?? "relacja",
         scheduled_date: c.scheduled_date,
         status: c.status ?? "pomysl",
         notes: c.notes?.trim() ?? "",
