@@ -35,6 +35,12 @@ export async function PlansSection() {
   const plans = (plansRaw ?? []) as Plan[];
   const active = plans.filter((p) => !p.archived);
   const archived = plans.filter((p) => p.archived);
+  // Strategie i plany pogrupowane osobno — płaska lista mieszająca oba typy
+  // chronologicznie robi się nieczytelna już przy kilku dokumentach naraz
+  // (np. po zbiorczym imporcie), a to dwa różne rodzaje treści: strategia
+  // to "dlaczego", plan to "co i kiedy".
+  const activeStrategie = active.filter((p) => p.type === "strategia");
+  const activePlany = active.filter((p) => p.type === "plan");
 
   function renderPlan(p: Plan) {
     return (
@@ -118,14 +124,31 @@ export async function PlansSection() {
         </details>
       </Card>
 
-      <Card>
-        <h2 className="mb-3 font-semibold text-zinc-900">Aktywne</h2>
-        {active.length === 0 ? (
+      {active.length === 0 ? (
+        <Card>
+          <h2 className="mb-3 font-semibold text-zinc-900">Aktywne</h2>
           <p className="text-sm text-zinc-400">Brak dokumentów.</p>
-        ) : (
-          <div className="flex flex-col gap-2">{active.map(renderPlan)}</div>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <>
+          {activeStrategie.length > 0 && (
+            <Card>
+              <h2 className="mb-3 font-semibold text-zinc-900">
+                Strategie <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{activeStrategie.length}</span>
+              </h2>
+              <div className="flex flex-col gap-2">{activeStrategie.map(renderPlan)}</div>
+            </Card>
+          )}
+          {activePlany.length > 0 && (
+            <Card>
+              <h2 className="mb-3 font-semibold text-zinc-900">
+                Plany <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{activePlany.length}</span>
+              </h2>
+              <div className="flex flex-col gap-2">{activePlany.map(renderPlan)}</div>
+            </Card>
+          )}
+        </>
+      )}
 
       {archived.length > 0 && (
         <details className="rounded-2xl border border-dashed border-zinc-300 p-3">

@@ -15,7 +15,7 @@ type TabKey = (typeof TABS)[number]["key"];
 export default async function MarketingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; year?: string; month?: string }>;
+  searchParams: Promise<{ tab?: string; year?: string; month?: string; osoba?: string }>;
 }) {
   const employee = await requireEmployee();
   if (!canAccessMarketing(employee)) {
@@ -52,7 +52,7 @@ export default async function MarketingPage({
         ))}
       </div>
 
-      {tab === "zadania" && <TasksSection currentEmployeeId={employee.id} />}
+      {tab === "zadania" && <TasksSection currentEmployeeId={employee.id} assigneeFilter={params.osoba} />}
       {tab === "kalendarz" && <ContentCalendarSection yearParam={params.year} monthParam={params.month} />}
       {tab === "plany" && <PlansSection />}
     </div>
