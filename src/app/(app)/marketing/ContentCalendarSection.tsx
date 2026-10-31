@@ -1,11 +1,26 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
+import { requireEmployee } from "@/lib/session";
 import { toDateKey, daysInMonth, monthLabel, currentMonth } from "@/lib/schedule-month";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
-import { CONTENT_STATUS_LABELS, CONTENT_STATUS_ORDER, type ContentPlatform, type ContentStatus } from "@/lib/marketing";
+import { Banner } from "@/components/Banner";
+import {
+  CONTENT_STATUS_LABELS,
+  CONTENT_STATUS_ORDER,
+  isApprovalPending,
+  type ContentPlatform,
+  type ContentStatus,
+  type ContentPurpose,
+} from "@/lib/marketing";
 import { setContentStatus } from "./actions";
 import { ContentItemChip } from "./ContentItemChip";
 import { AddContentButton } from "./AddContentButton";
+
+// Przypomnienie o regularności (Krzysztof, kwestionariusz październik 2026:
+// "regularne wrzucanie i przypominanie o tym co mamy") — jeśli od tylu dni
+// nic nie zostało opublikowane, kalendarz sam o tym mówi zamiast czekać, aż
+// ktoś to zauważy.
+const REGULARITY_GAP_DAYS = 7;
 
 type ContentItem = {
   id: string;
@@ -13,6 +28,10 @@ type ContentItem = {
   platform: ContentPlatform;
   scheduled_date: string;
   status: ContentStatus;
+  purpose: ContentPurpose;
+  needs_review: boolean;
+  approved: boolean;
+  review_note: string;
   notes: string;
   assignee_employee_id: string | null;
 };
@@ -27,6 +46,8 @@ const STATUS_DOT: Record<ContentStatus, string> = {
 };
 
 export async function ContentCalendarSection({ yearParam, monthParam }: { yearParam?: string; monthParam?: string }) {
+  const employee = await requireEmployee();
+  const isAdmin = employee.roles.includes("admin");
   const today = toDateKey(new Date());
   const fallback = currentMonth();
   const year = Number(yearParam) || fallback.year;
@@ -38,10 +59,10 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
   const nextLink = month === 12 ? `?tab=kalendarz&year=${year + 1}&month=1` : `?tab=kalendarz&year=${year}&month=${month + 1}`;
 
   const supabase = createServerSupabaseClient();
-  const [{ data: contentRaw }, { data: assigneesRaw }, { data: linkedTasksRaw }] = await Promise.all([
+  const [{ data: contentRaw }, { data: assigneesRaw }, { data: linkedTasksRaw }, { data: lastPublishedRaw }] = await Promise.all([
     supabase
       .from("marketing_content")
-      .select("id, title, platform, scheduled_date, status, notes, assignee_employee_id")
+      .select("id, title, platform, scheduled_date, status, purpose, needs_review, approved, review_note, notes, assignee_employee_id")
       .gte("scheduled_date", dateKeys[0])
       .lte("scheduled_date", dateKeys[dateKeys.length - 1])
       .order("scheduled_date"),
@@ -56,6 +77,18 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
     // plakietkę "zadanie dodane", bez tego dodanie zadania byłoby
     // niewidocznym efektem ubocznym.
     supabase.from("marketing_task").select("content_id").not("content_id", "is", null),
+    // Ostatnia FAKTYCZNIE opublikowana treść — niezależnie od oglądanego
+    // miesiąca (stąd osobne zapytanie, nie filtrowanie po dateKeys), żeby
+    // przypomnienie o regularności działało nawet gdy ktoś przegląda stary
+    // albo przyszły miesiąc.
+    supabase
+      .from("marketing_content")
+      .select("scheduled_date")
+      .eq("status", "opublikowane")
+      .lte("scheduled_date", today)
+      .order("scheduled_date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const content = (contentRaw ?? []) as ContentItem[];
@@ -72,8 +105,19 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
   // AvailabilityCalendar.
   const leadingBlanks = days.length > 0 ? (days[0].getDay() + 6) % 7 : 0;
 
+  const daysSinceLastPublished = lastPublishedRaw
+    ? Math.round((new Date(today + "T00:00:00").getTime() - new Date(lastPublishedRaw.scheduled_date + "T00:00:00").getTime()) / 86400000)
+    : null;
+  const regularityWarning =
+    daysSinceLastPublished === null
+      ? "Jeszcze nic nie zostało oznaczone jako opublikowane — czas dodać pierwszą treść."
+      : daysSinceLastPublished > REGULARITY_GAP_DAYS
+        ? `Minęło ${daysSinceLastPublished} dni od ostatniej opublikowanej treści — czas dodać coś nowego.`
+        : null;
+
   return (
     <div className="flex flex-col gap-3">
+      {regularityWarning && <Banner variant="warning">⏰ {regularityWarning}</Banner>}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm capitalize text-zinc-500">
           {monthLabel(month)} {year}
@@ -136,29 +180,45 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
               <div className="flex flex-col gap-1">
                 {items.map((item) => {
                   const published = item.status === "opublikowane";
+                  // Blokada akceptacji dotyczy tylko kierunku "oznacz jako
+                  // opublikowane" — cofnięcie z powrotem na "Gotowe" nie musi
+                  // nikogo pytać. Admin omija blokadę zawsze (patrz
+                  // assertCanPublish w actions.ts — to samo po stronie
+                  // serwera, tu tylko unikamy pokazywania przycisku, który i
+                  // tak skończyłby się błędem).
+                  const blockedByApproval = !published && !isAdmin && isApprovalPending(item, today);
                   return (
                     <div key={item.id} className="flex items-start gap-1">
                       {/* Checkbox jednym kliknięciem — odznacza "Opublikowane"
                           (odpowiednik "zrobione" dla treści) bez otwierania
                           pełnej edycji. */}
-                      <form action={setContentStatus} className="pt-0.5">
-                        <input type="hidden" name="id" value={item.id} />
-                        <input type="hidden" name="status" value={published ? "gotowe" : "opublikowane"} />
-                        <button
-                          type="submit"
-                          aria-label={published ? "Cofnij na Gotowe" : "Oznacz jako opublikowane"}
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[9px] ${
-                            published ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
-                          }`}
+                      {blockedByApproval ? (
+                        <span
+                          title={`Czeka na akceptację — automatycznie dopuszczona ${item.scheduled_date}`}
+                          className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-amber-300 pt-0.5 text-[9px] text-amber-600"
                         >
-                          {published && "✓"}
-                        </button>
-                      </form>
+                          ⏳
+                        </span>
+                      ) : (
+                        <form action={setContentStatus} className="pt-0.5">
+                          <input type="hidden" name="id" value={item.id} />
+                          <input type="hidden" name="status" value={published ? "gotowe" : "opublikowane"} />
+                          <button
+                            type="submit"
+                            aria-label={published ? "Cofnij na Gotowe" : "Oznacz jako opublikowane"}
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[9px] ${
+                              published ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
+                            }`}
+                          >
+                            {published && "✓"}
+                          </button>
+                        </form>
+                      )}
                       {/* Pełna edycja otwiera się jako pływające okno (Modal)
                           zamiast rozwijać się w tej ciasnej komórce siatki —
                           patrz ContentItemChip. */}
                       <div className="min-w-0 flex-1">
-                        <ContentItemChip item={item} assignees={assignees} hasLinkedTask={contentIdsWithTask.has(item.id)} />
+                        <ContentItemChip item={item} assignees={assignees} hasLinkedTask={contentIdsWithTask.has(item.id)} isAdmin={isAdmin} today={today} />
                       </div>
                     </div>
                   );

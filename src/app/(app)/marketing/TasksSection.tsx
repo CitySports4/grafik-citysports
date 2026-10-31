@@ -12,7 +12,7 @@ import {
   type MarketingTaskStatus,
   type MarketingTaskPriority,
 } from "@/lib/marketing";
-import { createTask, updateTask, setTaskStatus, deleteTask } from "./actions";
+import { createTask, updateTask, setTaskStatus, deleteTask, postponeTask } from "./actions";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -103,6 +103,30 @@ export async function TasksSection({ currentEmployeeId }: { currentEmployeeId: s
                 <span className={overdue ? "font-semibold text-red-600" : "text-zinc-500"}>
                   {overdue ? "⚠ termin: " : "termin: "}
                   {new Date(t.due_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
+                </span>
+              )}
+              {/* Szybkie przesunięcie terminu (patrz kwestionariusz Saszy,
+                  październik 2026: system ma pomagać przesuwać zadania, nie
+                  je ignorować) — zamiast grzebania w "Edytuj" za każdym
+                  razem, gdy coś się po prostu nie zdąży na czas. */}
+              {t.due_date && !done && (
+                <span className="flex items-center gap-1">
+                  <form action={postponeTask}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="current_due_date" value={t.due_date} />
+                    <input type="hidden" name="unit" value="week" />
+                    <button type="submit" className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-200">
+                      ↻ tydzień
+                    </button>
+                  </form>
+                  <form action={postponeTask}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="current_due_date" value={t.due_date} />
+                    <input type="hidden" name="unit" value="month" />
+                    <button type="submit" className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-200">
+                      ↻ miesiąc
+                    </button>
+                  </form>
                 </span>
               )}
             </div>
