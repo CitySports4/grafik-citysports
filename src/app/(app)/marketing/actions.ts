@@ -198,6 +198,7 @@ export async function createContent(formData: FormData) {
   const scheduled_date = String(formData.get("scheduled_date") ?? "");
   const status = String(formData.get("status") ?? "pomysl");
   const purpose = String(formData.get("purpose") ?? "relacja");
+  const format = String(formData.get("format") ?? "post");
   const needs_review = formData.get("needs_review") === "on";
   const notes = String(formData.get("notes") ?? "").trim();
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
@@ -212,6 +213,7 @@ export async function createContent(formData: FormData) {
       scheduled_date,
       status,
       purpose,
+      format,
       needs_review,
       notes,
       assignee_employee_id,
@@ -235,6 +237,7 @@ export async function updateContent(formData: FormData) {
   const scheduled_date = String(formData.get("scheduled_date") ?? "");
   const status = String(formData.get("status") ?? "pomysl");
   const purpose = String(formData.get("purpose") ?? "relacja");
+  const format = String(formData.get("format") ?? "post");
   const needs_review = formData.get("needs_review") === "on";
   const notes = String(formData.get("notes") ?? "").trim();
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
@@ -246,7 +249,7 @@ export async function updateContent(formData: FormData) {
   }
   const { error } = await supabase
     .from("marketing_content")
-    .update({ title, platform, scheduled_date, status, purpose, needs_review, notes, assignee_employee_id, updated_at: new Date().toISOString() })
+    .update({ title, platform, scheduled_date, status, purpose, format, needs_review, notes, assignee_employee_id, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
 
@@ -423,6 +426,7 @@ export async function importMarketingFile(formData: FormData): Promise<ImportRes
         title: c.title.trim(),
         platform: c.platform ?? "inne",
         purpose: c.purpose ?? "relacja",
+        format: c.format ?? "post",
         scheduled_date: c.scheduled_date,
         status: c.status ?? "pomysl",
         notes: c.notes?.trim() ?? "",
