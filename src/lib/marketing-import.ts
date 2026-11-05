@@ -28,6 +28,7 @@ z brakami. Każdy wpis zaczyna się od nagłówka "### ".
 ### Tytuł treści
 - Platforma: Facebook/Instagram / Strona WWW / E-mail / Inne
 - Cel: Promocja / Relacja
+- Format: Rolka / Post / Relacja (Story) / Aktualność na stronie / Inne
 - Data publikacji: RRRR-MM-DD
 - Status: Pomysł / W przygotowaniu / Gotowe / Opublikowane
 - Osoba: Imię Nazwisko
@@ -52,6 +53,7 @@ export type ExtractedContent = {
   title: string;
   platform?: "facebook_instagram" | "strona_www" | "email" | "inne";
   purpose?: "promocja" | "relacja";
+  format?: "rolka" | "post" | "story" | "aktualnosc" | "inne";
   scheduled_date?: string;
   status?: "pomysl" | "w_przygotowaniu" | "gotowe" | "opublikowane";
   notes?: string;
@@ -105,6 +107,12 @@ const IMPORT_TOOL: Anthropic.Tool = {
               type: "string",
               enum: ["promocja", "relacja"],
               description: "promocja=reklama konkretnej usługi/trenera, relacja=zwykła relacja z życia klubu. Domyślnie relacja, jeśli nie podano.",
+            },
+            format: {
+              type: "string",
+              enum: ["rolka", "post", "story", "aktualnosc", "inne"],
+              description:
+                "Format materiału: rolka=krótkie wideo (Reel), post=zwykły post ze zdjęciem/grafiką, story=Relacja/Story (znikająca po 24h), aktualnosc=wpis na stronie www, inne. Domyślnie post, jeśli nie podano.",
             },
             scheduled_date: { type: "string", description: "Format RRRR-MM-DD — WYMAGANE dla każdej treści, bez daty wpis zostanie pominięty." },
             status: {

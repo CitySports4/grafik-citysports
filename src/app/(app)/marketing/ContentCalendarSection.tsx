@@ -12,6 +12,7 @@ import {
   type ContentPlatform,
   type ContentStatus,
   type ContentPurpose,
+  type ContentFormat,
 } from "@/lib/marketing";
 import { setContentStatus } from "./actions";
 import { ContentItemChip } from "./ContentItemChip";
@@ -30,6 +31,7 @@ type ContentItem = {
   scheduled_date: string;
   status: ContentStatus;
   purpose: ContentPurpose;
+  format: ContentFormat;
   needs_review: boolean;
   approved: boolean;
   review_note: string;
@@ -78,7 +80,7 @@ export async function ContentCalendarSection({
   const [{ data: contentRaw }, { data: assigneesRaw }, { data: linkedTasksRaw }, { data: lastPublishedRaw }] = await Promise.all([
     supabase
       .from("marketing_content")
-      .select("id, title, platform, scheduled_date, status, purpose, needs_review, approved, review_note, notes, assignee_employee_id")
+      .select("id, title, platform, scheduled_date, status, purpose, format, needs_review, approved, review_note, notes, assignee_employee_id")
       .gte("scheduled_date", dateKeys[0])
       .lte("scheduled_date", dateKeys[dateKeys.length - 1])
       .order("scheduled_date"),

@@ -7,14 +7,16 @@ import { ColorDot } from "@/components/ColorDot";
 import { BTN_PRIMARY, BTN_GHOST_DANGER } from "@/components/button-styles";
 import {
   PLATFORM_LABELS,
-  PLATFORM_ICONS,
   CONTENT_STATUS_LABELS,
   CONTENT_PURPOSE_LABELS,
   CONTENT_PURPOSE_ICONS,
+  CONTENT_FORMAT_LABELS,
+  CONTENT_FORMAT_ICONS,
   isApprovalPending,
   type ContentPlatform,
   type ContentStatus,
   type ContentPurpose,
+  type ContentFormat,
 } from "@/lib/marketing";
 import { updateContent, deleteContent, reviewContent } from "./actions";
 
@@ -28,6 +30,7 @@ type ContentItem = {
   scheduled_date: string;
   status: ContentStatus;
   purpose: ContentPurpose;
+  format: ContentFormat;
   needs_review: boolean;
   approved: boolean;
   review_note: string;
@@ -118,17 +121,21 @@ export function ContentItemChip({
 
   return (
     <>
-      {/* Jeden ikon kanału + tytuł — cel materiału i oczekiwanie na
-          akceptację widać w pełnej edycji (patrz niżej), nie trzeba ich
-          stłaczać obok siebie w tej samej, wąskiej etykiece. Oczekiwanie na
-          akceptację sygnalizuje się kolorem obwódki, nie kolejną ikoną. */}
+      {/* Jedna ikona + tytuł — ikona FORMATU (rolka/post/story/...), nie
+          platformy: odkąd FB i IG to jeden kanał (patrz migracja 0058),
+          platforma prawie zawsze ma tę samą wartość, więc jako jedyna ikona
+          w ciasnym czipie niczego by już nie odróżniała. Cel materiału i
+          oczekiwanie na akceptację widać w pełnej edycji (patrz niżej), nie
+          trzeba ich stłaczać obok siebie w tej samej, wąskiej etykiecie.
+          Oczekiwanie na akceptację sygnalizuje się kolorem obwódki, nie
+          kolejną ikoną. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
         title={pendingApproval ? "Czeka na akceptację" : undefined}
         className={`w-full truncate rounded px-1.5 py-1 text-left text-[11px] font-medium ${STATUS_PILL[item.status]} ${published ? "line-through opacity-70" : ""} ${pendingApproval ? "ring-1 ring-inset ring-amber-400" : ""}`}
       >
-        {PLATFORM_ICONS[item.platform]} {item.title}
+        {CONTENT_FORMAT_ICONS[item.format]} {item.title}
         {hasLinkedTask && <span title="Ma powiązane zadanie w Zadaniach"> 📋</span>}
       </button>
 
@@ -139,6 +146,9 @@ export function ContentItemChip({
               <p className={`rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_PILL[item.status]}`}>{CONTENT_STATUS_LABELS[item.status]}</p>
               <p className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">
                 {CONTENT_PURPOSE_ICONS[item.purpose]} {CONTENT_PURPOSE_LABELS[item.purpose]}
+              </p>
+              <p className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">
+                {CONTENT_FORMAT_ICONS[item.format]} {CONTENT_FORMAT_LABELS[item.format]}
               </p>
             </div>
             {assignee && (
@@ -223,9 +233,19 @@ export function ContentItemChip({
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-semibold text-zinc-900">Data publikacji</label>
-                  <input type="date" name="scheduled_date" defaultValue={item.scheduled_date} required className={INPUT} />
+                  <label className="text-sm font-semibold text-zinc-900">Format</label>
+                  <select name="format" defaultValue={item.format} className={INPUT}>
+                    {(Object.entries(CONTENT_FORMAT_LABELS) as [ContentFormat, string][]).map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-zinc-900">Data publikacji</label>
+                <input type="date" name="scheduled_date" defaultValue={item.scheduled_date} required className={INPUT} />
               </div>
               <label className="flex items-center gap-2 text-sm text-zinc-700">
                 <input type="checkbox" name="needs_review" defaultChecked={item.needs_review} className="h-4 w-4" />

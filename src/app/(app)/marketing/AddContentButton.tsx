@@ -4,7 +4,14 @@ import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { Banner } from "@/components/Banner";
 import { BTN_PRIMARY } from "@/components/button-styles";
-import { PLATFORM_LABELS, CONTENT_PURPOSE_LABELS, type ContentPlatform, type ContentPurpose } from "@/lib/marketing";
+import {
+  PLATFORM_LABELS,
+  CONTENT_PURPOSE_LABELS,
+  CONTENT_FORMAT_LABELS,
+  type ContentPlatform,
+  type ContentPurpose,
+  type ContentFormat,
+} from "@/lib/marketing";
 import { createContent } from "./actions";
 
 const INPUT =
@@ -57,15 +64,27 @@ export function AddContentButton({ date, dateLabel, assignees }: { date: string;
                   ))}
                 </select>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-zinc-900">Cel materiału</label>
-                <select name="purpose" defaultValue="relacja" className={INPUT}>
-                  {(Object.entries(CONTENT_PURPOSE_LABELS) as [ContentPurpose, string][]).map(([v, l]) => (
-                    <option key={v} value={v}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-zinc-900">Cel materiału</label>
+                  <select name="purpose" defaultValue="relacja" className={INPUT}>
+                    {(Object.entries(CONTENT_PURPOSE_LABELS) as [ContentPurpose, string][]).map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-zinc-900">Format</label>
+                  <select name="format" defaultValue="post" className={INPUT}>
+                    {(Object.entries(CONTENT_FORMAT_LABELS) as [ContentFormat, string][]).map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <label className="flex items-center gap-2 text-sm text-zinc-700">
                 <input type="checkbox" name="needs_review" defaultChecked className="h-4 w-4" />

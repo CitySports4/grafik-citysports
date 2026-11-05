@@ -60,6 +60,28 @@ export const CONTENT_PURPOSE_ICONS: Record<ContentPurpose, string> = {
   relacja: "🎥",
 };
 
+// Format materiału — osobny wymiar od celu (promocja/relacja): dwa posty o
+// tym samym celu mogą mieć zupełnie inny format pracy (nagranie rolki to co
+// innego niż tekst na stronę). Wartość "story" nazwana inaczej niż
+// CONTENT_PURPOSE "relacja", mimo że po polsku Instagram/Facebook nazywają tę
+// funkcję też "Relacja" — to są dwa różne znaczenia tego samego słowa, w
+// kodzie muszą mieć różne nazwy, żeby się nie gryzły.
+export type ContentFormat = "rolka" | "post" | "story" | "aktualnosc" | "inne";
+export const CONTENT_FORMAT_LABELS: Record<ContentFormat, string> = {
+  rolka: "Rolka",
+  post: "Post",
+  story: "Relacja (Story)",
+  aktualnosc: "Aktualność na stronie",
+  inne: "Inne",
+};
+export const CONTENT_FORMAT_ICONS: Record<ContentFormat, string> = {
+  rolka: "🎬",
+  post: "🖼️",
+  story: "⭕",
+  aktualnosc: "📰",
+  inne: "📌",
+};
+
 // Czy blokada akceptacji (needs_review && !approved) wciąż obowiązuje — NIE
 // blokuje bezterminowo: Krzysztof (kwestionariusz) ma czas do dnia samej
 // publikacji (scheduled_date) na przeczytanie i ewentualną uwagę; jeśli nikt
