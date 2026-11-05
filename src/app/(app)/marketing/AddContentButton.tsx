@@ -8,7 +8,6 @@ import {
   PLATFORM_LABELS,
   CONTENT_PURPOSE_LABELS,
   CONTENT_FORMAT_LABELS,
-  hasStaleChannelPrefix,
   type ContentPlatform,
   type ContentPurpose,
   type ContentFormat,
@@ -24,7 +23,6 @@ export function AddContentButton({ date, dateLabel, assignees }: { date: string;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -54,12 +52,7 @@ export function AddContentButton({ date, dateLabel, assignees }: { date: string;
               <input type="hidden" name="scheduled_date" value={date} />
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-zinc-900">Tytuł</label>
-                <input name="title" required autoFocus value={title} onChange={(e) => setTitle(e.target.value)} className={INPUT} />
-                {hasStaleChannelPrefix(title) && (
-                  <p className="text-xs text-amber-600">
-                    ⚠ Facebook i Instagram to jeden kanał — rozważ [FB/IG] zamiast samego [FB] albo [IG] w tytule.
-                  </p>
-                )}
+                <input name="title" required autoFocus placeholder="np. Szkółka squasha — zacznij od zera" className={INPUT} />
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-zinc-900">Platforma</label>
