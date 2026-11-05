@@ -37,6 +37,15 @@ export const PLATFORM_ICONS: Record<ContentPlatform, string> = {
   inne: "📌",
 };
 
+// Zespół w tytułach treści zwyczajowo dopisuje prefiks kanału ("[FB/IG] ...")
+// — to tylko tekst, nie osobne pole, więc nic nie pilnuje, żeby się zgadzał z
+// platform. Odkąd FB i IG scaliły się w jeden kanał (migracja 0058), stary
+// "[FB]" albo "[IG]" samo w sobie jest już nieaktualne — to tylko podpowiedź
+// (nie blokuje zapisu), żeby ktoś świadomie poprawił albo zostawił jak jest.
+export function hasStaleChannelPrefix(title: string): boolean {
+  return /\[(FB|IG)\]/i.test(title) && !/\[FB\/IG\]/i.test(title);
+}
+
 export type ContentStatus = "pomysl" | "w_przygotowaniu" | "gotowe" | "opublikowane";
 export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
   pomysl: "Pomysł",
