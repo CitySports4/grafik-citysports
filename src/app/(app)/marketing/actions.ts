@@ -114,6 +114,21 @@ export async function postponeTask(formData: FormData) {
   revalidateMarketing();
 }
 
+// Chowa zadanie z bieżącego widoku i z licznika zaległych bez usuwania — np.
+// stare, historyczne zadania z importu, które nie mają już znaczenia, ale
+// szkoda kasować (patrz feedback z użycia: zaległe zadania z przesz łych dat
+// straszyły czerwonym ostrzeżeniem na stałe).
+export async function setTaskArchived(formData: FormData) {
+  await requireMarketingAccess();
+  const id = String(formData.get("id") ?? "");
+  const archived = formData.get("archived") === "true";
+  if (!id) throw new Error("Brak danych.");
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from("marketing_task").update({ archived }).eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidateMarketing();
+}
+
 // ---------- Kalendarz treści ----------
 
 // Szybkie odznaczenie statusu jednym kliknięciem (patrz checkbox-przycisk w
