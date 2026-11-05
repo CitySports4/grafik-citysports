@@ -4,6 +4,7 @@ import { TasksSection } from "./TasksSection";
 import { ContentCalendarSection } from "./ContentCalendarSection";
 import { PlansSection } from "./PlansSection";
 import { ImportFromFile } from "./ImportFromFile";
+import { ThisWeekWidget } from "./ThisWeekWidget";
 
 const TABS = [
   { key: "zadania", label: "Zadania" },
@@ -15,7 +16,7 @@ type TabKey = (typeof TABS)[number]["key"];
 export default async function MarketingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; year?: string; month?: string; osoba?: string }>;
+  searchParams: Promise<{ tab?: string; year?: string; month?: string; osoba?: string; zakres?: string }>;
 }) {
   const employee = await requireEmployee();
   if (!canAccessMarketing(employee)) {
@@ -36,7 +37,7 @@ export default async function MarketingPage({
         <p className="text-sm text-zinc-500">Zadania, kalendarz treści oraz strategie i plany zespołu marketingu.</p>
       </div>
 
-      <ImportFromFile />
+      <ThisWeekWidget />
 
       <div className="flex flex-wrap gap-1 border-b border-zinc-200">
         {TABS.map((t) => (
@@ -52,9 +53,16 @@ export default async function MarketingPage({
         ))}
       </div>
 
-      {tab === "zadania" && <TasksSection currentEmployeeId={employee.id} assigneeFilter={params.osoba} />}
+      {tab === "zadania" && (
+        <TasksSection currentEmployeeId={employee.id} assigneeFilter={params.osoba} showAll={params.zakres === "wszystkie"} />
+      )}
       {tab === "kalendarz" && <ContentCalendarSection yearParam={params.year} monthParam={params.month} />}
       {tab === "plany" && <PlansSection />}
+
+      {/* Funkcja zaawansowana, używana rzadko — przeniesiona na sam dół,
+          żeby nie konkurowała wizualnie z właściwą treścią strony (patrz
+          feedback z użycia: był to pierwszy widoczny element na stronie). */}
+      <ImportFromFile />
     </div>
   );
 }

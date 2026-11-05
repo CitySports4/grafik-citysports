@@ -13,7 +13,7 @@ import {
   type MarketingTaskStatus,
   type MarketingTaskPriority,
 } from "@/lib/marketing";
-import { createTask, updateTask, setTaskStatus, deleteTask, postponeTask } from "./actions";
+import { createTask, updateTask, setTaskStatus, deleteTask, postponeTask, setTaskArchived } from "./actions";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -27,6 +27,8 @@ type Task = {
   priority: MarketingTaskPriority;
   due_date: string | null;
   assignee_employee_id: string | null;
+  archived: boolean;
+  content_id: string | null;
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
@@ -52,19 +54,34 @@ const PRIORITY_RANK: Record<MarketingTaskPriority, number> = { high: 0, normal: 
 // pasowało 1:1 do konta w systemie) i to też trzeba dało się przefiltrować.
 const UNASSIGNED = "_brak";
 
+// Ile dni do przodu liczy się jako "bieżący i następny tydzień" — domyślny,
+// zawężony widok (patrz feedback z użycia: "Wszyscy (41)" na co dzień to za
+// dużo, trzeba było scrollować obok zaległych i kolumny "W trakcie" żeby
+// cokolwiek znaleźć). Zaległe (due_date < dziś) liczą się zawsze, niezależnie
+// od zakresu — to one najbardziej potrzebują uwagi.
+const UPCOMING_DAYS = 14;
+
 export async function TasksSection({
   currentEmployeeId,
   assigneeFilter,
+  showAll,
 }: {
   currentEmployeeId: string;
   assigneeFilter?: string;
+  // ?zakres=wszystkie — bez tego domyślny widok pokazuje tylko zaległe +
+  // najbliższe UPCOMING_DAYS dni + zadania bez terminu.
+  showAll?: boolean;
 }) {
   const supabase = createServerSupabaseClient();
-  const today = toDateKey(new Date());
+  const todayDate = new Date();
+  const today = toDateKey(todayDate);
+  const horizonDate = new Date(todayDate);
+  horizonDate.setDate(horizonDate.getDate() + UPCOMING_DAYS);
+  const horizon = toDateKey(horizonDate);
   const [{ data: tasksRaw }, { data: assigneesRaw }] = await Promise.all([
     supabase
       .from("marketing_task")
-      .select("id, title, description, status, priority, due_date, assignee_employee_id")
+      .select("id, title, description, status, priority, due_date, assignee_employee_id, archived, content_id")
       .order("due_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false }),
     supabase
@@ -75,15 +92,22 @@ export async function TasksSection({
       .order("name"),
   ]);
 
-  const allTasks = (tasksRaw ?? []) as Task[];
+  const allTasksRaw = (tasksRaw ?? []) as Task[];
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const assigneeById = new Map(assignees.map((a) => [a.id, a]));
 
-  const tasks = !assigneeFilter
+  const allTasks = allTasksRaw.filter((t) => !t.archived);
+  const archivedTasks = allTasksRaw.filter((t) => t.archived);
+
+  const byAssignee = !assigneeFilter
     ? allTasks
     : assigneeFilter === UNASSIGNED
       ? allTasks.filter((t) => !t.assignee_employee_id)
       : allTasks.filter((t) => t.assignee_employee_id === assigneeFilter);
+
+  const inScope = (t: Task) => !t.due_date || t.due_date <= horizon;
+  const tasks = showAll ? byAssignee : byAssignee.filter(inScope);
+  const hiddenByScopeCount = showAll ? 0 : byAssignee.filter((t) => !inScope(t)).length;
 
   const byStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], done: [] };
   for (const t of tasks) byStatus[t.status].push(t);
@@ -91,7 +115,7 @@ export async function TasksSection({
     byStatus[status].sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
   }
 
-  const overdueCount = tasks.filter((t) => t.status !== "done" && t.due_date !== null && t.due_date < today).length;
+  const overdueCount = byAssignee.filter((t) => t.status !== "done" && t.due_date !== null && t.due_date < today).length;
 
   function renderTask(t: Task) {
     const assignee = t.assignee_employee_id ? assigneeById.get(t.assignee_employee_id) : null;
@@ -123,6 +147,20 @@ export async function TasksSection({
             <p className={`font-semibold ${done ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
             {t.description && <p className={`mt-0.5 whitespace-pre-wrap text-sm ${done ? "text-zinc-400" : "text-zinc-600"}`}>{t.description}</p>}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+              {/* To zadanie nie jest osobnym bytem — powstało automatycznie z
+                  wpisu w kalendarzu treści (patrz createLinkedTaskIfNeeded w
+                  actions.ts), żeby ktoś przypisany dostał przypomnienie "to do
+                  zrobienia". Bez tej plakietki wyglądało jak zdublowana,
+                  przypadkowa kopia tego samego posta (patrz feedback z
+                  użycia) — link prowadzi od razu do tego miesiąca kalendarza. */}
+              {t.content_id && t.due_date && (
+                <Link
+                  href={`/marketing?tab=kalendarz&year=${t.due_date.slice(0, 4)}&month=${Number(t.due_date.slice(5, 7))}`}
+                  className="rounded-full bg-sky-50 px-2 py-0.5 font-bold text-sky-700 hover:bg-sky-100"
+                >
+                  📅 Treść z kalendarza
+                </Link>
+              )}
               <span className={`rounded-full px-2 py-0.5 font-bold ${PRIORITY_BADGE[t.priority]}`}>{TASK_PRIORITY_LABELS[t.priority]}</span>
               {assignee && (
                 <span className="flex items-center gap-1 text-zinc-500">
@@ -214,6 +252,17 @@ export async function TasksSection({
                   </div>
                 </form>
               </details>
+              {/* Archiwizacja — chowa zadanie z widoku bez usuwania (patrz
+                  feedback z użycia: stare, historyczne zadania straszyły na
+                  stałe czerwonym "zaległe"). Osobny przycisk od "Usuń", bo to
+                  odwracalne i nie traci danych. */}
+              <form action={setTaskArchived}>
+                <input type="hidden" name="id" value={t.id} />
+                <input type="hidden" name="archived" value={String(!t.archived)} />
+                <button type="submit" className={BTN_GHOST}>
+                  {t.archived ? "↩ Przywróć" : "🗄 Archiwizuj"}
+                </button>
+              </form>
             </div>
           </div>
         </div>
@@ -235,7 +284,9 @@ export async function TasksSection({
             <SubmitButton className={`${BTN_PRIMARY} shrink-0`}>Dodaj</SubmitButton>
           </div>
           <details>
-            <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Więcej opcji ▾</summary>
+            <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">
+              Więcej opcji (osoba, priorytet, termin) ▾
+            </summary>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <select name="assignee_employee_id" defaultValue={currentEmployeeId} className={INPUT}>
                 <option value="">— nieprzypisane —</option>
@@ -263,10 +314,12 @@ export async function TasksSection({
           kolumnie to ściana nie do ogarnięcia. Linki, nie przyciski JS (ten
           sam wzorzec co prevLink/nextLink w kalendarzu treści) — stan filtra
           żyje w URL, więc działa bez JS i da się wysłać komuś link "zobacz
-          zadania Oliwii". */}
+          zadania Oliwii". Dokładamy &zakres, gdy user jest w widoku
+          "wszystkie", żeby przełączenie osoby nie resetowało go po cichu z
+          powrotem na zawężony. */}
       <div className="flex flex-wrap items-center gap-1.5">
         <Link
-          href="/marketing?tab=zadania"
+          href={`/marketing?tab=zadania${showAll ? "&zakres=wszystkie" : ""}`}
           className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!assigneeFilter ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Wszyscy ({allTasks.length})
@@ -276,7 +329,7 @@ export async function TasksSection({
           return (
             <Link
               key={a.id}
-              href={`/marketing?tab=zadania&osoba=${a.id}`}
+              href={`/marketing?tab=zadania&osoba=${a.id}${showAll ? "&zakres=wszystkie" : ""}`}
               className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
                 assigneeFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
               }`}
@@ -290,7 +343,7 @@ export async function TasksSection({
           const unassignedCount = allTasks.filter((t) => !t.assignee_employee_id).length;
           return unassignedCount > 0 ? (
             <Link
-              href={`/marketing?tab=zadania&osoba=${UNASSIGNED}`}
+              href={`/marketing?tab=zadania&osoba=${UNASSIGNED}${showAll ? "&zakres=wszystkie" : ""}`}
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                 assigneeFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
               }`}
@@ -305,6 +358,27 @@ export async function TasksSection({
         <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
           ⚠ {overdueCount} {overdueCount === 1 ? "zaległe zadanie" : "zaległych zadań"} — termin już minął.
         </p>
+      )}
+
+      {/* Domyślnie pokazujemy tylko zaległe + najbliższe UPCOMING_DAYS dni +
+          zadania bez terminu — reszta jest tu, jeden klik dalej, nie
+          usunięta. Bez tego "Wszyscy" na co dzień to ściana zadań z całego
+          roku naraz (patrz feedback z użycia). */}
+      {!showAll && hiddenByScopeCount > 0 && (
+        <Link
+          href={`/marketing?tab=zadania${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}&zakres=wszystkie`}
+          className="rounded-xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-500 hover:bg-zinc-100"
+        >
+          Pokazuję zaległe + najbliższe {UPCOMING_DAYS} dni. Ukryto {hiddenByScopeCount} {hiddenByScopeCount === 1 ? "dalsze zadanie" : "dalszych zadań"} — pokaż wszystkie →
+        </Link>
+      )}
+      {showAll && (
+        <Link
+          href={`/marketing?tab=zadania${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}`}
+          className="self-start rounded-xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-500 hover:bg-zinc-100"
+        >
+          ← Pokazujesz wszystkie zadania — zawęź do zaległych + najbliższych {UPCOMING_DAYS} dni
+        </Link>
       )}
 
       {TASK_STATUS_ORDER.map((status) => {
@@ -332,6 +406,15 @@ export async function TasksSection({
           </Card>
         );
       })}
+
+      {archivedTasks.length > 0 && (
+        <details className="rounded-2xl border border-dashed border-zinc-300 p-3">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-500 marker:content-none">
+            <span>Pokaż zarchiwizowane ({archivedTasks.length})</span>
+          </summary>
+          <div className="mt-3 flex flex-col gap-2">{archivedTasks.map(renderTask)}</div>
+        </details>
+      )}
     </div>
   );
 }

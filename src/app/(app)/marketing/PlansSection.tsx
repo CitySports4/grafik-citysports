@@ -44,7 +44,7 @@ export async function PlansSection() {
 
   function renderPlan(p: Plan) {
     return (
-      <div key={p.id} className="rounded-xl border border-zinc-200 bg-white p-3">
+      <div key={p.id} id={`plan-${p.id}`} className="scroll-mt-4 rounded-xl border border-zinc-200 bg-white p-3">
         <details>
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 marker:content-none">
             <span className="flex items-center gap-2">
@@ -123,6 +123,25 @@ export async function PlansSection() {
           </form>
         </details>
       </Card>
+
+      {/* Mini-nawigacja — przy dłuższej liście dokumentów (patrz feedback z
+          użycia: "czytadło bez nawigacji", gubienie kontekstu przy
+          scrollowaniu) jeden klik skacze do dokumentu zamiast przewijać całą
+          stronę. Każdy dokument i tak zostaje zwinięty do tytułu (details
+          domyślnie zamknięte) — to tylko szybsze dojście do niego. */}
+      {active.length > 3 && (
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          {active.map((p) => (
+            <a
+              key={p.id}
+              href={`#plan-${p.id}`}
+              className={`rounded-full px-2.5 py-1 font-semibold hover:bg-zinc-200 ${p.type === "strategia" ? "bg-brand-navy/10 text-brand-navy" : "bg-zinc-100 text-zinc-600"}`}
+            >
+              {p.title}
+            </a>
+          ))}
+        </div>
+      )}
 
       {active.length === 0 ? (
         <Card>

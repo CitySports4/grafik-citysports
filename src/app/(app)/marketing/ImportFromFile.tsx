@@ -65,9 +65,12 @@ export function ImportFromFile() {
   }
 
   return (
-    <Card>
+    <Card className="border border-dashed border-zinc-200 !shadow-none">
       <details>
-        <summary className="cursor-pointer text-sm font-semibold text-brand-orange marker:content-none">
+        {/* Celowo stonowane (szary, nie pomarańczowy) i na samym dole strony
+            — to funkcja zaawansowana/rzadka (patrz feedback z użycia), nie
+            ma konkurować wizualnie z Zadaniami/Kalendarzem/Planami. */}
+        <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">
           📥 Importuj z pliku (.txt / .md)
         </summary>
         <div className="mt-3 flex flex-col gap-3">
