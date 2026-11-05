@@ -49,7 +49,7 @@ export function AddContentButton({ date, dateLabel, assignees }: { date: string;
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-zinc-900">Platforma</label>
-                <select name="platform" defaultValue="instagram" className={INPUT}>
+                <select name="platform" defaultValue="facebook_instagram" className={INPUT}>
                   {(Object.entries(PLATFORM_LABELS) as [ContentPlatform, string][]).map(([v, l]) => (
                     <option key={v} value={v}>
                       {l}
