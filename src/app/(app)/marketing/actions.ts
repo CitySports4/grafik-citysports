@@ -255,11 +255,24 @@ export async function updateContent(formData: FormData) {
 
   // Osoba przypisana dopiero teraz (przy tworzeniu nie było komu dać
   // zadania) — dociąga je, ale tylko jeśli jeszcze nie istnieje (patrz
-  // content_id), żeby edycja w kółko nie mnożyła duplikatów.
+  // content_id), żeby edycja w kółko nie mnożyła duplikatów. Jeśli zadanie
+  // już istnieje, zamiast tworzyć drugie — synchronizujemy jego tytuł/termin
+  // z treścią, żeby np. zmiana tytułu treści (jak scalenie [FB]/[IG] w jedno
+  // "[FB/IG]") nie zostawiała zadania z nieaktualną, rozjechaną nazwą.
   if (assignee_employee_id) {
     const { data: existingTask } = await supabase.from("marketing_task").select("id").eq("content_id", id).maybeSingle();
     if (!existingTask) {
       await createLinkedTaskIfNeeded(supabase, id, title, platform, scheduled_date, assignee_employee_id, employee.id);
+    } else {
+      await supabase
+        .from("marketing_task")
+        .update({
+          title,
+          description: `Z kalendarza treści — ${PLATFORM_LABELS[platform as ContentPlatform] ?? platform}, publikacja ${scheduled_date}.`,
+          due_date: scheduled_date,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingTask.id);
     }
   }
   revalidateMarketing();

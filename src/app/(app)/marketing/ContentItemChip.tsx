@@ -12,6 +12,7 @@ import {
   CONTENT_PURPOSE_ICONS,
   CONTENT_FORMAT_LABELS,
   CONTENT_FORMAT_ICONS,
+  hasStaleChannelPrefix,
   isApprovalPending,
   type ContentPlatform,
   type ContentStatus,
@@ -70,6 +71,7 @@ export function ContentItemChip({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewNoteDraft, setReviewNoteDraft] = useState(item.review_note);
+  const [title, setTitle] = useState(item.title);
   const assignee = item.assignee_employee_id ? assignees.find((a) => a.id === item.assignee_employee_id) : null;
   const published = item.status === "opublikowane";
   const pendingApproval = isApprovalPending(item, today);
@@ -197,7 +199,12 @@ export function ContentItemChip({
               <input type="hidden" name="id" value={item.id} />
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-zinc-900">Tytuł</label>
-                <input name="title" defaultValue={item.title} required className={INPUT} />
+                <input name="title" value={title} onChange={(e) => setTitle(e.target.value)} required className={INPUT} />
+                {hasStaleChannelPrefix(title) && (
+                  <p className="text-xs text-amber-600">
+                    ⚠ Facebook i Instagram to jeden kanał — rozważ [FB/IG] zamiast samego [FB] albo [IG] w tytule.
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
