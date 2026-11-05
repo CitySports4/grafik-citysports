@@ -17,11 +17,13 @@ export const TASK_PRIORITY_LABELS: Record<MarketingTaskPriority, string> = {
   high: "Wysoki",
 };
 
-// Bez TikToka — klub tam nic nie publikuje (patrz migracja 0053).
-export type ContentPlatform = "instagram" | "facebook" | "strona_www" | "email" | "inne";
+// Bez TikToka — klub tam nic nie publikuje (patrz migracja 0053). Facebook i
+// Instagram NIE są rozdzielane — ten sam materiał zawsze idzie na oba naraz,
+// więc liczą się jako jeden kanał (patrz migracja 0058), nie dwa osobne do
+// wyboru.
+export type ContentPlatform = "facebook_instagram" | "strona_www" | "email" | "inne";
 export const PLATFORM_LABELS: Record<ContentPlatform, string> = {
-  instagram: "Instagram",
-  facebook: "Facebook",
+  facebook_instagram: "Facebook / Instagram",
   strona_www: "Strona WWW",
   email: "E-mail",
   inne: "Inne",
@@ -29,8 +31,7 @@ export const PLATFORM_LABELS: Record<ContentPlatform, string> = {
 // Ikona rozpoznawalna na pierwszy rzut oka w ciasnej komórce kalendarza —
 // szybsza do wyłapania wzrokiem niż sam skrót tekstowy.
 export const PLATFORM_ICONS: Record<ContentPlatform, string> = {
-  instagram: "📸",
-  facebook: "👍",
+  facebook_instagram: "📲",
   strona_www: "🌐",
   email: "✉️",
   inne: "📌",

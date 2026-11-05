@@ -26,7 +26,7 @@ z brakami. Każdy wpis zaczyna się od nagłówka "### ".
 ## Treści (kalendarz)
 
 ### Tytuł treści
-- Platforma: Instagram / Facebook / Strona WWW / E-mail / Inne
+- Platforma: Facebook/Instagram / Strona WWW / E-mail / Inne
 - Cel: Promocja / Relacja
 - Data publikacji: RRRR-MM-DD
 - Status: Pomysł / W przygotowaniu / Gotowe / Opublikowane
@@ -50,7 +50,7 @@ export type ExtractedTask = {
 };
 export type ExtractedContent = {
   title: string;
-  platform?: "instagram" | "facebook" | "strona_www" | "email" | "inne";
+  platform?: "facebook_instagram" | "strona_www" | "email" | "inne";
   purpose?: "promocja" | "relacja";
   scheduled_date?: string;
   status?: "pomysl" | "w_przygotowaniu" | "gotowe" | "opublikowane";
@@ -96,7 +96,11 @@ const IMPORT_TOOL: Anthropic.Tool = {
           type: "object",
           properties: {
             title: { type: "string" },
-            platform: { type: "string", enum: ["instagram", "facebook", "strona_www", "email", "inne"], description: "Domyślnie inne, jeśli nie podano." },
+            platform: {
+              type: "string",
+              enum: ["facebook_instagram", "strona_www", "email", "inne"],
+              description: "facebook_instagram — Facebook i Instagram nie są rozdzielane, ten sam post idzie na oba. Domyślnie inne, jeśli nie podano.",
+            },
             purpose: {
               type: "string",
               enum: ["promocja", "relacja"],
