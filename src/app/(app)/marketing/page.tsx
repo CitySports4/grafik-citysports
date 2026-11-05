@@ -56,7 +56,7 @@ export default async function MarketingPage({
       {tab === "zadania" && (
         <TasksSection currentEmployeeId={employee.id} assigneeFilter={params.osoba} showAll={params.zakres === "wszystkie"} />
       )}
-      {tab === "kalendarz" && <ContentCalendarSection yearParam={params.year} monthParam={params.month} />}
+      {tab === "kalendarz" && <ContentCalendarSection yearParam={params.year} monthParam={params.month} assigneeFilter={params.osoba} />}
       {tab === "plany" && <PlansSection />}
 
       {/* Funkcja zaawansowana, używana rzadko — przeniesiona na sam dół,

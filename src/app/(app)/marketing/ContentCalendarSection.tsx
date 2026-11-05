@@ -4,6 +4,7 @@ import { requireEmployee } from "@/lib/session";
 import { toDateKey, daysInMonth, monthLabel, currentMonth } from "@/lib/schedule-month";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { Banner } from "@/components/Banner";
+import { ColorDot } from "@/components/ColorDot";
 import {
   CONTENT_STATUS_LABELS,
   CONTENT_STATUS_ORDER,
@@ -45,7 +46,21 @@ const STATUS_DOT: Record<ContentStatus, string> = {
   opublikowane: "bg-emerald-500",
 };
 
-export async function ContentCalendarSection({ yearParam, monthParam }: { yearParam?: string; monthParam?: string }) {
+// Sentinel dla jawnego "moje" w URL (?osoba=_moje) — w przeciwieństwie do
+// Zadań kalendarz NIE zawęża się domyślnie do zalogowanej osoby (to wspólny
+// widok publikacji całego zespołu, pełna widoczność jest tu wartością), ale
+// każdy może się do siebie zawęzić jednym klikiem, tak samo jak w Zadaniach.
+const MINE = "_moje";
+
+export async function ContentCalendarSection({
+  yearParam,
+  monthParam,
+  assigneeFilter,
+}: {
+  yearParam?: string;
+  monthParam?: string;
+  assigneeFilter?: string;
+}) {
   const employee = await requireEmployee();
   const isAdmin = employee.roles.includes("admin");
   const today = toDateKey(new Date());
@@ -55,8 +70,9 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
 
   const days = daysInMonth(year, month);
   const dateKeys = days.map(toDateKey);
-  const prevLink = month === 1 ? `?tab=kalendarz&year=${year - 1}&month=12` : `?tab=kalendarz&year=${year}&month=${month - 1}`;
-  const nextLink = month === 12 ? `?tab=kalendarz&year=${year + 1}&month=1` : `?tab=kalendarz&year=${year}&month=${month + 1}`;
+  const osobaSuffix = assigneeFilter ? `&osoba=${assigneeFilter}` : "";
+  const prevLink = month === 1 ? `?tab=kalendarz&year=${year - 1}&month=12${osobaSuffix}` : `?tab=kalendarz&year=${year}&month=${month - 1}${osobaSuffix}`;
+  const nextLink = month === 12 ? `?tab=kalendarz&year=${year + 1}&month=1${osobaSuffix}` : `?tab=kalendarz&year=${year}&month=${month + 1}${osobaSuffix}`;
 
   const supabase = createServerSupabaseClient();
   const [{ data: contentRaw }, { data: assigneesRaw }, { data: linkedTasksRaw }, { data: lastPublishedRaw }] = await Promise.all([
@@ -91,9 +107,13 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
       .maybeSingle(),
   ]);
 
-  const content = (contentRaw ?? []) as ContentItem[];
+  const allContent = (contentRaw ?? []) as ContentItem[];
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const contentIdsWithTask = new Set((linkedTasksRaw ?? []).map((t) => t.content_id as string));
+
+  const effectiveFilter = assigneeFilter === MINE ? employee.id : assigneeFilter;
+  const content = !effectiveFilter ? allContent : allContent.filter((c) => c.assignee_employee_id === effectiveFilter);
+
   const byDate = new Map<string, ContentItem[]>();
   for (const c of content) {
     if (!byDate.has(c.scheduled_date)) byDate.set(c.scheduled_date, []);
@@ -130,6 +150,39 @@ export async function ContentCalendarSection({ yearParam, monthParam }: { yearPa
             następny →
           </Link>
         </div>
+      </div>
+
+      {/* Filtr po osobie — ten sam wzorzec co w Zadaniach, ale BEZ domyślnego
+          zawężenia: kalendarz to wspólny widok publikacji całego zespołu,
+          pełna widoczność jest tu wartością (patrz komentarz przy MINE
+          wyżej). Liczniki liczone w obrębie oglądanego miesiąca. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Link
+          href={`?tab=kalendarz&year=${year}&month=${month}&osoba=${MINE}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === employee.id ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+        >
+          Moje ({allContent.filter((c) => c.assignee_employee_id === employee.id).length})
+        </Link>
+        <Link
+          href={`?tab=kalendarz&year=${year}&month=${month}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!assigneeFilter ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+        >
+          Wszyscy ({allContent.length})
+        </Link>
+        {assignees
+          .filter((a) => a.id !== employee.id)
+          .map((a) => (
+            <Link
+              key={a.id}
+              href={`?tab=kalendarz&year=${year}&month=${month}&osoba=${a.id}`}
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                effectiveFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              }`}
+            >
+              <ColorDot color={a.color_hex} />
+              {a.name} ({allContent.filter((c) => c.assignee_employee_id === a.id).length})
+            </Link>
+          ))}
       </div>
 
       {/* Legenda statusów — same kolory w chipach poniżej byłyby czytelne

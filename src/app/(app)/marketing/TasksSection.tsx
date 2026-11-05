@@ -49,10 +49,16 @@ const PRIORITY_BADGE: Record<MarketingTaskPriority, string> = {
 const PRIORITY_RANK: Record<MarketingTaskPriority, number> = { high: 0, normal: 1, low: 2 };
 
 // Sentinel dla filtra "bez przypisanej osoby" w URL (?osoba=_brak) — osobny
-// od braku parametru w ogóle (które znaczy "wszyscy"), bo po imporcie z
-// pliku część zadań regularnie ląduje bez przypisania (nazwisko z pliku nie
-// pasowało 1:1 do konta w systemie) i to też trzeba dało się przefiltrować.
+// od braku parametru w ogóle (które znaczy "moje", patrz niżej), bo po
+// imporcie z pliku część zadań regularnie ląduje bez przypisania (nazwisko z
+// pliku nie pasowało 1:1 do konta w systemie) i to też trzeba dało się
+// przefiltrować.
 const UNASSIGNED = "_brak";
+// Sentinel dla jawnego "pokaż wszystkich" (?osoba=_wszyscy) — domyślnie (brak
+// parametru w ogóle) widok jest zawężony do zalogowanej osoby: "jak Oliwia
+// się loguje, widzi najpierw swoje zadania, nie przeszkadzają jej cudze".
+// Każdy może świadomie przełączyć się na widok całego zespołu tym chipem.
+const ALL = "_wszyscy";
 
 // Ile dni do przodu liczy się jako "bieżący i następny tydzień" — domyślny,
 // zawężony widok (patrz feedback z użycia: "Wszyscy (41)" na co dzień to za
@@ -99,11 +105,16 @@ export async function TasksSection({
   const allTasks = allTasksRaw.filter((t) => !t.archived);
   const archivedTasks = allTasksRaw.filter((t) => t.archived);
 
-  const byAssignee = !assigneeFilter
-    ? allTasks
-    : assigneeFilter === UNASSIGNED
-      ? allTasks.filter((t) => !t.assignee_employee_id)
-      : allTasks.filter((t) => t.assignee_employee_id === assigneeFilter);
+  // Brak parametru w URL = "moje" (currentEmployeeId), nie "wszyscy" — patrz
+  // komentarz przy ALL. effectiveFilter jest tym, co faktycznie podświetla
+  // się jako aktywny chip i co filtruje listę.
+  const effectiveFilter = assigneeFilter ?? currentEmployeeId;
+  const byAssignee =
+    effectiveFilter === ALL
+      ? allTasks
+      : effectiveFilter === UNASSIGNED
+        ? allTasks.filter((t) => !t.assignee_employee_id)
+        : allTasks.filter((t) => t.assignee_employee_id === effectiveFilter);
 
   const inScope = (t: Task) => !t.due_date || t.due_date <= horizon;
   const tasks = showAll ? byAssignee : byAssignee.filter(inScope);
@@ -310,42 +321,57 @@ export async function TasksSection({
         </form>
       </Card>
 
-      {/* Filtr po osobie — bez niego 20+ zadań wszystkich naraz w jednej
-          kolumnie to ściana nie do ogarnięcia. Linki, nie przyciski JS (ten
-          sam wzorzec co prevLink/nextLink w kalendarzu treści) — stan filtra
-          żyje w URL, więc działa bez JS i da się wysłać komuś link "zobacz
-          zadania Oliwii". Dokładamy &zakres, gdy user jest w widoku
-          "wszystkie", żeby przełączenie osoby nie resetowało go po cichu z
-          powrotem na zawężony. */}
+      {/* Filtr po osobie — domyślnie (bez parametru w URL) zawężony do
+          zalogowanej osoby: "jak Oliwia się loguje, widzi najpierw swoje
+          zadania, nie przeszkadzają jej cudze" — patrz ALL/effectiveFilter
+          wyżej. Linki, nie przyciski JS (ten sam wzorzec co
+          prevLink/nextLink w kalendarzu treści) — stan filtra żyje w URL,
+          więc działa bez JS i da się wysłać komuś link "zobacz zadania
+          Oliwii". Dokładamy &zakres, gdy user jest w widoku "wszystkie",
+          żeby przełączenie osoby nie resetowało go po cichu z powrotem na
+          zawężony. */}
       <div className="flex flex-wrap items-center gap-1.5">
+        {(() => {
+          const myCount = allTasks.filter((t) => t.assignee_employee_id === currentEmployeeId).length;
+          return (
+            <Link
+              href={`/marketing?tab=zadania${showAll ? "&zakres=wszystkie" : ""}`}
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === currentEmployeeId ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+            >
+              Moje zadania ({myCount})
+            </Link>
+          );
+        })()}
         <Link
-          href={`/marketing?tab=zadania${showAll ? "&zakres=wszystkie" : ""}`}
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!assigneeFilter ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          href={`/marketing?tab=zadania&osoba=${ALL}${showAll ? "&zakres=wszystkie" : ""}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === ALL ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Wszyscy ({allTasks.length})
         </Link>
-        {assignees.map((a) => {
-          const count = allTasks.filter((t) => t.assignee_employee_id === a.id).length;
-          return (
-            <Link
-              key={a.id}
-              href={`/marketing?tab=zadania&osoba=${a.id}${showAll ? "&zakres=wszystkie" : ""}`}
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                assigneeFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-              }`}
-            >
-              <ColorDot color={a.color_hex} />
-              {a.name} ({count})
-            </Link>
-          );
-        })}
+        {assignees
+          .filter((a) => a.id !== currentEmployeeId)
+          .map((a) => {
+            const count = allTasks.filter((t) => t.assignee_employee_id === a.id).length;
+            return (
+              <Link
+                key={a.id}
+                href={`/marketing?tab=zadania&osoba=${a.id}${showAll ? "&zakres=wszystkie" : ""}`}
+                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  effectiveFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                }`}
+              >
+                <ColorDot color={a.color_hex} />
+                {a.name} ({count})
+              </Link>
+            );
+          })}
         {(() => {
           const unassignedCount = allTasks.filter((t) => !t.assignee_employee_id).length;
           return unassignedCount > 0 ? (
             <Link
               href={`/marketing?tab=zadania&osoba=${UNASSIGNED}${showAll ? "&zakres=wszystkie" : ""}`}
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                assigneeFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                effectiveFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
               }`}
             >
               Nieprzypisane ({unassignedCount})
