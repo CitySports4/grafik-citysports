@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining, canAccessMarketing } from "@/lib/session";
+import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining, canAccessMarketing, canAccessKasa } from "@/lib/session";
 import { NavDropdown } from "@/components/NavDropdown";
 import { MainContainer } from "@/components/MainContainer";
 import { logout } from "./actions";
@@ -38,17 +38,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           ],
         },
       ];
+
+  // "Zajęcia" grupuje Treningi personalne + Zajęcia dla dzieci pod jedno
+  // rozwijane menu zamiast dwóch osobnych pozycji — dla admina (który widzi
+  // oba) to różnica między czterema a trzema pozycjami w górnym pasku. Dla
+  // kogoś, kto widzi tylko jedną z nich (np. sam trener personalny), zbędny
+  // byłby rozwijany dropdown z jedną pozycją, więc wtedy zostaje zwykłym
+  // linkiem. Zajęcia dla dzieci — bieżącą obsługę recepcja robi przez kiosk
+  // PIN (/recepcja/zajecia-dzieci), nie stąd; tu zostaje tylko dla admina
+  // (konfiguracja grup/cennika).
+  const zajeciaLinks: { href: string; label: string }[] = [];
+  if (canSeePersonalTraining) zajeciaLinks.push({ href: "/treningi-personalne", label: "Treningi personalne" });
+  if (employee.roles.includes("admin")) zajeciaLinks.push({ href: "/zajecia-dzieci", label: "Zajęcia dla dzieci" });
+  if (zajeciaLinks.length > 1) navGroups.push({ label: "Zajęcia", links: zajeciaLinks });
+
   const trailingLinks: { href: string; label: string }[] = [];
   if (!isTrainerOnly) trailingLinks.push({ href: "/zadania", label: "Sprzątanie" });
-  if (canSeePersonalTraining) trailingLinks.push({ href: "/treningi-personalne", label: "Treningi personalne" });
+  if (zajeciaLinks.length === 1) trailingLinks.push(zajeciaLinks[0]);
   if (canAccessMarketing(employee)) trailingLinks.push({ href: "/marketing", label: "Marketing" });
-  // Zajęcia dla dzieci — bieżącą obsługę recepcja robi przez kiosk PIN
-  // (/recepcja/zajecia-dzieci), nie stąd; tu zostaje tylko dla admina
-  // (konfiguracja grup/cennika).
-  if (employee.roles.includes("admin")) {
-    trailingLinks.push({ href: "/zajecia-dzieci", label: "Zajęcia dla dzieci" });
-    trailingLinks.push({ href: "/admin", label: "Panel admina" });
-  }
+  if (canAccessKasa(employee)) trailingLinks.push({ href: "/kasa", label: "Kasa" });
+  if (employee.roles.includes("admin")) trailingLinks.push({ href: "/admin", label: "Panel admina" });
 
   return (
     <div className="flex min-h-screen flex-col">
