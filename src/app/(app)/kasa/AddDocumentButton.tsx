@@ -11,7 +11,19 @@ const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const LABEL = "text-sm font-semibold text-zinc-900";
 
-export function AddDocumentButton({ cashDayId, type, categories }: { cashDayId: string; type: CashDocumentType; categories: string[] }) {
+type Employee = { id: string; name: string };
+
+export function AddDocumentButton({
+  cashDayId,
+  type,
+  categories,
+  employeesOnShift,
+}: {
+  cashDayId: string;
+  type: CashDocumentType;
+  categories: string[];
+  employeesOnShift: Employee[];
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +63,19 @@ export function AddDocumentButton({ cashDayId, type, categories }: { cashDayId: 
               <div className="flex flex-col gap-1.5">
                 <label className={LABEL}>Kwota (PLN)</label>
                 <input type="number" step="0.01" min="0.01" name="amount" required className={INPUT} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className={LABEL}>Kto dodaje (z grafiku)</label>
+                <select name="employee_id" required defaultValue="" className={INPUT}>
+                  <option value="" disabled>
+                    — wybierz —
+                  </option>
+                  {employeesOnShift.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               {type === "KW" && (
                 <div className="flex flex-col gap-1.5">

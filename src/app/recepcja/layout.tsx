@@ -1,3 +1,5 @@
+import Link from "next/link";
+import Image from "next/image";
 import { hasKioskSession } from "@/lib/kiosk-session";
 import { verifyKioskPin, kioskLogout } from "./actions";
 import { KioskPinForm } from "./KioskPinForm";
@@ -23,7 +25,13 @@ export default async function RecepcjaLayout({ children }: { children: React.Rea
     <div className="min-h-screen bg-zinc-50">
       <header className="bg-brand-navy">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <span className="font-semibold text-white">City Sports — Recepcja</span>
+          <div className="flex items-center gap-3">
+            <Link href="/recepcja">
+              <Image src="/logo.png" alt="City Sports" width={146} height={32} className="h-8 w-auto" priority />
+            </Link>
+            <span className="hidden h-6 w-px bg-white/20 sm:block" />
+            <span className="font-semibold text-white">Recepcja</span>
+          </div>
           <form action={kioskLogout}>
             <button type="submit" className="rounded-lg px-3 py-1.5 text-sm font-medium text-white/70 hover:bg-white/10 hover:text-brand-orange">
               Wyloguj to stanowisko
