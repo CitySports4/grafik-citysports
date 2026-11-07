@@ -66,6 +66,24 @@ export default function AdminHomePage() {
       </div>
 
       <div>
+        <h2 className={SECTION_LABEL}>Kasa</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <CardLink href="/kasa">
+            <h2 className="font-semibold text-zinc-900">Zamknięcie dnia</h2>
+            <p className="mt-1 text-sm text-zinc-500">Wpływy, liczenie gotówki, KW/KP, zamknięcie dnia (RD).</p>
+          </CardLink>
+          <CardLink href="/kasa/historia">
+            <h2 className="font-semibold text-zinc-900">Historia</h2>
+            <p className="mt-1 text-sm text-zinc-500">Archiwum dni, różnice, cofanie zamknięcia.</p>
+          </CardLink>
+          <CardLink href="/admin/kasa">
+            <h2 className="font-semibold text-zinc-900">Ustawienia</h2>
+            <p className="mt-1 text-sm text-zinc-500">Numeracja RD, limit gotówki, kategorie KW.</p>
+          </CardLink>
+        </div>
+      </div>
+
+      <div>
         <h2 className={SECTION_LABEL}>Recepcja</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <CardLink href="/admin/podglad-ogolny">

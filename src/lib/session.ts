@@ -126,6 +126,12 @@ export function canAccessMarketing(employee: SessionEmployee): boolean {
   return employee.roles.includes("marketing") || employee.roles.includes("admin");
 }
 
+// Dostęp do /kasa — rola recepcja (zamknięcie dnia, KW/KP) plus admin
+// (korekty, ustawienia) — dokładnie jak w specyfikacji modułu.
+export function canAccessKasa(employee: SessionEmployee): boolean {
+  return employee.roles.includes("recepcja") || employee.roles.includes("admin");
+}
+
 export async function requireEmployee(): Promise<SessionEmployee> {
   const employee = await getSessionEmployee();
   if (!employee) {
