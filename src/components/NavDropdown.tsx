@@ -2,12 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 // Grupa nawigacji rozwijana kliknięciem (nie hover, żeby działało też na
-// dotyku) — z zamykaniem po kliknięciu poza nią lub wyborze pozycji.
+// dotyku) — z zamykaniem po kliknięciu poza nią lub wyborze pozycji. Styl
+// przycisku to ta sama "zakładka", co w RecepcjaTabs — jedno i drugie menu
+// ma teraz wyglądać identycznie, patrz AppNavTabs.
 export function NavDropdown({ label, links }: { label: string; links: { href: string; label: string }[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  const active = links.some((l) => pathname.startsWith(l.href));
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -18,11 +23,13 @@ export function NavDropdown({ label, links }: { label: string; links: { href: st
   }, []);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative shrink-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded-lg px-3 py-1.5 font-medium text-white/80 hover:bg-white/10 hover:text-white"
+        className={`flex items-center gap-1 whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
+          active ? "bg-zinc-50 text-brand-navy" : "text-white/70 hover:bg-white/10 hover:text-white"
+        }`}
       >
         {label}
         <span className={`text-[9px] transition-transform ${open ? "rotate-180" : ""}`}>▾</span>

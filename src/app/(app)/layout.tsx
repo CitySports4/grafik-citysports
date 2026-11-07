@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining, canAccessMarketing, canAccessKasa } from "@/lib/session";
-import { NavDropdown } from "@/components/NavDropdown";
 import { MainContainer } from "@/components/MainContainer";
+import { AppNavTabs } from "./AppNavTabs";
 import { logout } from "./actions";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -76,29 +76,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <span className="font-semibold text-white">{employee.name}</span>
             </div>
           </div>
-          <nav className="flex flex-wrap items-center gap-1 text-sm">
-            {navGroups.map((group) => (
-              <NavDropdown key={group.label} label={group.label} links={group.links} />
-            ))}
-            {trailingLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="rounded-lg px-3 py-1.5 font-medium text-white/80 hover:bg-white/10 hover:text-white"
-              >
-                {link.label}
-              </Link>
-            ))}
-            <form action={logout}>
-              <button
-                type="submit"
-                className="rounded-lg px-3 py-1.5 font-medium text-white/70 hover:bg-white/10 hover:text-brand-orange"
-              >
-                Wyloguj
-              </button>
-            </form>
-          </nav>
+          <form action={logout}>
+            <button
+              type="submit"
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-white/70 hover:bg-white/10 hover:text-brand-orange"
+            >
+              Wyloguj
+            </button>
+          </form>
         </div>
+        <AppNavTabs navGroups={navGroups} trailingLinks={trailingLinks} />
       </header>
       <MainContainer>{children}</MainContainer>
     </div>
