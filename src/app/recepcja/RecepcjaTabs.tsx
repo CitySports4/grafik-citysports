@@ -8,6 +8,7 @@ const TABS = [
   { href: "/recepcja/zadania", label: "Zadania sprzątania" },
   { href: "/recepcja/treningi", label: "Treningi personalne" },
   { href: "/recepcja/zajecia-dzieci", label: "Zajęcia dla dzieci" },
+  { href: "/recepcja/kasa", label: "Kasa" },
 ];
 
 export function RecepcjaTabs() {

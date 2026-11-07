@@ -4,21 +4,31 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { toDateKey } from "@/lib/schedule-month";
 import { requireEmployee, requireAdmin, canAccessKasa } from "@/lib/session";
+import { hasKioskSession } from "@/lib/kiosk-session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { uploadToDrive } from "@/lib/google-drive";
 import { formatDocumentNumber, cashDifference, type CashDocumentType, type AttachmentKind } from "@/lib/kasa";
 import { getCashDayDetails, computeExpected, type CashDay } from "./data";
 
-async function requireKasaAccess() {
+// Dostęp z osobistego logowania (recepcja/admin) ALBO ze wspólnego
+// stanowiska kioskowego na recepcji (patrz /recepcja — bez osobnej
+// tożsamości). Kiosk nie niesie employee.id, więc "kto to zrobił" przy
+// KW/KP/załącznikach/zamknięciu dnia jest TU zawsze jawnym polem
+// employee_id z formularza (wybór z grafiku), nigdy z sesji — ten sam
+// wzorzec co "kto liczył" przy liczeniu gotówki, tylko konsekwentnie
+// zastosowany wszędzie, żeby działało identycznie w obu widokach.
+async function requireKasaAccess(): Promise<void> {
+  if (await hasKioskSession()) return;
   const employee = await requireEmployee();
   if (!canAccessKasa(employee)) throw new Error("Brak uprawnień — Kasa jest dostępna dla recepcji i administratora.");
-  return employee;
 }
 
 function revalidateKasa(date: string) {
   revalidatePath("/kasa");
   revalidatePath(`/kasa?date=${date}`);
   revalidatePath("/kasa/historia");
+  revalidatePath("/recepcja/kasa");
+  revalidatePath(`/recepcja/kasa?date=${date}`);
 }
 
 async function getOpenDay(supabase: ReturnType<typeof createServerSupabaseClient>, cashDayId: string): Promise<CashDay> {
@@ -111,7 +121,7 @@ export type AddDocumentResult = { ok: true } | { ok: false; error: string };
 // recepcja na miejscu).
 export async function addCashDocument(formData: FormData): Promise<AddDocumentResult> {
   try {
-    const employee = await requireKasaAccess();
+    await requireKasaAccess();
     const cash_day_id = String(formData.get("cash_day_id") ?? "");
     const type = String(formData.get("type") ?? "") as CashDocumentType;
     const counterparty = String(formData.get("counterparty") ?? "").trim();
@@ -119,10 +129,12 @@ export async function addCashDocument(formData: FormData): Promise<AddDocumentRe
     const amount = Number(formData.get("amount"));
     const category = String(formData.get("category") ?? "") || null;
     const description = String(formData.get("description") ?? "").trim();
+    const employee_id = String(formData.get("employee_id") ?? "");
     const file = formData.get("file") as File | null;
     if (!cash_day_id || (type !== "KW" && type !== "KP") || !Number.isFinite(amount) || amount <= 0) {
       return { ok: false, error: "Podaj poprawną kwotę i typ dokumentu." };
     }
+    if (!employee_id) return { ok: false, error: "Wybierz, kto dodaje dokument (z grafiku)." };
     if (!file || file.size === 0) return { ok: false, error: "Zdjęcie lub skan dokumentu jest obowiązkowe." };
 
     const supabase = createServerSupabaseClient();
@@ -141,7 +153,7 @@ export async function addCashDocument(formData: FormData): Promise<AddDocumentRe
 
     const { data: created, error } = await supabase
       .from("cash_document")
-      .insert({ type, number, cash_day_id, counterparty, source_doc_number, amount, category, description, created_by_employee_id: employee.id })
+      .insert({ type, number, cash_day_id, counterparty, source_doc_number, amount, category, description, created_by_employee_id: employee_id })
       .select("id")
       .single();
     if (error || !created) return { ok: false, error: dbErrorMessage(error) };
@@ -157,7 +169,7 @@ export async function addCashDocument(formData: FormData): Promise<AddDocumentRe
       drive_file_id: upload.fileId,
       drive_url: upload.webViewLink,
       file_name: fileName,
-      uploaded_by_employee_id: employee.id,
+      uploaded_by_employee_id: employee_id,
     });
     if (attachError) return { ok: false, error: dbErrorMessage(attachError) };
 
@@ -182,11 +194,13 @@ export async function deleteCashDocument(formData: FormData) {
 
 export async function addDayAttachment(formData: FormData): Promise<AddDocumentResult> {
   try {
-    const employee = await requireKasaAccess();
+    await requireKasaAccess();
     const cash_day_id = String(formData.get("cash_day_id") ?? "");
     const kind = String(formData.get("kind") ?? "inne") as AttachmentKind;
+    const employee_id = String(formData.get("employee_id") ?? "");
     const file = formData.get("file") as File | null;
     if (!cash_day_id || !file || file.size === 0) return { ok: false, error: "Wybierz plik." };
+    if (!employee_id) return { ok: false, error: "Wybierz, kto dodaje załącznik (z grafiku)." };
 
     const supabase = createServerSupabaseClient();
     const day = await getOpenDay(supabase, cash_day_id);
@@ -203,7 +217,7 @@ export async function addDayAttachment(formData: FormData): Promise<AddDocumentR
       drive_file_id: upload.fileId,
       drive_url: upload.webViewLink,
       file_name: fileName,
-      uploaded_by_employee_id: employee.id,
+      uploaded_by_employee_id: employee_id,
     });
     if (error) return { ok: false, error: dbErrorMessage(error) };
     revalidateKasa(day.date);
@@ -220,9 +234,11 @@ export type CloseDayResult = { ok: true } | { ok: false; error: string };
 // w specyfikacji, pkt 3.1.4).
 export async function closeCashDay(formData: FormData): Promise<CloseDayResult> {
   try {
-    const employee = await requireKasaAccess();
+    await requireKasaAccess();
     const cash_day_id = String(formData.get("cash_day_id") ?? "");
+    const employee_id = String(formData.get("employee_id") ?? "");
     if (!cash_day_id) return { ok: false, error: "Brak danych." };
+    if (!employee_id) return { ok: false, error: "Wybierz, kto zamyka dzień (z grafiku)." };
 
     const supabase = createServerSupabaseClient();
     const day = await getOpenDay(supabase, cash_day_id);
@@ -245,7 +261,7 @@ export async function closeCashDay(formData: FormData): Promise<CloseDayResult> 
         rd_number: rdNumber,
         expected_closing: expected,
         difference,
-        closed_by_employee_id: employee.id,
+        closed_by_employee_id: employee_id,
         closed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

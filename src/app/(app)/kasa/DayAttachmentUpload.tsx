@@ -11,7 +11,9 @@ const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const LABEL = "text-sm font-semibold text-zinc-900";
 
-export function DayAttachmentUpload({ cashDayId }: { cashDayId: string }) {
+type Employee = { id: string; name: string };
+
+export function DayAttachmentUpload({ cashDayId, employeesOnShift }: { cashDayId: string; employeesOnShift: Employee[] }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +49,19 @@ export function DayAttachmentUpload({ cashDayId }: { cashDayId: string }) {
                   {(Object.entries(ATTACHMENT_KIND_LABELS) as [AttachmentKind, string][]).map(([v, l]) => (
                     <option key={v} value={v}>
                       {l}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className={LABEL}>Kto dodaje (z grafiku)</label>
+                <select name="employee_id" required defaultValue="" className={INPUT}>
+                  <option value="" disabled>
+                    — wybierz —
+                  </option>
+                  {employeesOnShift.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
                     </option>
                   ))}
                 </select>
