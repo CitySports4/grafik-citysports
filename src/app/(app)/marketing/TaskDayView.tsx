@@ -4,7 +4,7 @@ import { toDateKey } from "@/lib/schedule-month";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
 import { TASK_PRIORITY_LABELS, type MarketingTaskPriority, type MarketingTaskStatus } from "@/lib/marketing";
-import { isTaskActiveOnDay, tileUrgency, formatDeadlineBadge } from "@/lib/task-calendar";
+import { isTaskActiveOnDay, tileUrgency, formatDeadlineBadge, filterByAssignee, ASSIGNEE_UNASSIGNED } from "@/lib/task-calendar";
 import { setTaskStatus } from "./actions";
 
 type Task = {
@@ -23,15 +23,16 @@ const PRIORITY_BADGE: Record<MarketingTaskPriority, string> = {
   high: "bg-red-50 text-red-600",
 };
 const PRIORITY_RANK: Record<MarketingTaskPriority, number> = { high: 0, normal: 1, low: 2 };
-const NO_ASSIGNEE = "_brak";
 
 function dayLink(date: string) {
   return `/marketing?tab=zadania&widokZadan=dzien&data=${date}`;
 }
 
 // Widok DZIEŃ (patrz Sprint "Widoki kalendarza zadań") — lista aktywnych
-// zadań (patrz isTaskActiveOnDay) na konkretny dzień, pogrupowana wg osoby.
-export async function TaskDayView({ date }: { date: string }) {
+// zadań (patrz isTaskActiveOnDay) na konkretny dzień, pogrupowana wg osoby,
+// zawężona filtrem po osobie (patrz assigneeFilter — ta sama zasada co w
+// Kanbanie: domyślnie tylko moje).
+export async function TaskDayView({ date, assigneeFilter }: { date: string; assigneeFilter: string }) {
   const today = toDateKey(new Date());
   const prevDate = toDateKey(new Date(new Date(date + "T00:00:00").getTime() - 86400000));
   const nextDate = toDateKey(new Date(new Date(date + "T00:00:00").getTime() + 86400000));
@@ -54,23 +55,24 @@ export async function TaskDayView({ date }: { date: string }) {
 
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const assigneeById = new Map(assignees.map((a) => [a.id, a]));
-  const tasks = ((tasksRaw ?? []) as Task[]).filter((t) => isTaskActiveOnDay(t.due_date, date, today));
+  const activeToday = ((tasksRaw ?? []) as Task[]).filter((t) => isTaskActiveOnDay(t.due_date, date, today));
+  const tasks = filterByAssignee(activeToday, assigneeFilter);
 
   const byAssignee = new Map<string, Task[]>();
   for (const t of tasks) {
-    const key = t.assignee_employee_id ?? NO_ASSIGNEE;
+    const key = t.assignee_employee_id ?? ASSIGNEE_UNASSIGNED;
     if (!byAssignee.has(key)) byAssignee.set(key, []);
     byAssignee.get(key)!.push(t);
   }
   const groups = Array.from(byAssignee.entries())
     .map(([key, list]) => ({
       key,
-      assignee: key === NO_ASSIGNEE ? null : assigneeById.get(key),
+      assignee: key === ASSIGNEE_UNASSIGNED ? null : assigneeById.get(key),
       tasks: list.sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]),
     }))
     .sort((a, b) => {
-      if (a.key === NO_ASSIGNEE) return 1;
-      if (b.key === NO_ASSIGNEE) return -1;
+      if (a.key === ASSIGNEE_UNASSIGNED) return 1;
+      if (b.key === ASSIGNEE_UNASSIGNED) return -1;
       return (a.assignee?.name ?? "").localeCompare(b.assignee?.name ?? "");
     });
 

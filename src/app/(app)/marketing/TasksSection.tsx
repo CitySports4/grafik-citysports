@@ -21,6 +21,7 @@ import { AddTaskForm } from "./AddTaskForm";
 import { TaskDayView } from "./TaskDayView";
 import { TaskWeekView } from "./TaskWeekView";
 import { TaskMonthView } from "./TaskMonthView";
+import { ASSIGNEE_ALL as ALL, ASSIGNEE_UNASSIGNED as UNASSIGNED } from "@/lib/task-calendar";
 
 const INPUT_SM = "rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-xs";
 
@@ -58,17 +59,12 @@ const PRIORITY_BADGE: Record<MarketingTaskPriority, string> = {
 // stabilny).
 const PRIORITY_RANK: Record<MarketingTaskPriority, number> = { high: 0, normal: 1, low: 2 };
 
-// Sentinel dla filtra "bez przypisanej osoby" w URL (?osoba=_brak) — osobny
-// od braku parametru w ogóle (które znaczy "moje", patrz niżej), bo po
-// imporcie z pliku część zadań regularnie ląduje bez przypisania (nazwisko z
-// pliku nie pasowało 1:1 do konta w systemie) i to też trzeba dało się
-// przefiltrować.
-const UNASSIGNED = "_brak";
-// Sentinel dla jawnego "pokaż wszystkich" (?osoba=_wszyscy) — domyślnie (brak
-// parametru w ogóle) widok jest zawężony do zalogowanej osoby: "jak Oliwia
-// się loguje, widzi najpierw swoje zadania, nie przeszkadzają jej cudze".
-// Każdy może świadomie przełączyć się na widok całego zespołu tym chipem.
-const ALL = "_wszyscy";
+// Sentinele ASSIGNEE_ALL/ASSIGNEE_UNASSIGNED (importowane jako ALL/UNASSIGNED
+// powyżej) żyją teraz w lib/task-calendar.ts — współdzielone z widokami
+// Dzień/Tydzień/Miesiąc, które mają ten sam filtr po osobie, domyślnie
+// zawężony do zalogowanej osoby ("jak Oliwia się loguje, widzi najpierw
+// swoje zadania, nie przeszkadzają jej cudze" — dotyczy teraz WSZYSTKICH
+// czterech trybów Zadań, nie tylko Kanbanu).
 
 // Sentinel dla jawnego "pełny widok" w URL (?widok=pelny) — od audytu UX
 // (F1) domyślny widok (brak parametru widok w ogóle) to teraz "Mój
@@ -480,9 +476,52 @@ export async function TasksSection({
         </Link>
       </div>
 
-      {activeCalendarView === "dzien" && <TaskDayView date={calDate} />}
-      {activeCalendarView === "tydzien" && <TaskWeekView date={calDate} />}
-      {activeCalendarView === "miesiac" && <TaskMonthView date={calDate} />}
+      {/* Filtr po osobie dla Dzień/Tydzień/Miesiąc — osobny od chipów
+          Kanbanu poniżej (te mają "Mój tydzień" i ?widok=pelny, co tutaj nie
+          ma sensu), ale ta sama zasada: domyślnie (bez ?osoba) zawężone do
+          zalogowanej osoby. */}
+      {activeCalendarView && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Link
+            href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}`}
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === currentEmployeeId ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          >
+            Moje zadania
+          </Link>
+          <Link
+            href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}&osoba=${ALL}`}
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === ALL ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          >
+            Wszyscy
+          </Link>
+          {assignees
+            .filter((a) => a.id !== currentEmployeeId)
+            .map((a) => (
+              <Link
+                key={a.id}
+                href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}&osoba=${a.id}`}
+                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  effectiveFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                }`}
+              >
+                <ColorDot color={a.color_hex} />
+                {a.name}
+              </Link>
+            ))}
+          <Link
+            href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}&osoba=${UNASSIGNED}`}
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+              effectiveFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+            }`}
+          >
+            Nieprzypisane
+          </Link>
+        </div>
+      )}
+
+      {activeCalendarView === "dzien" && <TaskDayView date={calDate} assigneeFilter={effectiveFilter} />}
+      {activeCalendarView === "tydzien" && <TaskWeekView date={calDate} assigneeFilter={effectiveFilter} />}
+      {activeCalendarView === "miesiac" && <TaskMonthView date={calDate} assigneeFilter={effectiveFilter} />}
 
       {!activeCalendarView && (
         <>

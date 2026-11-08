@@ -1,6 +1,23 @@
 // Logika widoków kalendarzowych zadań marketingu (Dzień/Tydzień/Miesiąc) —
 // funkcje czyste, bez dostępu do bazy, analogicznie do marketing.ts.
 
+// Sentinele filtra po osobie, współdzielone przez Kanban (TasksSection) i
+// wszystkie 3 widoki kalendarzowe — KAŻDY z czterech trybów domyślnie (brak
+// parametru w URL) zawęża się do zalogowanej osoby, nie pokazuje całego
+// zespołu (świadoma decyzja: jeden spójny domyślny filtr we wszystkich
+// trybach Zadań, nie tylko w Kanbanie).
+export const ASSIGNEE_ALL = "_wszyscy";
+export const ASSIGNEE_UNASSIGNED = "_brak";
+
+// Zawęża listę zadań do wybranej osoby — effectiveFilter to już
+// ROZSTRZYGNIĘTA wartość (assigneeFilter ?? currentEmployeeId, patrz
+// TasksSection), więc "brak filtra" nigdy tu nie dociera jako taki.
+export function filterByAssignee<T extends { assignee_employee_id: string | null }>(tasks: T[], effectiveFilter: string): T[] {
+  if (effectiveFilter === ASSIGNEE_ALL) return tasks;
+  if (effectiveFilter === ASSIGNEE_UNASSIGNED) return tasks.filter((t) => !t.assignee_employee_id);
+  return tasks.filter((t) => t.assignee_employee_id === effectiveFilter);
+}
+
 // Reguła wspólna dla wszystkich trzech widoków: zadanie jest "aktywne" na
 // dany dzień D, jeśli D mieści się w oknie [dziś, max(dziś, due_date)] —
 // czyli widoczne każdego dnia od dziś do terminu włącznie (patrz
