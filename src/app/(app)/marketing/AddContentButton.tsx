@@ -8,6 +8,7 @@ import {
   PLATFORM_LABELS,
   CONTENT_PURPOSE_LABELS,
   CONTENT_FORMAT_LABELS,
+  PROJECT_OPTIONS,
   type ContentPlatform,
   type ContentPurpose,
   type ContentFormat,
@@ -90,6 +91,17 @@ export function AddContentButton({ date, dateLabel, assignees }: { date: string;
                 <input type="checkbox" name="needs_review" defaultChecked className="h-4 w-4" />
                 Treść pisana — wymaga akceptacji Krzysztofa przed publikacją
               </label>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-zinc-900">Projekt</label>
+                <select name="project" defaultValue="" className={INPUT}>
+                  <option value="">— bez projektu —</option>
+                  {PROJECT_OPTIONS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-zinc-900">Przypisane do</label>
                 <select name="assignee_employee_id" defaultValue="" className={INPUT}>

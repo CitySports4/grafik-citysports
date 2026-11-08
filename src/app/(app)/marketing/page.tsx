@@ -16,7 +16,7 @@ type TabKey = (typeof TABS)[number]["key"];
 export default async function MarketingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; year?: string; month?: string; osoba?: string; zakres?: string }>;
+  searchParams: Promise<{ tab?: string; year?: string; month?: string; osoba?: string; zakres?: string; widok?: string; projekt?: string }>;
 }) {
   const employee = await requireEmployee();
   if (!canAccessMarketing(employee)) {
@@ -54,9 +54,11 @@ export default async function MarketingPage({
       </div>
 
       {tab === "zadania" && (
-        <TasksSection currentEmployeeId={employee.id} assigneeFilter={params.osoba} showAll={params.zakres === "wszystkie"} />
+        <TasksSection currentEmployeeId={employee.id} assigneeFilter={params.osoba} showAll={params.zakres === "wszystkie"} view={params.widok} />
       )}
-      {tab === "kalendarz" && <ContentCalendarSection yearParam={params.year} monthParam={params.month} assigneeFilter={params.osoba} />}
+      {tab === "kalendarz" && (
+        <ContentCalendarSection yearParam={params.year} monthParam={params.month} assigneeFilter={params.osoba} projectFilter={params.projekt} />
+      )}
       {tab === "plany" && <PlansSection />}
 
       {/* Funkcja zaawansowana, używana rzadko — przeniesiona na sam dół,

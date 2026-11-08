@@ -12,6 +12,7 @@ import {
   CONTENT_PURPOSE_ICONS,
   CONTENT_FORMAT_LABELS,
   CONTENT_FORMAT_ICONS,
+  PROJECT_OPTIONS,
   isApprovalPending,
   type ContentPlatform,
   type ContentStatus,
@@ -36,6 +37,7 @@ type ContentItem = {
   review_note: string;
   notes: string;
   assignee_employee_id: string | null;
+  project: string;
 };
 type Assignee = { id: string; name: string; color_hex: string };
 
@@ -150,6 +152,7 @@ export function ContentItemChip({
               <p className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">
                 {CONTENT_FORMAT_ICONS[item.format]} {CONTENT_FORMAT_LABELS[item.format]}
               </p>
+              {item.project && <p className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-700">{item.project}</p>}
             </div>
             {assignee && (
               <span className="flex items-center gap-1.5 text-sm text-zinc-600">
@@ -258,6 +261,17 @@ export function ContentItemChip({
                   {assignees.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-zinc-900">Projekt</label>
+                <select name="project" defaultValue={item.project} className={INPUT}>
+                  <option value="">— bez projektu —</option>
+                  {PROJECT_OPTIONS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
                     </option>
                   ))}
                 </select>
