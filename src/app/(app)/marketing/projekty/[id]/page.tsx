@@ -59,14 +59,31 @@ export default async function ProjectWorkspacePage({ params }: { params: Promise
 
   const { id } = await params;
   const supabase = createServerSupabaseClient();
-  const { data: projectRaw } = await supabase.from("marketing_project").select("id, name, color, is_active").eq("id", id).single();
-  const project = projectRaw as Project | null;
+  const { data: projectRaw } = await supabase.from("marketing_project").select("id, name, color, is_active, type").eq("id", id).single();
+  const project = projectRaw as (Project & { type: "marketing" | "event" }) | null;
 
   if (!project) {
     return (
       <div className="flex flex-col gap-6">
         <BackLink href="/marketing/projekty" label="Projekty" />
         <p className="text-sm text-zinc-500">Nie znaleziono projektu.</p>
+      </div>
+    );
+  }
+
+  // Projekty eventowe mają teraz własną tablicę pod /projekty/[id] (patrz
+  // migracja 0065 i Sprint D, D2) — ten widok jest tylko dla marketingowych.
+  if (project.type === "event") {
+    return (
+      <div className="flex flex-col gap-6">
+        <BackLink href="/marketing/projekty" label="Projekty" />
+        <p className="text-sm text-zinc-500">
+          „{project.name}” to projekt eventowy — zarządzaj nim w{" "}
+          <Link href={`/projekty/${project.id}`} className="font-semibold text-brand-orange hover:underline">
+            sekcji Wydarzenia
+          </Link>
+          .
+        </p>
       </div>
     );
   }

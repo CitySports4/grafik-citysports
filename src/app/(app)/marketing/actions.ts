@@ -26,6 +26,10 @@ function revalidateMarketing() {
   // na tamtej stronie zapisałoby się w bazie, ale UI zostałby nieodświeżony
   // do ręcznego przeładowania.
   revalidatePath("/marketing/projekty", "layout");
+  // createTask/setTaskStatus są też wywoływane z tablic wydarzeń pod
+  // /projekty/[id] (Sprint D, D2 — zadania eventowe to te same marketing_task,
+  // tylko odfiltrowane do innej sekcji nawigacji) — ten sam powód co wyżej.
+  revalidatePath("/projekty", "layout");
 }
 
 // ---------- Projekty ----------
@@ -42,12 +46,30 @@ export type MarketingProjectOption = { id: string; name: string; color: string }
 export async function getActiveMarketingProjects(): Promise<MarketingProjectOption[]> {
   await requireMarketingAccess();
   const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase.from("marketing_project").select("id, name, color").eq("is_active", true).order("name");
+  // type="marketing" — projekty eventowe (Wigilia, Półkolonie, ...) żyją w
+  // tej samej tabeli (patrz migracja 0065), ale mają własną sekcję /projekty
+  // i nie powinny zaśmiecać dropdownów treści/zadań marketingu.
+  const { data, error } = await supabase
+    .from("marketing_project")
+    .select("id, name, color")
+    .eq("is_active", true)
+    .eq("type", "marketing")
+    .order("name");
   if (error) throw new Error(dbErrorMessage(error));
   return (data ?? []) as MarketingProjectOption[];
 }
 
 // ---------- Zadania ----------
+
+// Pola nagraniowe (Sprint D, D1) — zawsze opcjonalne, nie blokują zapisu
+// nawet gdy ktoś wypełni format bez treści czy odwrotnie (patrz brak walidacji
+// poniżej poza samym check constraintem formatu w bazie).
+function readRecordingFields(formData: FormData) {
+  const recording_format = String(formData.get("recording_format") ?? "").trim() || null;
+  const recording_look_for = String(formData.get("recording_look_for") ?? "").trim();
+  const recording_mood = String(formData.get("recording_mood") ?? "").trim();
+  return { recording_format, recording_look_for, recording_mood };
+}
 
 export async function createTask(formData: FormData) {
   const employee = await requireMarketingAccess();
@@ -68,6 +90,7 @@ export async function createTask(formData: FormData) {
     due_date,
     project,
     created_by_employee_id: employee.id,
+    ...readRecordingFields(formData),
   });
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
@@ -87,7 +110,7 @@ export async function updateTask(formData: FormData) {
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("marketing_task")
-    .update({ title, description, assignee_employee_id, priority, due_date, project, updated_at: new Date().toISOString() })
+    .update({ title, description, assignee_employee_id, priority, due_date, project, updated_at: new Date().toISOString(), ...readRecordingFields(formData) })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();

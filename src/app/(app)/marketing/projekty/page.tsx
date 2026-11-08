@@ -22,7 +22,9 @@ export default async function MarketingProjectsPage() {
   }
 
   const supabase = createServerSupabaseClient();
-  const { data } = await supabase.from("marketing_project").select("id, name, color, is_active").order("name");
+  // type="marketing" — projekty eventowe (Wigilia, Półkolonie, ...) mają
+  // teraz osobną sekcję /projekty (patrz migracja 0065), nie tę listę.
+  const { data } = await supabase.from("marketing_project").select("id, name, color, is_active").eq("type", "marketing").order("name");
   const allProjects = (data ?? []) as Project[];
   const activeProjects = allProjects.filter((p) => p.is_active);
   const archivedProjects = allProjects.filter((p) => !p.is_active);
@@ -32,9 +34,10 @@ export default async function MarketingProjectsPage() {
       <BackLink href="/marketing" label="Marketing" />
 
       <div>
-        <h1 className="text-lg font-bold text-zinc-900">Projekty</h1>
+        <h1 className="text-lg font-bold text-zinc-900">Projekty marketingowe</h1>
         <p className="text-sm text-zinc-500">
-          Projekty do wyboru w formularzach zadań i treści kalendarza — zarządzane tutaj, nie na sztywno w kodzie.
+          Projekty do wyboru w formularzach zadań i treści kalendarza — zarządzane tutaj, nie na sztywno w kodzie. Projekty eventowe (Wigilia, Półkolonie, ...)
+          mają własną sekcję „Wydarzenia”.
         </p>
       </div>
 

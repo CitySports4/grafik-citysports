@@ -122,8 +122,10 @@ export async function ContentCalendarSection({
       .limit(1)
       .maybeSingle(),
     // Projekty zarządzane z /marketing/projekty (patrz migracja 0063) — do
-    // chipów filtra po projekcie, tylko aktywne.
-    supabase.from("marketing_project").select("id, name, color").eq("is_active", true).order("name"),
+    // chipów filtra po projekcie, tylko aktywne i tylko type="marketing"
+    // (eventowe, patrz migracja 0065, mają osobną sekcję /projekty i nie
+    // powinny tu się pojawiać).
+    supabase.from("marketing_project").select("id, name, color").eq("is_active", true).eq("type", "marketing").order("name"),
   ]);
 
   const allContent = (contentRaw ?? []) as ContentItem[];

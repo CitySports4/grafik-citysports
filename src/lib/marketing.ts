@@ -2,6 +2,18 @@
 // strategie i plany) — funkcje czyste, bez dostępu do bazy, analogicznie
 // do kids-classes.ts. Warstwa zapytań/akcji żyje w app/(app)/marketing.
 
+// Status projektu eventowego (Sprint D, D2) — osobny od MarketingTaskStatus
+// i ContentStatus, bo opisuje cały projekt (np. "Wigilia"), nie pojedyncze
+// zadanie czy treść. Żyje na marketing_project.status, tylko dla
+// type="event" (patrz migracja 0065).
+export type EventProjectStatus = "planowanie" | "w_toku" | "zamkniety";
+export const EVENT_PROJECT_STATUS_LABELS: Record<EventProjectStatus, string> = {
+  planowanie: "Planowanie",
+  w_toku: "W toku",
+  zamkniety: "Zamknięty",
+};
+export const EVENT_PROJECT_STATUS_ORDER: EventProjectStatus[] = ["planowanie", "w_toku", "zamkniety"];
+
 export type MarketingTaskStatus = "todo" | "in_progress" | "done";
 export const TASK_STATUS_LABELS: Record<MarketingTaskStatus, string> = {
   todo: "Do zrobienia",
@@ -15,6 +27,16 @@ export const TASK_PRIORITY_LABELS: Record<MarketingTaskPriority, string> = {
   low: "Niski",
   normal: "Normalny",
   high: "Wysoki",
+};
+
+// Pola nagraniowe (Sprint D, D1) — opcjonalny dodatek do zadania, pokazywany
+// w formularzu gdy assignee = Oliwia (osoba nagrywająca) albo ręczny toggle
+// "zadanie nagraniowe". Nie blokują zapisu — patrz migracja 0064.
+export type RecordingFormat = "rolka" | "relacja" | "zdjecia";
+export const RECORDING_FORMAT_LABELS: Record<RecordingFormat, string> = {
+  rolka: "Rolka",
+  relacja: "Relacja",
+  zdjecia: "Zdjęcia",
 };
 
 // Bez TikToka — klub tam nic nie publikuje (patrz migracja 0053). Facebook i

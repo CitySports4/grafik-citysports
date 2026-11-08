@@ -4,20 +4,20 @@ import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
-import { BTN_PRIMARY, BTN_GHOST, BTN_GHOST_DANGER } from "@/components/button-styles";
+import { BTN_GHOST, BTN_GHOST_DANGER } from "@/components/button-styles";
 import { toDateKey, mondayOfWeek } from "@/lib/schedule-month";
 import {
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
   TASK_PRIORITY_LABELS,
+  RECORDING_FORMAT_LABELS,
   groupByProject,
   type MarketingTaskStatus,
   type MarketingTaskPriority,
+  type RecordingFormat,
 } from "@/lib/marketing";
-import { createTask, updateTask, setTaskStatus, deleteTask, postponeTask, setTaskArchived } from "./actions";
-
-const INPUT =
-  "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
+import { updateTask, setTaskStatus, deleteTask, postponeTask, setTaskArchived } from "./actions";
+import { AddTaskForm } from "./AddTaskForm";
 const INPUT_SM = "rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-xs";
 
 type Task = {
@@ -31,6 +31,9 @@ type Task = {
   archived: boolean;
   content_id: string | null;
   project: string;
+  recording_format: RecordingFormat | null;
+  recording_look_for: string;
+  recording_mood: string;
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
@@ -103,7 +106,9 @@ export async function TasksSection({
   const [{ data: tasksRaw }, { data: assigneesRaw }, { data: projectsRaw }] = await Promise.all([
     supabase
       .from("marketing_task")
-      .select("id, title, description, status, priority, due_date, assignee_employee_id, archived, content_id, project")
+      .select(
+        "id, title, description, status, priority, due_date, assignee_employee_id, archived, content_id, project, recording_format, recording_look_for, recording_mood"
+      )
       .order("due_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false }),
     supabase
@@ -112,18 +117,26 @@ export async function TasksSection({
       .eq("active", true)
       .eq("employee_role.role", "marketing")
       .order("name"),
-    // Projekty zarządzane z /marketing/projekty (patrz migracja 0063) —
-    // tylko aktywne w dropdownie, ale dropdown w Edytuj MUSI dołożyć też
-    // projekt już zapisanego zadania, nawet jeśli go zarchiwizowano od tej
-    // pory (patrz renderTask niżej), żeby select nie zgubił cicho wartości.
-    supabase.from("marketing_project").select("id, name, color").eq("is_active", true).order("name"),
+    // Wszystkie projekty, obu typów (patrz migracja 0065) — marketingowe do
+    // dropdownu (tylko aktywne, dropdown w Edytuj MUSI dołożyć też projekt
+    // już zapisanego zadania, nawet jeśli go zarchiwizowano — patrz
+    // renderTask niżej), eventowe tylko po to, żeby odfiltrować ich zadania
+    // z tego widoku (patrz eventProjectNames — /projekty ma być osobną
+    // sekcją, nie zdublowaną listą).
+    supabase.from("marketing_project").select("id, name, color, type, is_active"),
   ]);
 
-  const allTasksRaw = (tasksRaw ?? []) as Task[];
-  const activeProjects = (projectsRaw ?? []) as Project[];
+  const allProjectsRaw = (projectsRaw ?? []) as (Project & { type: "marketing" | "event"; is_active: boolean })[];
+  const activeProjects = allProjectsRaw.filter((p) => p.type === "marketing" && p.is_active);
   const projectColorByName = new Map(activeProjects.map((p) => [p.name, p.color]));
+  const eventProjectNames = new Set(allProjectsRaw.filter((p) => p.type === "event").map((p) => p.name));
+  const allTasksRaw = ((tasksRaw ?? []) as Task[]).filter((t) => !eventProjectNames.has(t.project));
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const assigneeById = new Map(assignees.map((a) => [a.id, a]));
+  // Dopasowanie po imieniu, nie na sztywno wpisany UUID (patrz Sprint D, D1)
+  // — jeśli nikt o tym dokładnie imieniu nie ma roli marketing, pola
+  // nagraniowe po prostu zostają dostępne tylko przez ręczny toggle.
+  const recordingAssigneeId = assignees.find((a) => a.name === "Oliwia")?.id;
 
   const allTasks = allTasksRaw.filter((t) => !t.archived);
   const archivedTasks = allTasksRaw.filter((t) => t.archived);
@@ -221,6 +234,11 @@ export async function TasksSection({
                   {t.project}
                 </span>
               )}
+              {(t.recording_format || t.recording_look_for || t.recording_mood) && (
+                <span className="rounded-full bg-pink-50 px-2 py-0.5 font-bold text-pink-700" title="Zadanie nagraniowe">
+                  🎥 {t.recording_format ? RECORDING_FORMAT_LABELS[t.recording_format] : "nagranie"}
+                </span>
+              )}
               {assignee && (
                 <span className="flex items-center gap-1 text-zinc-500">
                   <ColorDot color={assignee.color_hex} />
@@ -313,6 +331,40 @@ export async function TasksSection({
                       ))}
                     </select>
                   </div>
+                  {/* Pola nagraniowe (Sprint D, D1) — domyślnie otwarte, gdy
+                      zadanie już ma jakieś wypełnione, albo gdy przypisana
+                      osoba to Oliwia; inaczej zwinięte, bo to rzadki
+                      przypadek przy edycji istniejącego zadania (bez
+                      interaktywnego śledzenia assignee na żywo, w
+                      przeciwieństwie do AddTaskForm — przy edycji assignee
+                      jest już znany). */}
+                  <details open={!!(t.recording_format || t.recording_look_for || t.recording_mood) || t.assignee_employee_id === recordingAssigneeId}>
+                    <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">🎥 Pola nagraniowe (opcjonalne) ▾</summary>
+                    <div className="mt-2 flex flex-col gap-2">
+                      <select name="recording_format" defaultValue={t.recording_format ?? ""} className={INPUT_SM}>
+                        <option value="">— format —</option>
+                        {(Object.entries(RECORDING_FORMAT_LABELS) as [RecordingFormat, string][]).map(([v, l]) => (
+                          <option key={v} value={v}>
+                            {l}
+                          </option>
+                        ))}
+                      </select>
+                      <textarea
+                        name="recording_look_for"
+                        defaultValue={t.recording_look_for}
+                        rows={2}
+                        placeholder="Czego szukać (np. spokojne momenty, skupienie, uśmiech po ćwiczeniu)"
+                        className={INPUT_SM}
+                      />
+                      <textarea
+                        name="recording_mood"
+                        defaultValue={t.recording_mood}
+                        rows={2}
+                        placeholder="Przekaz / nastrój (np. tu możesz się zatrzymać i odetchnąć)"
+                        className={INPUT_SM}
+                      />
+                    </div>
+                  </details>
                   <div className="flex items-center gap-2">
                     <SubmitButton className="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
                       Zapisz
@@ -368,52 +420,10 @@ export async function TasksSection({
     <div className="flex flex-col gap-4">
       <Card>
         {/* Szybkie dodawanie — sam tytuł wystarczy, Enter/przycisk od razu
-            tworzy zadanie. Resztę (priorytet, osoba, termin) da się
-            uzupełnić później przez "Edytuj", albo od razu rozwijając "Więcej
-            opcji" poniżej — bez zmuszania do wypełniania wszystkiego za
-            każdym razem. */}
-        <form action={createTask} className="flex flex-col gap-2">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input name="title" required placeholder="Dodaj nowe zadanie…" className={`${INPUT} flex-1`} />
-            <SubmitButton className={`${BTN_PRIMARY} shrink-0`}>Dodaj</SubmitButton>
-          </div>
-          {/* Domyślnie ROZWINIĘTE (patrz audyt UX) — zwinięte chowało
-              właśnie termin/osobę/projekt, czyli dokładnie to, co trzeba
-              wypełnić, żeby zadanie nie wylądowało bez terminu i bez
-              przypisania w "Do zrobienia". */}
-          <details open>
-            <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">
-              Więcej opcji (osoba, priorytet, termin, projekt) ▾
-            </summary>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <select name="assignee_employee_id" defaultValue={currentEmployeeId} className={INPUT}>
-                <option value="">— nieprzypisane —</option>
-                {assignees.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-              <select name="priority" defaultValue="normal" className={INPUT}>
-                {(Object.entries(TASK_PRIORITY_LABELS) as [MarketingTaskPriority, string][]).map(([v, l]) => (
-                  <option key={v} value={v}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-              <input type="date" name="due_date" className={INPUT} />
-              <select name="project" defaultValue="" className={INPUT}>
-                <option value="">— bez projektu —</option>
-                {activeProjects.map((p) => (
-                  <option key={p.id} value={p.name}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <textarea name="description" rows={2} placeholder="Opis (opcjonalnie)" className={`${INPUT} mt-2`} />
-          </details>
-        </form>
+            tworzy zadanie. Resztę (priorytet, osoba, termin, pola
+            nagraniowe) da się uzupełnić później przez "Edytuj", albo od
+            razu w rozwiniętych "Więcej opcji" poniżej. */}
+        <AddTaskForm currentEmployeeId={currentEmployeeId} assignees={assignees} activeProjects={activeProjects} recordingAssigneeId={recordingAssigneeId} />
       </Card>
 
       {/* Filtr po osobie — domyślnie (bez parametru w URL) zawężony do
