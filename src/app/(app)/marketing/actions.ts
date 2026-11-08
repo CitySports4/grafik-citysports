@@ -23,6 +23,25 @@ function revalidateMarketing() {
   revalidatePath("/marketing");
 }
 
+// ---------- Projekty ----------
+
+export type MarketingProjectOption = { id: string; name: string; color: string };
+
+// Czytane przez useMarketingProjects() (hook, komponenty kliencie) — Server
+// Action zamiast bezpośredniego zapytania do Supabase z przeglądarki: w tej
+// bazie NIE MA RLS (autoryzacja jest wyłącznie na poziomie appki, patrz
+// requireMarketingAccess), więc klient Supabase z kluczem anon w przeglądarce
+// ominąłby wszystkie te zabezpieczenia na KAŻDEJ tabeli, nie tylko tej. Server
+// Action trzyma zapytanie po stronie serwera, za tą samą bramką co reszta
+// modułu, a dla przeglądarki wygląda jak zwykłe wywołanie funkcji.
+export async function getActiveMarketingProjects(): Promise<MarketingProjectOption[]> {
+  await requireMarketingAccess();
+  const supabase = createServerSupabaseClient();
+  const { data, error } = await supabase.from("marketing_project").select("id, name, color").eq("is_active", true).order("name");
+  if (error) throw new Error(dbErrorMessage(error));
+  return (data ?? []) as MarketingProjectOption[];
+}
+
 // ---------- Zadania ----------
 
 export async function createTask(formData: FormData) {

@@ -8,12 +8,12 @@ import {
   PLATFORM_LABELS,
   CONTENT_PURPOSE_LABELS,
   CONTENT_FORMAT_LABELS,
-  PROJECT_OPTIONS,
   type ContentPlatform,
   type ContentPurpose,
   type ContentFormat,
 } from "@/lib/marketing";
 import { createContent } from "./actions";
+import { useMarketingProjects } from "./useMarketingProjects";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -24,6 +24,7 @@ export function AddContentButton({ date, dateLabel, assignees }: { date: string;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { projects } = useMarketingProjects();
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -95,9 +96,9 @@ export function AddContentButton({ date, dateLabel, assignees }: { date: string;
                 <label className="text-sm font-semibold text-zinc-900">Projekt</label>
                 <select name="project" defaultValue="" className={INPUT}>
                   <option value="">— bez projektu —</option>
-                  {PROJECT_OPTIONS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name}
                     </option>
                   ))}
                 </select>

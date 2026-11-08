@@ -9,7 +9,6 @@ import {
   CONTENT_STATUS_LABELS,
   CONTENT_STATUS_ORDER,
   isApprovalPending,
-  PROJECT_OPTIONS,
   type ContentPlatform,
   type ContentStatus,
   type ContentPurpose,
@@ -42,6 +41,7 @@ type ContentItem = {
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
+type Project = { id: string; name: string; color: string };
 
 const STATUS_DOT: Record<ContentStatus, string> = {
   pomysl: "bg-zinc-400",
@@ -91,7 +91,7 @@ export async function ContentCalendarSection({
       : `?tab=kalendarz&year=${year}&month=${month + 1}${osobaSuffix}${projektSuffix}`;
 
   const supabase = createServerSupabaseClient();
-  const [{ data: contentRaw }, { data: assigneesRaw }, { data: linkedTasksRaw }, { data: lastPublishedRaw }] = await Promise.all([
+  const [{ data: contentRaw }, { data: assigneesRaw }, { data: linkedTasksRaw }, { data: lastPublishedRaw }, { data: projectsRaw }] = await Promise.all([
     supabase
       .from("marketing_content")
       .select("id, title, platform, scheduled_date, status, purpose, format, needs_review, approved, review_note, notes, assignee_employee_id, project")
@@ -121,10 +121,14 @@ export async function ContentCalendarSection({
       .order("scheduled_date", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Projekty zarządzane z /marketing/projekty (patrz migracja 0063) — do
+    // chipów filtra po projekcie, tylko aktywne.
+    supabase.from("marketing_project").select("id, name, color").eq("is_active", true).order("name"),
   ]);
 
   const allContent = (contentRaw ?? []) as ContentItem[];
   const assignees = (assigneesRaw ?? []) as Assignee[];
+  const activeProjects = (projectsRaw ?? []) as Project[];
   const contentIdsWithTask = new Set((linkedTasksRaw ?? []).map((t) => t.content_id as string));
 
   const effectiveFilter = assigneeFilter === MINE ? employee.id : assigneeFilter;
@@ -215,15 +219,20 @@ export async function ContentCalendarSection({
         >
           Wszystkie projekty ({assigneeFiltered.length})
         </Link>
-        {PROJECT_OPTIONS.map((p) => (
-          <Link
-            key={p}
-            href={`?tab=kalendarz&year=${year}&month=${month}${osobaSuffix}&projekt=${encodeURIComponent(p)}`}
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${projectFilter === p ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
-          >
-            {p} ({assigneeFiltered.filter((c) => c.project.trim() === p).length})
-          </Link>
-        ))}
+        {activeProjects.map((p) => {
+          const active = projectFilter === p.name;
+          return (
+            <Link
+              key={p.id}
+              href={`?tab=kalendarz&year=${year}&month=${month}${osobaSuffix}&projekt=${encodeURIComponent(p.name)}`}
+              className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
+              style={{ backgroundColor: active ? p.color : `${p.color}1a`, color: active ? "#fff" : p.color }}
+            >
+              <ColorDot color={active ? "#fff" : p.color} />
+              {p.name} ({assigneeFiltered.filter((c) => c.project.trim() === p.name).length})
+            </Link>
+          );
+        })}
         {(() => {
           const noneCount = assigneeFiltered.filter((c) => !c.project.trim()).length;
           return noneCount > 0 ? (
