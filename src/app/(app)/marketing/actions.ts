@@ -21,6 +21,11 @@ async function requireMarketingAccess() {
 
 function revalidateMarketing() {
   revalidatePath("/marketing");
+  // "layout" ogarnia cały poddrzewo /marketing/projekty, łącznie z dynamicznym
+  // /marketing/projekty/[id] (tablica projektu) — bez tego odhaczenie zadania
+  // na tamtej stronie zapisałoby się w bazie, ale UI zostałby nieodświeżony
+  // do ręcznego przeładowania.
+  revalidatePath("/marketing/projekty", "layout");
 }
 
 // ---------- Projekty ----------

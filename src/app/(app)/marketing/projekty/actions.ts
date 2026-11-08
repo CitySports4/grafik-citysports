@@ -16,7 +16,10 @@ async function requireMarketingAccess() {
 }
 
 function revalidate() {
-  revalidatePath("/marketing/projekty");
+  // "layout" ogarnia też dynamiczny /marketing/projekty/[id] (tablica
+  // projektu) — zmiana nazwy/koloru albo archiwizacja ma się tam odświeżyć,
+  // nie tylko na liście.
+  revalidatePath("/marketing/projekty", "layout");
   revalidatePath("/marketing");
 }
 
