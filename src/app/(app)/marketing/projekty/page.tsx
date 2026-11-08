@@ -4,6 +4,7 @@ import { Card } from "@/components/Card";
 import { BackLink } from "@/components/BackLink";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createProject, setProjectActive } from "./actions";
+import { ProjectRow } from "./ProjectRow";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -61,19 +62,7 @@ export default async function MarketingProjectsPage() {
         ) : (
           <div className="flex flex-col gap-1.5">
             {activeProjects.map((p) => (
-              <div key={p.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
-                <span className="flex items-center gap-2">
-                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
-                  <span className="font-semibold text-zinc-900">{p.name}</span>
-                </span>
-                <form action={setProjectActive}>
-                  <input type="hidden" name="id" value={p.id} />
-                  <input type="hidden" name="is_active" value="false" />
-                  <button type="submit" className="text-xs font-semibold text-red-600 hover:underline">
-                    Archiwizuj
-                  </button>
-                </form>
-              </div>
+              <ProjectRow key={p.id} project={p} />
             ))}
           </div>
         )}

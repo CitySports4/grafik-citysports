@@ -363,9 +363,13 @@ export async function TasksSection({
             <input name="title" required placeholder="Dodaj nowe zadanie…" className={`${INPUT} flex-1`} />
             <SubmitButton className={`${BTN_PRIMARY} shrink-0`}>Dodaj</SubmitButton>
           </div>
-          <details>
+          {/* Domyślnie ROZWINIĘTE (patrz audyt UX) — zwinięte chowało
+              właśnie termin/osobę/projekt, czyli dokładnie to, co trzeba
+              wypełnić, żeby zadanie nie wylądowało bez terminu i bez
+              przypisania w "Do zrobienia". */}
+          <details open>
             <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">
-              Więcej opcji (osoba, priorytet, termin) ▾
+              Więcej opcji (osoba, priorytet, termin, projekt) ▾
             </summary>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <select name="assignee_employee_id" defaultValue={currentEmployeeId} className={INPUT}>

@@ -33,6 +33,31 @@ export async function createProject(formData: FormData) {
   revalidate();
 }
 
+export async function updateProject(formData: FormData) {
+  await requireMarketingAccess();
+  const id = String(formData.get("id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const colorRaw = String(formData.get("color") ?? "").trim();
+  const color = HEX_COLOR_RE.test(colorRaw) ? colorRaw : "#7c3aed";
+  if (!id || !name) throw new Error("Podaj nazwę projektu.");
+
+  const supabase = createServerSupabaseClient();
+  const { data: current } = await supabase.from("marketing_project").select("name").eq("id", id).single();
+  const { error } = await supabase.from("marketing_project").update({ name, color }).eq("id", id);
+  if (error) throw new Error(dbErrorMessage(error));
+
+  // Nazwa projektu to jedyne "łącze" z marketing_task.project/
+  // marketing_content.project (zwykły tekst, nie klucz obcy — patrz migracje
+  // 0062/0063) — zmiana nazwy musi się rozlać na już istniejące zadania i
+  // treści, inaczej po cichu się rozjadą (zostaną przypisane do nazwy, która
+  // już nigdzie nie istnieje).
+  if (current && current.name !== name) {
+    await supabase.from("marketing_task").update({ project: name }).eq("project", current.name);
+    await supabase.from("marketing_content").update({ project: name }).eq("project", current.name);
+  }
+  revalidate();
+}
+
 export async function setProjectActive(formData: FormData) {
   await requireMarketingAccess();
   const id = String(formData.get("id") ?? "");
