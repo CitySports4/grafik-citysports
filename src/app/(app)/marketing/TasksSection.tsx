@@ -63,6 +63,13 @@ const UNASSIGNED = "_brak";
 // Każdy może świadomie przełączyć się na widok całego zespołu tym chipem.
 const ALL = "_wszyscy";
 
+// Sentinel dla jawnego "pełny widok" w URL (?widok=pelny) — od audytu UX
+// (F1) domyślny widok (brak parametru widok w ogóle) to teraz "Mój
+// tydzień", nie cały, gęsty widok statusów. Każdy filtr poza samym "Mój
+// tydzień" (Moje zadania/Wszyscy/konkretna osoba/Nieprzypisane) przełącza z
+// powrotem na pełny widok, bo "Mój tydzień" z definicji jest zawsze "moje".
+const FULL_VIEW = "pelny";
+
 // Ile dni do przodu liczy się jako "bieżący i następny tydzień" — domyślny,
 // zawężony widok (patrz feedback z użycia: "Wszyscy (41)" na co dzień to za
 // dużo, trzeba było scrollować obok zaległych i kolumny "W trakcie" żeby
@@ -81,10 +88,8 @@ export async function TasksSection({
   // ?zakres=wszystkie — bez tego domyślny widok pokazuje tylko zaległe +
   // najbliższe UPCOMING_DAYS dni + zadania bez terminu.
   showAll?: boolean;
-  // ?widok=tydzien — "Mój tydzień": zastępuje cały normalny widok jedną,
-  // płaską listą MOICH zadań z terminem w bieżącym tygodniu, niezależnie od
-  // projektu czy statusu (patrz WEEK_VIEW niżej) — osobny tryb, nie kolejny
-  // filtr do połączenia z resztą.
+  // ?widok=pelny — patrz FULL_VIEW. Domyślnie (brak parametru, albo stare
+  // ?widok=tydzien z zakładek sprzed audytu UX) pokazuje się "Mój tydzień".
   view?: string;
 }) {
   const supabase = createServerSupabaseClient();
@@ -153,6 +158,15 @@ export async function TasksSection({
   const myWeekTasks = allTasks
     .filter((t) => t.assignee_employee_id === currentEmployeeId && t.due_date !== null && t.due_date >= weekMonday && t.due_date <= weekSunday)
     .sort((a, b) => (a.due_date! < b.due_date! ? -1 : a.due_date! > b.due_date! ? 1 : PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]));
+
+  // "Mój tydzień" jest teraz domyślny (F1, audyt UX) — ale z definicji nie
+  // pokazuje zadań BEZ terminu, więc ktoś, kto akurat ma takie zadania (patrz
+  // F4 — to się zdarzało, zanim termin stał się domyślnie widoczny w
+  // formularzu), inaczej by ich nie zobaczył wcale, dopóki by się nie
+  // domyślił kliknąć "Moje zadania". Licznik + link w widoku tygodnia temu
+  // zapobiega.
+  const myNoDueDateCount = allTasks.filter((t) => t.assignee_employee_id === currentEmployeeId && t.due_date === null).length;
+  const isWeekView = view !== FULL_VIEW;
 
   function renderTask(t: Task) {
     const assignee = t.assignee_employee_id ? assigneeById.get(t.assignee_employee_id) : null;
@@ -363,9 +377,13 @@ export async function TasksSection({
             <input name="title" required placeholder="Dodaj nowe zadanie…" className={`${INPUT} flex-1`} />
             <SubmitButton className={`${BTN_PRIMARY} shrink-0`}>Dodaj</SubmitButton>
           </div>
-          <details>
+          {/* Domyślnie ROZWINIĘTE (patrz audyt UX) — zwinięte chowało
+              właśnie termin/osobę/projekt, czyli dokładnie to, co trzeba
+              wypełnić, żeby zadanie nie wylądowało bez terminu i bez
+              przypisania w "Do zrobienia". */}
+          <details open>
             <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">
-              Więcej opcji (osoba, priorytet, termin) ▾
+              Więcej opcji (osoba, priorytet, termin, projekt) ▾
             </summary>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <select name="assignee_employee_id" defaultValue={currentEmployeeId} className={INPUT}>
@@ -408,12 +426,14 @@ export async function TasksSection({
           żeby przełączenie osoby nie resetowało go po cichu z powrotem na
           zawężony. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {/* "Mój tydzień" — osobny tryb, nie kolejny filtr do połączenia z
-            resztą (patrz komentarz przy myWeekTasks wyżej), dlatego osobny
-            wygląd (fioletowy) zamiast dopasowywania się do reszty chipów. */}
+        {/* "Mój tydzień" — od audytu UX (F1) domyślny widok (patrz
+            isWeekView). Każdy INNY chip dokłada &widok=pelny, żeby
+            przełączenie filtra wyszło z widoku tygodnia do pełnego —
+            inaczej kliknięcie "Wszyscy" czy innej osoby nie dawałoby
+            żadnego efektu (tydzień z definicji pokazuje tylko moje). */}
         <Link
-          href="/marketing?tab=zadania&widok=tydzien"
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${view === "tydzien" ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+          href="/marketing?tab=zadania"
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isWeekView ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
         >
           📅 Mój tydzień ({myWeekTasks.length})
         </Link>
@@ -421,16 +441,16 @@ export async function TasksSection({
           const myCount = allTasks.filter((t) => t.assignee_employee_id === currentEmployeeId).length;
           return (
             <Link
-              href={`/marketing?tab=zadania${showAll ? "&zakres=wszystkie" : ""}`}
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${view !== "tydzien" && effectiveFilter === currentEmployeeId ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+              href={`/marketing?tab=zadania&widok=${FULL_VIEW}${showAll ? "&zakres=wszystkie" : ""}`}
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!isWeekView && effectiveFilter === currentEmployeeId ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
             >
               Moje zadania ({myCount})
             </Link>
           );
         })()}
         <Link
-          href={`/marketing?tab=zadania&osoba=${ALL}${showAll ? "&zakres=wszystkie" : ""}`}
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === ALL ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          href={`/marketing?tab=zadania&widok=${FULL_VIEW}&osoba=${ALL}${showAll ? "&zakres=wszystkie" : ""}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!isWeekView && effectiveFilter === ALL ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Wszyscy ({allTasks.length})
         </Link>
@@ -441,9 +461,9 @@ export async function TasksSection({
             return (
               <Link
                 key={a.id}
-                href={`/marketing?tab=zadania&osoba=${a.id}${showAll ? "&zakres=wszystkie" : ""}`}
+                href={`/marketing?tab=zadania&widok=${FULL_VIEW}&osoba=${a.id}${showAll ? "&zakres=wszystkie" : ""}`}
                 className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                  effectiveFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                  !isWeekView && effectiveFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
                 }`}
               >
                 <ColorDot color={a.color_hex} />
@@ -455,9 +475,9 @@ export async function TasksSection({
           const unassignedCount = allTasks.filter((t) => !t.assignee_employee_id).length;
           return unassignedCount > 0 ? (
             <Link
-              href={`/marketing?tab=zadania&osoba=${UNASSIGNED}${showAll ? "&zakres=wszystkie" : ""}`}
+              href={`/marketing?tab=zadania&widok=${FULL_VIEW}&osoba=${UNASSIGNED}${showAll ? "&zakres=wszystkie" : ""}`}
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                effectiveFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                !isWeekView && effectiveFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
               }`}
             >
               Nieprzypisane ({unassignedCount})
@@ -466,7 +486,7 @@ export async function TasksSection({
         })()}
       </div>
 
-      {view === "tydzien" ? (
+      {isWeekView ? (
         <Card>
           <h2 className="mb-1 flex items-center gap-2 font-semibold text-zinc-900">
             📅 Mój tydzień
@@ -481,6 +501,19 @@ export async function TasksSection({
             <p className="text-sm text-zinc-400">Brak Twoich zadań z terminem w tym tygodniu.</p>
           ) : (
             <div className="flex flex-col gap-2">{myWeekTasks.map(renderTask)}</div>
+          )}
+          {/* Mitygacja ryzyka z audytu UX: "Mój tydzień" z definicji nie
+              pokazuje zadań bez terminu — bez tej wskazówki łatwo by umknęły
+              na stałe, dopóki ktoś by się nie domyślił kliknąć "Moje
+              zadania". */}
+          {myNoDueDateCount > 0 && (
+            <Link
+              href={`/marketing?tab=zadania&widok=${FULL_VIEW}`}
+              className="mt-3 block rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100"
+            >
+              + masz jeszcze {myNoDueDateCount} {myNoDueDateCount === 1 ? "zadanie bez terminu" : "zadań bez terminu"} — nie pokazuje ich ten widok, zobacz
+              „Moje zadania” →
+            </Link>
           )}
         </Card>
       ) : (
@@ -497,7 +530,7 @@ export async function TasksSection({
               roku naraz (patrz feedback z użycia). */}
           {!showAll && hiddenByScopeCount > 0 && (
             <Link
-              href={`/marketing?tab=zadania${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}&zakres=wszystkie`}
+              href={`/marketing?tab=zadania&widok=${FULL_VIEW}${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}&zakres=wszystkie`}
               className="rounded-xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-500 hover:bg-zinc-100"
             >
               Pokazuję zaległe + najbliższe {UPCOMING_DAYS} dni. Ukryto {hiddenByScopeCount} {hiddenByScopeCount === 1 ? "dalsze zadanie" : "dalszych zadań"} — pokaż wszystkie →
@@ -505,7 +538,7 @@ export async function TasksSection({
           )}
           {showAll && (
             <Link
-              href={`/marketing?tab=zadania${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}`}
+              href={`/marketing?tab=zadania&widok=${FULL_VIEW}${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}`}
               className="self-start rounded-xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-500 hover:bg-zinc-100"
             >
               ← Pokazujesz wszystkie zadania — zawęź do zaległych + najbliższych {UPCOMING_DAYS} dni

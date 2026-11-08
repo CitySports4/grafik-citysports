@@ -151,16 +151,24 @@ export async function ContentCalendarSection({
   const daysSinceLastPublished = lastPublishedRaw
     ? Math.round((new Date(today + "T00:00:00").getTime() - new Date(lastPublishedRaw.scheduled_date + "T00:00:00").getTime()) / 86400000)
     : null;
+  // Baner + konkretne wezwanie do działania (patrz audyt UX: sam komunikat
+  // "czas dodać pierwszą treść" bez wskazania JAK to ślepy zaułek) — zawsze
+  // ten sam konkretny krok, bo akcja jest zawsze ta sama: "+ Dodaj" pod
+  // wybranym dniem w siatce kalendarza poniżej.
   const regularityWarning =
     daysSinceLastPublished === null
-      ? "Jeszcze nic nie zostało oznaczone jako opublikowane — czas dodać pierwszą treść."
+      ? "Jeszcze nic nie zostało oznaczone jako opublikowane."
       : daysSinceLastPublished > REGULARITY_GAP_DAYS
-        ? `Minęło ${daysSinceLastPublished} dni od ostatniej opublikowanej treści — czas dodać coś nowego.`
+        ? `Minęło ${daysSinceLastPublished} dni od ostatniej opublikowanej treści.`
         : null;
 
   return (
     <div className="flex flex-col gap-3">
-      {regularityWarning && <Banner variant="warning">⏰ {regularityWarning}</Banner>}
+      {regularityWarning && (
+        <Banner variant="warning">
+          ⏰ {regularityWarning} Kliknij „+ Dodaj” pod wybranym dniem w kalendarzu poniżej, żeby zaplanować kolejną publikację.
+        </Banner>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm capitalize text-zinc-500">
           {monthLabel(month)} {year}
