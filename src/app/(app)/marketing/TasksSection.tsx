@@ -18,6 +18,10 @@ import {
 } from "@/lib/marketing";
 import { updateTask, setTaskStatus, deleteTask, postponeTask, setTaskArchived } from "./actions";
 import { AddTaskForm } from "./AddTaskForm";
+import { TaskDayView } from "./TaskDayView";
+import { TaskWeekView } from "./TaskWeekView";
+import { TaskMonthView } from "./TaskMonthView";
+
 const INPUT_SM = "rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-xs";
 
 type Task = {
@@ -85,6 +89,8 @@ export async function TasksSection({
   assigneeFilter,
   showAll,
   view,
+  calendarView,
+  calendarDate,
 }: {
   currentEmployeeId: string;
   assigneeFilter?: string;
@@ -94,6 +100,14 @@ export async function TasksSection({
   // ?widok=pelny — patrz FULL_VIEW. Domyślnie (brak parametru, albo stare
   // ?widok=tydzien z zakładek sprzed audytu UX) pokazuje się "Mój tydzień".
   view?: string;
+  // ?widokZadan=dzien|tydzien|miesiac — przełącznik Kanban/Dzień/Tydzień/
+  // Miesiąc (patrz sprint "Widoki kalendarza zadań"), NIEZALEŻNY od ?widok
+  // powyżej (ten dotyczy tylko Kanbanu). Brak parametru = Kanban, bez zmian
+  // w zachowaniu sprzed tego sprintu.
+  calendarView?: string;
+  // ?data=YYYY-MM-DD — dzień oglądany w widoku Dzień/Tydzień/Miesiąc,
+  // domyślnie dziś.
+  calendarDate?: string;
 }) {
   const supabase = createServerSupabaseClient();
   const todayDate = new Date();
@@ -183,6 +197,13 @@ export async function TasksSection({
   // zapobiega.
   const myNoDueDateCount = allTasks.filter((t) => t.assignee_employee_id === currentEmployeeId && t.due_date === null).length;
   const isWeekView = view !== FULL_VIEW;
+
+  // Przełącznik Kanban/Dzień/Tydzień/Miesiąc (patrz sprint "Widoki
+  // kalendarza zadań") — osobny od isWeekView/FULL_VIEW powyżej (to inny
+  // wymiar: który z 4 TRYBÓW wyświetlania, nie filtr w obrębie Kanbanu).
+  const CALENDAR_VIEWS = ["dzien", "tydzien", "miesiac"] as const;
+  const activeCalendarView = (CALENDAR_VIEWS as readonly string[]).includes(calendarView ?? "") ? (calendarView as (typeof CALENDAR_VIEWS)[number]) : null;
+  const calDate = calendarDate && /^\d{4}-\d{2}-\d{2}$/.test(calendarDate) ? calendarDate : today;
 
   function renderTask(t: Task) {
     const assignee = t.assignee_employee_id ? assigneeById.get(t.assignee_employee_id) : null;
@@ -429,7 +450,43 @@ export async function TasksSection({
         <AddTaskForm currentEmployeeId={currentEmployeeId} assignees={assignees} activeProjects={activeProjects} recordingAssigneeId={recordingAssigneeId} />
       </Card>
 
-      {/* Filtr po osobie — domyślnie (bez parametru w URL) zawężony do
+      {/* Przełącznik widoku — jak w Google Calendar. Kanban to wszystko
+          poniżej (Mój tydzień/filtry/kolumny statusu), bez zmian; pozostałe
+          trzy renderują się zamiast tego całego bloku, patrz warunek niżej. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Link
+          href="/marketing?tab=zadania"
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!activeCalendarView ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+        >
+          📋 Kanban
+        </Link>
+        <Link
+          href={`/marketing?tab=zadania&widokZadan=dzien&data=${calDate}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeCalendarView === "dzien" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+        >
+          Dzień
+        </Link>
+        <Link
+          href={`/marketing?tab=zadania&widokZadan=tydzien&data=${calDate}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeCalendarView === "tydzien" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+        >
+          Tydzień
+        </Link>
+        <Link
+          href={`/marketing?tab=zadania&widokZadan=miesiac&data=${calDate}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeCalendarView === "miesiac" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+        >
+          Miesiąc
+        </Link>
+      </div>
+
+      {activeCalendarView === "dzien" && <TaskDayView date={calDate} />}
+      {activeCalendarView === "tydzien" && <TaskWeekView date={calDate} />}
+      {activeCalendarView === "miesiac" && <TaskMonthView date={calDate} />}
+
+      {!activeCalendarView && (
+        <>
+          {/* Filtr po osobie — domyślnie (bez parametru w URL) zawężony do
           zalogowanej osoby: "jak Oliwia się loguje, widzi najpierw swoje
           zadania, nie przeszkadzają jej cudze" — patrz ALL/effectiveFilter
           wyżej. Linki, nie przyciski JS (ten sam wzorzec co
@@ -592,6 +649,8 @@ export async function TasksSection({
               <div className="mt-3 flex flex-col gap-2">{archivedTasks.map(renderTask)}</div>
             </details>
           )}
+        </>
+      )}
         </>
       )}
     </div>

@@ -17,7 +17,17 @@ type TabKey = (typeof TABS)[number]["key"];
 export default async function MarketingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; year?: string; month?: string; osoba?: string; zakres?: string; widok?: string; projekt?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    year?: string;
+    month?: string;
+    osoba?: string;
+    zakres?: string;
+    widok?: string;
+    projekt?: string;
+    widokZadan?: string;
+    data?: string;
+  }>;
 }) {
   const employee = await requireEmployee();
   // Sprint A — osoba WYŁĄCZNIE z rolą content_creator (bez marketing/admin)
@@ -69,7 +79,14 @@ export default async function MarketingPage({
       </div>
 
       {tab === "zadania" && (
-        <TasksSection currentEmployeeId={employee.id} assigneeFilter={params.osoba} showAll={params.zakres === "wszystkie"} view={params.widok} />
+        <TasksSection
+          currentEmployeeId={employee.id}
+          assigneeFilter={params.osoba}
+          showAll={params.zakres === "wszystkie"}
+          view={params.widok}
+          calendarView={params.widokZadan}
+          calendarDate={params.data}
+        />
       )}
       {tab === "kalendarz" && (
         <ContentCalendarSection yearParam={params.year} monthParam={params.month} assigneeFilter={params.osoba} projectFilter={params.projekt} />
