@@ -32,6 +32,7 @@ export async function createTask(formData: FormData) {
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
   const priority = String(formData.get("priority") ?? "normal");
   const due_date = String(formData.get("due_date") ?? "") || null;
+  const project = String(formData.get("project") ?? "").trim();
   if (!title) throw new Error("Podaj tytuł zadania.");
 
   const supabase = createServerSupabaseClient();
@@ -41,6 +42,7 @@ export async function createTask(formData: FormData) {
     assignee_employee_id,
     priority,
     due_date,
+    project,
     created_by_employee_id: employee.id,
   });
   if (error) throw new Error(dbErrorMessage(error));
@@ -55,12 +57,13 @@ export async function updateTask(formData: FormData) {
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
   const priority = String(formData.get("priority") ?? "normal");
   const due_date = String(formData.get("due_date") ?? "") || null;
+  const project = String(formData.get("project") ?? "").trim();
   if (!id || !title) throw new Error("Podaj tytuł zadania.");
 
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("marketing_task")
-    .update({ title, description, assignee_employee_id, priority, due_date, updated_at: new Date().toISOString() })
+    .update({ title, description, assignee_employee_id, priority, due_date, project, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
@@ -178,7 +181,8 @@ async function createLinkedTaskIfNeeded(
   platform: string,
   scheduled_date: string,
   assignee_employee_id: string,
-  created_by_employee_id: string
+  created_by_employee_id: string,
+  project: string
 ) {
   const { error } = await supabase.from("marketing_task").insert({
     title,
@@ -187,6 +191,7 @@ async function createLinkedTaskIfNeeded(
     assignee_employee_id,
     content_id: contentId,
     created_by_employee_id,
+    project,
   });
   if (error) throw new Error(dbErrorMessage(error));
 }
@@ -202,6 +207,7 @@ export async function createContent(formData: FormData) {
   const needs_review = formData.get("needs_review") === "on";
   const notes = String(formData.get("notes") ?? "").trim();
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
+  const project = String(formData.get("project") ?? "").trim();
   if (!title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
 
   const supabase = createServerSupabaseClient();
@@ -217,6 +223,7 @@ export async function createContent(formData: FormData) {
       needs_review,
       notes,
       assignee_employee_id,
+      project,
       created_by_employee_id: employee.id,
     })
     .select("id")
@@ -224,7 +231,7 @@ export async function createContent(formData: FormData) {
   if (error || !data) throw new Error(dbErrorMessage(error));
 
   if (assignee_employee_id) {
-    await createLinkedTaskIfNeeded(supabase, data.id, title, platform, scheduled_date, assignee_employee_id, employee.id);
+    await createLinkedTaskIfNeeded(supabase, data.id, title, platform, scheduled_date, assignee_employee_id, employee.id, project);
   }
   revalidateMarketing();
 }
@@ -241,6 +248,7 @@ export async function updateContent(formData: FormData) {
   const needs_review = formData.get("needs_review") === "on";
   const notes = String(formData.get("notes") ?? "").trim();
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
+  const project = String(formData.get("project") ?? "").trim();
   if (!id || !title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
 
   const supabase = createServerSupabaseClient();
@@ -249,7 +257,7 @@ export async function updateContent(formData: FormData) {
   }
   const { error } = await supabase
     .from("marketing_content")
-    .update({ title, platform, scheduled_date, status, purpose, format, needs_review, notes, assignee_employee_id, updated_at: new Date().toISOString() })
+    .update({ title, platform, scheduled_date, status, purpose, format, needs_review, notes, assignee_employee_id, project, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
 
@@ -262,7 +270,7 @@ export async function updateContent(formData: FormData) {
   if (assignee_employee_id) {
     const { data: existingTask } = await supabase.from("marketing_task").select("id").eq("content_id", id).maybeSingle();
     if (!existingTask) {
-      await createLinkedTaskIfNeeded(supabase, id, title, platform, scheduled_date, assignee_employee_id, employee.id);
+      await createLinkedTaskIfNeeded(supabase, id, title, platform, scheduled_date, assignee_employee_id, employee.id, project);
     } else {
       await supabase
         .from("marketing_task")
@@ -454,7 +462,7 @@ export async function importMarketingFile(formData: FormData): Promise<ImportRes
     }
     contentCount++;
     if (assignee_employee_id) {
-      await createLinkedTaskIfNeeded(supabase, data.id, c.title.trim(), c.platform ?? "inne", c.scheduled_date, assignee_employee_id, employee.id);
+      await createLinkedTaskIfNeeded(supabase, data.id, c.title.trim(), c.platform ?? "inne", c.scheduled_date, assignee_employee_id, employee.id, "");
     }
   }
 

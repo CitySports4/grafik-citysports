@@ -5,11 +5,13 @@ import { ColorDot } from "@/components/ColorDot";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { BTN_PRIMARY, BTN_GHOST, BTN_GHOST_DANGER } from "@/components/button-styles";
-import { toDateKey } from "@/lib/schedule-month";
+import { toDateKey, mondayOfWeek } from "@/lib/schedule-month";
 import {
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
   TASK_PRIORITY_LABELS,
+  PROJECT_OPTIONS,
+  groupByProject,
   type MarketingTaskStatus,
   type MarketingTaskPriority,
 } from "@/lib/marketing";
@@ -29,6 +31,7 @@ type Task = {
   assignee_employee_id: string | null;
   archived: boolean;
   content_id: string | null;
+  project: string;
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
@@ -71,12 +74,18 @@ export async function TasksSection({
   currentEmployeeId,
   assigneeFilter,
   showAll,
+  view,
 }: {
   currentEmployeeId: string;
   assigneeFilter?: string;
   // ?zakres=wszystkie — bez tego domyślny widok pokazuje tylko zaległe +
   // najbliższe UPCOMING_DAYS dni + zadania bez terminu.
   showAll?: boolean;
+  // ?widok=tydzien — "Mój tydzień": zastępuje cały normalny widok jedną,
+  // płaską listą MOICH zadań z terminem w bieżącym tygodniu, niezależnie od
+  // projektu czy statusu (patrz WEEK_VIEW niżej) — osobny tryb, nie kolejny
+  // filtr do połączenia z resztą.
+  view?: string;
 }) {
   const supabase = createServerSupabaseClient();
   const todayDate = new Date();
@@ -84,10 +93,12 @@ export async function TasksSection({
   const horizonDate = new Date(todayDate);
   horizonDate.setDate(horizonDate.getDate() + UPCOMING_DAYS);
   const horizon = toDateKey(horizonDate);
+  const weekMonday = mondayOfWeek(today);
+  const weekSunday = toDateKey(new Date(new Date(weekMonday + "T00:00:00").getTime() + 6 * 86400000));
   const [{ data: tasksRaw }, { data: assigneesRaw }] = await Promise.all([
     supabase
       .from("marketing_task")
-      .select("id, title, description, status, priority, due_date, assignee_employee_id, archived, content_id")
+      .select("id, title, description, status, priority, due_date, assignee_employee_id, archived, content_id, project")
       .order("due_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false }),
     supabase
@@ -127,6 +138,14 @@ export async function TasksSection({
   }
 
   const overdueCount = byAssignee.filter((t) => t.status !== "done" && t.due_date !== null && t.due_date < today).length;
+
+  // "Mój tydzień" — zadania przypisane do mnie z terminem w bieżącym
+  // tygodniu (poniedziałek–niedziela), NIEZALEŻNIE od projektu i statusu —
+  // liczy się od allTasks (wszystkie nieprzypisane, bez filtra osoby/zakresu
+  // z góry strony), bo to osobny, zawsze-"moje" widok.
+  const myWeekTasks = allTasks
+    .filter((t) => t.assignee_employee_id === currentEmployeeId && t.due_date !== null && t.due_date >= weekMonday && t.due_date <= weekSunday)
+    .sort((a, b) => (a.due_date! < b.due_date! ? -1 : a.due_date! > b.due_date! ? 1 : PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]));
 
   function renderTask(t: Task) {
     const assignee = t.assignee_employee_id ? assigneeById.get(t.assignee_employee_id) : null;
@@ -173,6 +192,7 @@ export async function TasksSection({
                 </Link>
               )}
               <span className={`rounded-full px-2 py-0.5 font-bold ${PRIORITY_BADGE[t.priority]}`}>{TASK_PRIORITY_LABELS[t.priority]}</span>
+              {t.project && <span className="rounded-full bg-violet-50 px-2 py-0.5 font-bold text-violet-700">{t.project}</span>}
               {assignee && (
                 <span className="flex items-center gap-1 text-zinc-500">
                   <ColorDot color={assignee.color_hex} />
@@ -252,6 +272,14 @@ export async function TasksSection({
                       ))}
                     </select>
                     <input type="date" name="due_date" defaultValue={t.due_date ?? ""} className={INPUT_SM} />
+                    <select name="project" defaultValue={t.project} className={INPUT_SM}>
+                      <option value="">— bez projektu —</option>
+                      {PROJECT_OPTIONS.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="flex items-center gap-2">
                     <SubmitButton className="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
@@ -281,6 +309,29 @@ export async function TasksSection({
     );
   }
 
+  // Grupowanie po projekcie wewnątrz każdej kolumny statusu (patrz
+  // groupByProject w lib/marketing.ts) — bez nagłówka grupy, gdy wszystko i
+  // tak ląduje w jednej grupie (np. nikt jeszcze nie przypisał projektów),
+  // żeby nie pokazywać pustego "Bez projektu" nad każdą listą.
+  function renderTaskList(list: Task[]) {
+    const groups = groupByProject(list, (t) => t.project);
+    if (groups.length <= 1) {
+      return <div className="flex flex-col gap-2">{list.map(renderTask)}</div>;
+    }
+    return (
+      <div className="flex flex-col gap-3">
+        {groups.map((g) => (
+          <div key={g.project}>
+            <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-zinc-400">
+              {g.label} <span className="normal-case">({g.items.length})</span>
+            </p>
+            <div className="flex flex-col gap-2">{g.items.map(renderTask)}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
@@ -298,7 +349,7 @@ export async function TasksSection({
             <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">
               Więcej opcji (osoba, priorytet, termin) ▾
             </summary>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <select name="assignee_employee_id" defaultValue={currentEmployeeId} className={INPUT}>
                 <option value="">— nieprzypisane —</option>
                 {assignees.map((a) => (
@@ -315,6 +366,14 @@ export async function TasksSection({
                 ))}
               </select>
               <input type="date" name="due_date" className={INPUT} />
+              <select name="project" defaultValue="" className={INPUT}>
+                <option value="">— bez projektu —</option>
+                {PROJECT_OPTIONS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
             </div>
             <textarea name="description" rows={2} placeholder="Opis (opcjonalnie)" className={`${INPUT} mt-2`} />
           </details>
@@ -331,12 +390,21 @@ export async function TasksSection({
           żeby przełączenie osoby nie resetowało go po cichu z powrotem na
           zawężony. */}
       <div className="flex flex-wrap items-center gap-1.5">
+        {/* "Mój tydzień" — osobny tryb, nie kolejny filtr do połączenia z
+            resztą (patrz komentarz przy myWeekTasks wyżej), dlatego osobny
+            wygląd (fioletowy) zamiast dopasowywania się do reszty chipów. */}
+        <Link
+          href="/marketing?tab=zadania&widok=tydzien"
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${view === "tydzien" ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+        >
+          📅 Mój tydzień ({myWeekTasks.length})
+        </Link>
         {(() => {
           const myCount = allTasks.filter((t) => t.assignee_employee_id === currentEmployeeId).length;
           return (
             <Link
               href={`/marketing?tab=zadania${showAll ? "&zakres=wszystkie" : ""}`}
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === currentEmployeeId ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${view !== "tydzien" && effectiveFilter === currentEmployeeId ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
             >
               Moje zadania ({myCount})
             </Link>
@@ -380,66 +448,87 @@ export async function TasksSection({
         })()}
       </div>
 
-      {overdueCount > 0 && (
-        <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
-          ⚠ {overdueCount} {overdueCount === 1 ? "zaległe zadanie" : "zaległych zadań"} — termin już minął.
-        </p>
-      )}
+      {view === "tydzien" ? (
+        <Card>
+          <h2 className="mb-1 flex items-center gap-2 font-semibold text-zinc-900">
+            📅 Mój tydzień
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{myWeekTasks.length}</span>
+          </h2>
+          <p className="mb-3 text-xs text-zinc-500">
+            {new Date(weekMonday + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} –{" "}
+            {new Date(weekSunday + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} — Twoje zadania z terminem w tym tygodniu,
+            niezależnie od projektu.
+          </p>
+          {myWeekTasks.length === 0 ? (
+            <p className="text-sm text-zinc-400">Brak Twoich zadań z terminem w tym tygodniu.</p>
+          ) : (
+            <div className="flex flex-col gap-2">{myWeekTasks.map(renderTask)}</div>
+          )}
+        </Card>
+      ) : (
+        <>
+          {overdueCount > 0 && (
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
+              ⚠ {overdueCount} {overdueCount === 1 ? "zaległe zadanie" : "zaległych zadań"} — termin już minął.
+            </p>
+          )}
 
-      {/* Domyślnie pokazujemy tylko zaległe + najbliższe UPCOMING_DAYS dni +
-          zadania bez terminu — reszta jest tu, jeden klik dalej, nie
-          usunięta. Bez tego "Wszyscy" na co dzień to ściana zadań z całego
-          roku naraz (patrz feedback z użycia). */}
-      {!showAll && hiddenByScopeCount > 0 && (
-        <Link
-          href={`/marketing?tab=zadania${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}&zakres=wszystkie`}
-          className="rounded-xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-500 hover:bg-zinc-100"
-        >
-          Pokazuję zaległe + najbliższe {UPCOMING_DAYS} dni. Ukryto {hiddenByScopeCount} {hiddenByScopeCount === 1 ? "dalsze zadanie" : "dalszych zadań"} — pokaż wszystkie →
-        </Link>
-      )}
-      {showAll && (
-        <Link
-          href={`/marketing?tab=zadania${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}`}
-          className="self-start rounded-xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-500 hover:bg-zinc-100"
-        >
-          ← Pokazujesz wszystkie zadania — zawęź do zaległych + najbliższych {UPCOMING_DAYS} dni
-        </Link>
-      )}
+          {/* Domyślnie pokazujemy tylko zaległe + najbliższe UPCOMING_DAYS dni +
+              zadania bez terminu — reszta jest tu, jeden klik dalej, nie
+              usunięta. Bez tego "Wszyscy" na co dzień to ściana zadań z całego
+              roku naraz (patrz feedback z użycia). */}
+          {!showAll && hiddenByScopeCount > 0 && (
+            <Link
+              href={`/marketing?tab=zadania${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}&zakres=wszystkie`}
+              className="rounded-xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-500 hover:bg-zinc-100"
+            >
+              Pokazuję zaległe + najbliższe {UPCOMING_DAYS} dni. Ukryto {hiddenByScopeCount} {hiddenByScopeCount === 1 ? "dalsze zadanie" : "dalszych zadań"} — pokaż wszystkie →
+            </Link>
+          )}
+          {showAll && (
+            <Link
+              href={`/marketing?tab=zadania${assigneeFilter ? `&osoba=${assigneeFilter}` : ""}`}
+              className="self-start rounded-xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-500 hover:bg-zinc-100"
+            >
+              ← Pokazujesz wszystkie zadania — zawęź do zaległych + najbliższych {UPCOMING_DAYS} dni
+            </Link>
+          )}
 
-      {TASK_STATUS_ORDER.map((status) => {
-        const list = byStatus[status];
-        // "Zrobione" zwinięte domyślnie, gdy jest ich sporo — to już
-        // zakończona praca, nie potrzeba jej mieć stale rozwiniętej przed
-        // oczami, ten sam wzorzec co zarchiwizowane plany w PlansSection.
-        const collapsible = status === "done" && list.length > 5;
-        return (
-          <Card key={status}>
-            <h2 className="mb-3 flex items-center gap-2 font-semibold text-zinc-900">
-              {TASK_STATUS_LABELS[status]}
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{list.length}</span>
-            </h2>
-            {list.length === 0 ? (
-              <p className="text-sm text-zinc-400">Brak zadań.</p>
-            ) : collapsible ? (
-              <details>
-                <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Pokaż ({list.length}) ▾</summary>
-                <div className="mt-2 flex flex-col gap-2">{list.map(renderTask)}</div>
-              </details>
-            ) : (
-              <div className="flex flex-col gap-2">{list.map(renderTask)}</div>
-            )}
-          </Card>
-        );
-      })}
+          {TASK_STATUS_ORDER.map((status) => {
+            const list = byStatus[status];
+            // "Zrobione" zwinięte domyślnie, gdy jest ich sporo — to już
+            // zakończona praca, nie potrzeba jej mieć stale rozwiniętej przed
+            // oczami, ten sam wzorzec co zarchiwizowane plany w PlansSection.
+            const collapsible = status === "done" && list.length > 5;
+            return (
+              <Card key={status}>
+                <h2 className="mb-3 flex items-center gap-2 font-semibold text-zinc-900">
+                  {TASK_STATUS_LABELS[status]}
+                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{list.length}</span>
+                </h2>
+                {list.length === 0 ? (
+                  <p className="text-sm text-zinc-400">Brak zadań.</p>
+                ) : collapsible ? (
+                  <details>
+                    <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Pokaż ({list.length}) ▾</summary>
+                    <div className="mt-2">{renderTaskList(list)}</div>
+                  </details>
+                ) : (
+                  renderTaskList(list)
+                )}
+              </Card>
+            );
+          })}
 
-      {archivedTasks.length > 0 && (
-        <details className="rounded-2xl border border-dashed border-zinc-300 p-3">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-500 marker:content-none">
-            <span>Pokaż zarchiwizowane ({archivedTasks.length})</span>
-          </summary>
-          <div className="mt-3 flex flex-col gap-2">{archivedTasks.map(renderTask)}</div>
-        </details>
+          {archivedTasks.length > 0 && (
+            <details className="rounded-2xl border border-dashed border-zinc-300 p-3">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-500 marker:content-none">
+                <span>Pokaż zarchiwizowane ({archivedTasks.length})</span>
+              </summary>
+              <div className="mt-3 flex flex-col gap-2">{archivedTasks.map(renderTask)}</div>
+            </details>
+          )}
+        </>
       )}
     </div>
   );

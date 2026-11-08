@@ -9,6 +9,7 @@ import {
   CONTENT_STATUS_LABELS,
   CONTENT_STATUS_ORDER,
   isApprovalPending,
+  PROJECT_OPTIONS,
   type ContentPlatform,
   type ContentStatus,
   type ContentPurpose,
@@ -37,6 +38,7 @@ type ContentItem = {
   review_note: string;
   notes: string;
   assignee_employee_id: string | null;
+  project: string;
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
@@ -53,15 +55,20 @@ const STATUS_DOT: Record<ContentStatus, string> = {
 // widok publikacji całego zespołu, pełna widoczność jest tu wartością), ale
 // każdy może się do siebie zawęzić jednym klikiem, tak samo jak w Zadaniach.
 const MINE = "_moje";
+// Sentinel dla "bez projektu" w filtrze po projekcie (?projekt=_brak) — ten
+// sam wzorzec co UNASSIGNED w Zadaniach.
+const PROJECT_NONE = "_brak";
 
 export async function ContentCalendarSection({
   yearParam,
   monthParam,
   assigneeFilter,
+  projectFilter,
 }: {
   yearParam?: string;
   monthParam?: string;
   assigneeFilter?: string;
+  projectFilter?: string;
 }) {
   const employee = await requireEmployee();
   const isAdmin = employee.roles.includes("admin");
@@ -73,14 +80,21 @@ export async function ContentCalendarSection({
   const days = daysInMonth(year, month);
   const dateKeys = days.map(toDateKey);
   const osobaSuffix = assigneeFilter ? `&osoba=${assigneeFilter}` : "";
-  const prevLink = month === 1 ? `?tab=kalendarz&year=${year - 1}&month=12${osobaSuffix}` : `?tab=kalendarz&year=${year}&month=${month - 1}${osobaSuffix}`;
-  const nextLink = month === 12 ? `?tab=kalendarz&year=${year + 1}&month=1${osobaSuffix}` : `?tab=kalendarz&year=${year}&month=${month + 1}${osobaSuffix}`;
+  const projektSuffix = projectFilter ? `&projekt=${encodeURIComponent(projectFilter)}` : "";
+  const prevLink =
+    month === 1
+      ? `?tab=kalendarz&year=${year - 1}&month=12${osobaSuffix}${projektSuffix}`
+      : `?tab=kalendarz&year=${year}&month=${month - 1}${osobaSuffix}${projektSuffix}`;
+  const nextLink =
+    month === 12
+      ? `?tab=kalendarz&year=${year + 1}&month=1${osobaSuffix}${projektSuffix}`
+      : `?tab=kalendarz&year=${year}&month=${month + 1}${osobaSuffix}${projektSuffix}`;
 
   const supabase = createServerSupabaseClient();
   const [{ data: contentRaw }, { data: assigneesRaw }, { data: linkedTasksRaw }, { data: lastPublishedRaw }] = await Promise.all([
     supabase
       .from("marketing_content")
-      .select("id, title, platform, scheduled_date, status, purpose, format, needs_review, approved, review_note, notes, assignee_employee_id")
+      .select("id, title, platform, scheduled_date, status, purpose, format, needs_review, approved, review_note, notes, assignee_employee_id, project")
       .gte("scheduled_date", dateKeys[0])
       .lte("scheduled_date", dateKeys[dateKeys.length - 1])
       .order("scheduled_date"),
@@ -114,7 +128,10 @@ export async function ContentCalendarSection({
   const contentIdsWithTask = new Set((linkedTasksRaw ?? []).map((t) => t.content_id as string));
 
   const effectiveFilter = assigneeFilter === MINE ? employee.id : assigneeFilter;
-  const content = !effectiveFilter ? allContent : allContent.filter((c) => c.assignee_employee_id === effectiveFilter);
+  const assigneeFiltered = !effectiveFilter ? allContent : allContent.filter((c) => c.assignee_employee_id === effectiveFilter);
+  const content = !projectFilter
+    ? assigneeFiltered
+    : assigneeFiltered.filter((c) => (projectFilter === PROJECT_NONE ? !c.project.trim() : c.project.trim() === projectFilter));
 
   const byDate = new Map<string, ContentItem[]>();
   for (const c of content) {
@@ -160,13 +177,13 @@ export async function ContentCalendarSection({
           wyżej). Liczniki liczone w obrębie oglądanego miesiąca. */}
       <div className="flex flex-wrap items-center gap-1.5">
         <Link
-          href={`?tab=kalendarz&year=${year}&month=${month}&osoba=${MINE}`}
+          href={`?tab=kalendarz&year=${year}&month=${month}&osoba=${MINE}${projektSuffix}`}
           className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === employee.id ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Moje ({allContent.filter((c) => c.assignee_employee_id === employee.id).length})
         </Link>
         <Link
-          href={`?tab=kalendarz&year=${year}&month=${month}`}
+          href={`?tab=kalendarz&year=${year}&month=${month}${projektSuffix}`}
           className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!assigneeFilter ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Wszyscy ({allContent.length})
@@ -176,7 +193,7 @@ export async function ContentCalendarSection({
           .map((a) => (
             <Link
               key={a.id}
-              href={`?tab=kalendarz&year=${year}&month=${month}&osoba=${a.id}`}
+              href={`?tab=kalendarz&year=${year}&month=${month}&osoba=${a.id}${projektSuffix}`}
               className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
                 effectiveFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
               }`}
@@ -185,6 +202,39 @@ export async function ContentCalendarSection({
               {a.name} ({allContent.filter((c) => c.assignee_employee_id === a.id).length})
             </Link>
           ))}
+      </div>
+
+      {/* Filtr po projekcie — osobny wymiar od filtra po osobie (oba
+          działają razem, patrz osobaSuffix/projektSuffix). Liczniki liczone
+          w obrębie oglądanego miesiąca I już zawężone do filtra po osobie
+          (assigneeFiltered), żeby pokazywały realny wynik kolejnego kliku. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Link
+          href={`?tab=kalendarz&year=${year}&month=${month}${osobaSuffix}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!projectFilter ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+        >
+          Wszystkie projekty ({assigneeFiltered.length})
+        </Link>
+        {PROJECT_OPTIONS.map((p) => (
+          <Link
+            key={p}
+            href={`?tab=kalendarz&year=${year}&month=${month}${osobaSuffix}&projekt=${encodeURIComponent(p)}`}
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${projectFilter === p ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+          >
+            {p} ({assigneeFiltered.filter((c) => c.project.trim() === p).length})
+          </Link>
+        ))}
+        {(() => {
+          const noneCount = assigneeFiltered.filter((c) => !c.project.trim()).length;
+          return noneCount > 0 ? (
+            <Link
+              href={`?tab=kalendarz&year=${year}&month=${month}${osobaSuffix}&projekt=${PROJECT_NONE}`}
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${projectFilter === PROJECT_NONE ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+            >
+              Bez projektu ({noneCount})
+            </Link>
+          ) : null;
+        })()}
       </div>
 
       {/* Legenda statusów — same kolory w chipach poniżej byłyby czytelne

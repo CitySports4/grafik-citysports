@@ -99,3 +99,41 @@ export const PLAN_TYPE_LABELS: Record<PlanType, string> = {
   strategia: "Strategia",
   plan: "Plan",
 };
+
+// Projekt (Wigilia, Liga Deblowa, Półkolonie, ...) — zwykły tekst w bazie,
+// NIE enum/check (patrz migracja 0062): dodanie nowego projektu to tylko
+// dopisanie wartości tutaj, bez migracji. Pusty string ("") = brak
+// przypisanego projektu, pokazywany w UI jako "Bez projektu".
+export const PROJECT_OPTIONS = ["Wigilia", "Liga Deblowa", "Półkolonie", "Ogólne"] as const;
+export const NO_PROJECT_LABEL = "Bez projektu";
+
+export function projectLabel(project: string): string {
+  return project.trim() || NO_PROJECT_LABEL;
+}
+
+// Kolejność sekcji przy grupowaniu po projekcie — najpierw znane opcje w tej
+// kolejności, potem inne (niestandardowe) wartości alfabetycznie, na końcu
+// zawsze "Bez projektu" (puste), bo to raczej zaległość do uzupełnienia niż
+// właściwa kategoria.
+export function projectSortKey(project: string): [number, string] {
+  const trimmed = project.trim();
+  if (!trimmed) return [1, ""];
+  const knownIndex = PROJECT_OPTIONS.indexOf(trimmed as (typeof PROJECT_OPTIONS)[number]);
+  return knownIndex === -1 ? [0.5, trimmed] : [0, String(knownIndex).padStart(4, "0")];
+}
+
+export function groupByProject<T>(items: T[], getProject: (item: T) => string): { project: string; label: string; items: T[] }[] {
+  const byProject = new Map<string, T[]>();
+  for (const item of items) {
+    const project = getProject(item).trim();
+    if (!byProject.has(project)) byProject.set(project, []);
+    byProject.get(project)!.push(item);
+  }
+  return Array.from(byProject.entries())
+    .map(([project, items]) => ({ project, label: projectLabel(project), items }))
+    .sort((a, b) => {
+      const [ra, sa] = projectSortKey(a.project);
+      const [rb, sb] = projectSortKey(b.project);
+      return ra !== rb ? ra - rb : sa.localeCompare(sb);
+    });
+}
