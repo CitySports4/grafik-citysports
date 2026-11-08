@@ -3,10 +3,10 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { toDateKey, mondayOfWeek } from "@/lib/schedule-month";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { type MarketingTaskStatus } from "@/lib/marketing";
-import { isTaskActiveOnDay, tileUrgency, formatDeadlineBadge, type TileUrgency } from "@/lib/task-calendar";
+import { isTaskActiveOnDay, tileUrgency, formatDeadlineBadge, filterByAssignee, type TileUrgency } from "@/lib/task-calendar";
 import { setTaskStatus } from "./actions";
 
-type Task = { id: string; title: string; due_date: string; status: MarketingTaskStatus };
+type Task = { id: string; title: string; due_date: string; status: MarketingTaskStatus; assignee_employee_id: string | null };
 
 const TILE_STYLE: Record<TileUrgency, string> = {
   normal: "bg-blue-50 text-blue-700",
@@ -24,8 +24,9 @@ function weekLink(date: string) {
 }
 
 // Widok TYDZIEŃ — 7 kolumn pon–ndz, zadanie pojawia się we wszystkich
-// kolumnach od dziś do terminu włącznie (patrz isTaskActiveOnDay).
-export async function TaskWeekView({ date }: { date: string }) {
+// kolumnach od dziś do terminu włącznie (patrz isTaskActiveOnDay), zawężone
+// filtrem po osobie (patrz assigneeFilter — domyślnie tylko moje).
+export async function TaskWeekView({ date, assigneeFilter }: { date: string; assigneeFilter: string }) {
   const today = toDateKey(new Date());
   const monday = mondayOfWeek(date);
   const weekDays = Array.from({ length: 7 }, (_, i) => toDateKey(new Date(new Date(monday + "T00:00:00").getTime() + i * 86400000)));
@@ -35,11 +36,11 @@ export async function TaskWeekView({ date }: { date: string }) {
   const supabase = createServerSupabaseClient();
   const { data: tasksRaw } = await supabase
     .from("marketing_task")
-    .select("id, title, due_date, status")
+    .select("id, title, due_date, status, assignee_employee_id")
     .eq("archived", false)
     .neq("status", "done")
     .not("due_date", "is", null);
-  const allTasks = (tasksRaw ?? []) as Task[];
+  const allTasks = filterByAssignee((tasksRaw ?? []) as Task[], assigneeFilter);
 
   const byDay = new Map<string, Task[]>(weekDays.map((d) => [d, allTasks.filter((t) => isTaskActiveOnDay(t.due_date, d, today))]));
 

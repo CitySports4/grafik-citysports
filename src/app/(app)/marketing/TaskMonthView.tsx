@@ -3,10 +3,10 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { toDateKey, daysInMonth, monthLabel, currentMonth } from "@/lib/schedule-month";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { type MarketingTaskStatus } from "@/lib/marketing";
-import { isTaskActiveOnDay, tileUrgency, formatDeadlineBadge, type TileUrgency } from "@/lib/task-calendar";
+import { isTaskActiveOnDay, tileUrgency, formatDeadlineBadge, filterByAssignee, type TileUrgency } from "@/lib/task-calendar";
 import { setTaskStatus } from "./actions";
 
-type Task = { id: string; title: string; due_date: string; status: MarketingTaskStatus };
+type Task = { id: string; title: string; due_date: string; status: MarketingTaskStatus; assignee_employee_id: string | null };
 
 // Dokładnie 3 stany, jak w specyfikacji: "normalny = niebieski, deadline
 // dzisiaj = pomarańczowy, przeterminowany = czerwony" — bez 4. koloru dla
@@ -22,8 +22,9 @@ function monthLink(year: number, month: number) {
 }
 
 // Widok MIESIĄC — siatka kalendarza, kafelki zadań aktywnych danego dnia
-// (patrz isTaskActiveOnDay), ten sam układ siatki co ContentCalendarSection.
-export async function TaskMonthView({ date }: { date: string }) {
+// (patrz isTaskActiveOnDay), ten sam układ siatki co ContentCalendarSection,
+// zawężona filtrem po osobie (patrz assigneeFilter — domyślnie tylko moje).
+export async function TaskMonthView({ date, assigneeFilter }: { date: string; assigneeFilter: string }) {
   const today = toDateKey(new Date());
   const fallback = currentMonth();
   const [yearStr, monthStr] = date.split("-");
@@ -40,11 +41,11 @@ export async function TaskMonthView({ date }: { date: string }) {
   const supabase = createServerSupabaseClient();
   const { data: tasksRaw } = await supabase
     .from("marketing_task")
-    .select("id, title, due_date, status")
+    .select("id, title, due_date, status, assignee_employee_id")
     .eq("archived", false)
     .neq("status", "done")
     .not("due_date", "is", null);
-  const allTasks = (tasksRaw ?? []) as Task[];
+  const allTasks = filterByAssignee((tasksRaw ?? []) as Task[], assigneeFilter);
 
   const byDay = new Map<string, Task[]>();
   for (const d of dateKeys) byDay.set(d, allTasks.filter((t) => isTaskActiveOnDay(t.due_date, d, today)));
