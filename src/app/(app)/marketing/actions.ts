@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { requireEmployee, canAccessMarketing } from "@/lib/session";
+import { requireEmployee, canAccessMarketing, isContentCreator } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { toDateKey } from "@/lib/schedule-month";
 import { PLATFORM_LABELS, isApprovalPending, type ContentPlatform } from "@/lib/marketing";
@@ -116,13 +116,26 @@ export async function updateTask(formData: FormData) {
   revalidateMarketing();
 }
 
+// Jedyna akcja z tego pliku, którą wolno wywołać osobie z samą rolą
+// content_creator (Sprint A) — i tylko dla WŁASNEGO zadania, stąd osobna
+// (nie requireMarketingAccess) bramka tutaj. Pełny zespół (marketing/admin)
+// ma bez zmian dostęp do każdego zadania, jak dotąd.
 export async function setTaskStatus(formData: FormData) {
-  await requireMarketingAccess();
+  const employee = await requireEmployee();
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!id || !status) throw new Error("Brak danych.");
 
   const supabase = createServerSupabaseClient();
+  if (!canAccessMarketing(employee)) {
+    if (!isContentCreator(employee)) {
+      throw new Error("Brak uprawnień — ta sekcja jest dostępna tylko dla roli Marketing.");
+    }
+    const { data: task } = await supabase.from("marketing_task").select("assignee_employee_id").eq("id", id).single();
+    if (!task || task.assignee_employee_id !== employee.id) {
+      throw new Error("Możesz oznaczać jako zrobione tylko własne zadania.");
+    }
+  }
   const { error } = await supabase.from("marketing_task").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
@@ -451,7 +464,7 @@ export async function importMarketingFile(formData: FormData): Promise<ImportRes
     .from("employee")
     .select("id, name, employee_role!inner(role)")
     .eq("active", true)
-    .eq("employee_role.role", "marketing");
+    .in("employee_role.role", ["marketing", "content_creator"]);
   const assignees = (assigneesRaw ?? []) as { id: string; name: string }[];
 
   const extracted = await extractMarketingImport(text);

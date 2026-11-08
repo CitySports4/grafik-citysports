@@ -96,11 +96,13 @@ export default async function ProjectWorkspacePage({ params }: { params: Promise
       .eq("archived", false)
       .order("due_date", { ascending: true, nullsFirst: false }),
     supabase.from("marketing_content").select("id, title, status, format, scheduled_date").eq("project", project.name).order("scheduled_date"),
+    // "content_creator" dołożony obok "marketing" (Sprint A) — żeby nazwa
+    // Oliwii dalej się tu rozwiązywała, jeśli jest przypisana do zadania.
     supabase
       .from("employee")
       .select("id, name, color_hex, employee_role!inner(role)")
       .eq("active", true)
-      .eq("employee_role.role", "marketing"),
+      .in("employee_role.role", ["marketing", "content_creator"]),
   ]);
 
   const tasks = (tasksRaw ?? []) as Task[];
