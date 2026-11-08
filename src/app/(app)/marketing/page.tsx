@@ -32,9 +32,14 @@ export default async function MarketingPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-bold text-zinc-900">📣 Marketing</h1>
-        <p className="text-sm text-zinc-500">Zadania, kalendarz treści oraz strategie i plany zespołu marketingu.</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-lg font-bold text-zinc-900">📣 Marketing</h1>
+          <p className="text-sm text-zinc-500">Zadania, kalendarz treści oraz strategie i plany zespołu marketingu.</p>
+        </div>
+        <Link href="/marketing/projekty" className="text-sm font-semibold text-zinc-500 hover:text-brand-orange">
+          ⚙️ Projekty
+        </Link>
       </div>
 
       <ThisWeekWidget />
