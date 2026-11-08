@@ -12,7 +12,6 @@ import {
   CONTENT_PURPOSE_ICONS,
   CONTENT_FORMAT_LABELS,
   CONTENT_FORMAT_ICONS,
-  PROJECT_OPTIONS,
   isApprovalPending,
   type ContentPlatform,
   type ContentStatus,
@@ -20,6 +19,7 @@ import {
   type ContentFormat,
 } from "@/lib/marketing";
 import { updateContent, deleteContent, reviewContent } from "./actions";
+import { useMarketingProjects } from "./useMarketingProjects";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -72,6 +72,7 @@ export function ContentItemChip({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewNoteDraft, setReviewNoteDraft] = useState(item.review_note);
+  const { projects } = useMarketingProjects();
   const assignee = item.assignee_employee_id ? assignees.find((a) => a.id === item.assignee_employee_id) : null;
   const published = item.status === "opublikowane";
   const pendingApproval = isApprovalPending(item, today);
@@ -152,7 +153,15 @@ export function ContentItemChip({
               <p className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">
                 {CONTENT_FORMAT_ICONS[item.format]} {CONTENT_FORMAT_LABELS[item.format]}
               </p>
-              {item.project && <p className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-700">{item.project}</p>}
+              {item.project &&
+                (() => {
+                  const color = projects.find((p) => p.name === item.project)?.color ?? "#7c3aed";
+                  return (
+                    <p className="rounded-full px-2 py-0.5 text-xs font-bold" style={{ backgroundColor: `${color}1a`, color }}>
+                      {item.project}
+                    </p>
+                  );
+                })()}
             </div>
             {assignee && (
               <span className="flex items-center gap-1.5 text-sm text-zinc-600">
@@ -269,9 +278,13 @@ export function ContentItemChip({
                 <label className="text-sm font-semibold text-zinc-900">Projekt</label>
                 <select name="project" defaultValue={item.project} className={INPUT}>
                   <option value="">— bez projektu —</option>
-                  {PROJECT_OPTIONS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
+                  {/* Projekt wpisu mógł zostać zarchiwizowany od ostatniej edycji —
+                      dokładamy go jako dodatkową opcję, żeby select pokazywał
+                      faktyczną wartość zamiast po cichu ją gubić. */}
+                  {item.project && !projects.some((p) => p.name === item.project) && <option value={item.project}>{item.project} (zarchiwizowany)</option>}
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name}
                     </option>
                   ))}
                 </select>

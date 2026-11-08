@@ -10,7 +10,6 @@ import {
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
   TASK_PRIORITY_LABELS,
-  PROJECT_OPTIONS,
   groupByProject,
   type MarketingTaskStatus,
   type MarketingTaskPriority,
@@ -35,6 +34,7 @@ type Task = {
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
+type Project = { id: string; name: string; color: string };
 
 const PRIORITY_BADGE: Record<MarketingTaskPriority, string> = {
   low: "bg-zinc-100 text-zinc-500",
@@ -95,7 +95,7 @@ export async function TasksSection({
   const horizon = toDateKey(horizonDate);
   const weekMonday = mondayOfWeek(today);
   const weekSunday = toDateKey(new Date(new Date(weekMonday + "T00:00:00").getTime() + 6 * 86400000));
-  const [{ data: tasksRaw }, { data: assigneesRaw }] = await Promise.all([
+  const [{ data: tasksRaw }, { data: assigneesRaw }, { data: projectsRaw }] = await Promise.all([
     supabase
       .from("marketing_task")
       .select("id, title, description, status, priority, due_date, assignee_employee_id, archived, content_id, project")
@@ -107,9 +107,16 @@ export async function TasksSection({
       .eq("active", true)
       .eq("employee_role.role", "marketing")
       .order("name"),
+    // Projekty zarządzane z /marketing/projekty (patrz migracja 0063) —
+    // tylko aktywne w dropdownie, ale dropdown w Edytuj MUSI dołożyć też
+    // projekt już zapisanego zadania, nawet jeśli go zarchiwizowano od tej
+    // pory (patrz renderTask niżej), żeby select nie zgubił cicho wartości.
+    supabase.from("marketing_project").select("id, name, color").eq("is_active", true).order("name"),
   ]);
 
   const allTasksRaw = (tasksRaw ?? []) as Task[];
+  const activeProjects = (projectsRaw ?? []) as Project[];
+  const projectColorByName = new Map(activeProjects.map((p) => [p.name, p.color]));
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const assigneeById = new Map(assignees.map((a) => [a.id, a]));
 
@@ -192,7 +199,14 @@ export async function TasksSection({
                 </Link>
               )}
               <span className={`rounded-full px-2 py-0.5 font-bold ${PRIORITY_BADGE[t.priority]}`}>{TASK_PRIORITY_LABELS[t.priority]}</span>
-              {t.project && <span className="rounded-full bg-violet-50 px-2 py-0.5 font-bold text-violet-700">{t.project}</span>}
+              {t.project && (
+                <span
+                  className="rounded-full px-2 py-0.5 font-bold"
+                  style={{ backgroundColor: `${projectColorByName.get(t.project) ?? "#7c3aed"}1a`, color: projectColorByName.get(t.project) ?? "#7c3aed" }}
+                >
+                  {t.project}
+                </span>
+              )}
               {assignee && (
                 <span className="flex items-center gap-1 text-zinc-500">
                   <ColorDot color={assignee.color_hex} />
@@ -274,9 +288,13 @@ export async function TasksSection({
                     <input type="date" name="due_date" defaultValue={t.due_date ?? ""} className={INPUT_SM} />
                     <select name="project" defaultValue={t.project} className={INPUT_SM}>
                       <option value="">— bez projektu —</option>
-                      {PROJECT_OPTIONS.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
+                      {/* Projekt zadania mógł zostać zarchiwizowany od ostatniej
+                          edycji — dokładamy go jako dodatkową opcję, żeby select
+                          nie gubił cicho wartości. */}
+                      {t.project && !activeProjects.some((p) => p.name === t.project) && <option value={t.project}>{t.project} (zarchiwizowany)</option>}
+                      {activeProjects.map((p) => (
+                        <option key={p.id} value={p.name}>
+                          {p.name}
                         </option>
                       ))}
                     </select>
@@ -368,9 +386,9 @@ export async function TasksSection({
               <input type="date" name="due_date" className={INPUT} />
               <select name="project" defaultValue="" className={INPUT}>
                 <option value="">— bez projektu —</option>
-                {PROJECT_OPTIONS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
+                {activeProjects.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.name}
                   </option>
                 ))}
               </select>

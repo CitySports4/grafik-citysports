@@ -100,26 +100,26 @@ export const PLAN_TYPE_LABELS: Record<PlanType, string> = {
   plan: "Plan",
 };
 
-// Projekt (Wigilia, Liga Deblowa, Półkolonie, ...) — zwykły tekst w bazie,
-// NIE enum/check (patrz migracja 0062): dodanie nowego projektu to tylko
-// dopisanie wartości tutaj, bez migracji. Pusty string ("") = brak
-// przypisanego projektu, pokazywany w UI jako "Bez projektu".
-export const PROJECT_OPTIONS = ["Wigilia", "Liga Deblowa", "Półkolonie", "Ogólne"] as const;
+// Projekt (Wigilia, Liga Deblowa, Półkolonie, ...) — zwykły tekst w
+// marketing_task.project/marketing_content.project (patrz migracja 0062),
+// NIE klucz obcy do marketing_project (patrz migracja 0063) — lista
+// dostępnych projektów żyje w tamtej tabeli i w UI dociągana jest stamtąd
+// (patrz useMarketingProjects, getActiveMarketingProjects), nie na sztywno
+// tutaj. Pusty string ("") = brak przypisanego projektu, pokazywany w UI
+// jako "Bez projektu".
 export const NO_PROJECT_LABEL = "Bez projektu";
 
 export function projectLabel(project: string): string {
   return project.trim() || NO_PROJECT_LABEL;
 }
 
-// Kolejność sekcji przy grupowaniu po projekcie — najpierw znane opcje w tej
-// kolejności, potem inne (niestandardowe) wartości alfabetycznie, na końcu
-// zawsze "Bez projektu" (puste), bo to raczej zaległość do uzupełnienia niż
-// właściwa kategoria.
+// Kolejność sekcji przy grupowaniu po projekcie — alfabetycznie, "Bez
+// projektu" (puste) zawsze na końcu, bo to raczej zaległość do uzupełnienia
+// niż właściwa kategoria. Bez odniesienia do konkretnej listy projektów —
+// ta żyje teraz w bazie (marketing_project), nie w kodzie.
 export function projectSortKey(project: string): [number, string] {
   const trimmed = project.trim();
-  if (!trimmed) return [1, ""];
-  const knownIndex = PROJECT_OPTIONS.indexOf(trimmed as (typeof PROJECT_OPTIONS)[number]);
-  return knownIndex === -1 ? [0.5, trimmed] : [0, String(knownIndex).padStart(4, "0")];
+  return trimmed ? [0, trimmed.toLowerCase()] : [1, ""];
 }
 
 export function groupByProject<T>(items: T[], getProject: (item: T) => string): { project: string; label: string; items: T[] }[] {
