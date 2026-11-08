@@ -38,6 +38,11 @@ export const RECORDING_FORMAT_LABELS: Record<RecordingFormat, string> = {
   relacja: "Relacja",
   zdjecia: "Zdjęcia",
 };
+export const RECORDING_FORMAT_ICONS: Record<RecordingFormat, string> = {
+  rolka: "🎬",
+  relacja: "⭕",
+  zdjecia: "📷",
+};
 
 // Bez TikToka — klub tam nic nie publikuje (patrz migracja 0053). Facebook i
 // Instagram NIE są rozdzielane — ten sam materiał zawsze idzie na oba naraz,

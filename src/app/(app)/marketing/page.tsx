@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { requireEmployee, canAccessMarketing } from "@/lib/session";
+import { requireEmployee, canAccessMarketing, isContentCreator } from "@/lib/session";
 import { TasksSection } from "./TasksSection";
 import { ContentCalendarSection } from "./ContentCalendarSection";
 import { PlansSection } from "./PlansSection";
 import { ImportFromFile } from "./ImportFromFile";
 import { ThisWeekWidget } from "./ThisWeekWidget";
+import { CreatorView } from "./CreatorView";
 
 const TABS = [
   { key: "zadania", label: "Zadania" },
@@ -19,6 +20,15 @@ export default async function MarketingPage({
   searchParams: Promise<{ tab?: string; year?: string; month?: string; osoba?: string; zakres?: string; widok?: string; projekt?: string }>;
 }) {
   const employee = await requireEmployee();
+  // Sprint A — osoba WYŁĄCZNIE z rolą content_creator (bez marketing/admin)
+  // dostaje osobny, uproszczony widok zamiast reszty tej strony (Projekty,
+  // Strategie, import, pełny Kalendarz treści — żadne z tego nie jest dla
+  // niej). Ktoś z obiema rolami naraz (hipotetycznie) liczy się jako pełny
+  // członek zespołu, nie trafia tutaj.
+  if (!canAccessMarketing(employee) && isContentCreator(employee)) {
+    const params = await searchParams;
+    return <CreatorView employeeId={employee.id} tab={params.tab} yearParam={params.year} monthParam={params.month} />;
+  }
   if (!canAccessMarketing(employee)) {
     return (
       <div className="flex flex-col gap-6">

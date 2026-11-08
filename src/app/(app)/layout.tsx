@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining, canAccessMarketing, canAccessKasa } from "@/lib/session";
+import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining, canAccessMarketing, canAccessKasa, isContentCreator } from "@/lib/session";
 import { MainContainer } from "@/components/MainContainer";
 import { AppNavTabs } from "./AppNavTabs";
 import { logout } from "./actions";
@@ -55,7 +55,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const trailingLinks: { href: string; label: string }[] = [];
   if (!isTrainerOnly) trailingLinks.push({ href: "/zadania", label: "Sprzątanie" });
   if (zajeciaLinks.length === 1) trailingLinks.push(zajeciaLinks[0]);
-  if (canAccessMarketing(employee)) trailingLinks.push({ href: "/marketing", label: "Marketing" });
+  // content_creator (Sprint A) dostaje link do uproszczonego widoku
+  // /marketing — ale NIE do Wydarzeń poniżej, które zostaje gated wyłącznie
+  // przez canAccessMarketing, tak jak strona sama sprawdza.
+  if (canAccessMarketing(employee) || isContentCreator(employee)) trailingLinks.push({ href: "/marketing", label: "Marketing" });
   // Nazwa linku celowo inna niż URL ("Wydarzenia", nie "Projekty") — appka ma
   // już "⚙️ Projekty" wewnątrz Marketingu (projekty marketingowe); dwa różne
   // linki nazwane tak samo byłyby mylące (patrz Sprint D, D2).

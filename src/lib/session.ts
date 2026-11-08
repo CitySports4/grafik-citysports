@@ -45,7 +45,7 @@ export async function clearSession() {
   store.delete(COOKIE_NAME);
 }
 
-export type EmployeeRole = "recepcja" | "sprzatanie" | "admin" | "trener_personalny" | "marketing";
+export type EmployeeRole = "recepcja" | "sprzatanie" | "admin" | "trener_personalny" | "marketing" | "content_creator";
 
 export const ROLE_LABELS: Record<EmployeeRole, string> = {
   recepcja: "Recepcja",
@@ -53,6 +53,11 @@ export const ROLE_LABELS: Record<EmployeeRole, string> = {
   admin: "Administrator",
   trener_personalny: "Trener Personalny",
   marketing: "Marketing",
+  // Dostęp tylko do uproszczonego widoku /marketing (Sprint A) — "Moje
+  // zadania" + "Kalendarz" własnych zadań, bez reszty modułu. Osobna rola od
+  // "marketing" (pełny zespół), nie wariant tej samej — ktoś z tą rolą może
+  // mieć równolegle inne, prawdziwe etaty (np. Oliwia: recepcja+sprzątanie).
+  content_creator: "Twórca treści",
 };
 
 export type PtBillingCycle = "daily" | "weekly" | "monthly";
@@ -120,10 +125,25 @@ export function tracksHours(employee: SessionEmployee): boolean {
   return employee.hourlyRate > 0;
 }
 
-// Dostęp do /marketing — rola marketing, plus admin (tak jak wszędzie
-// indziej w appce admin widzi/zarządza każdą sekcją).
+// Dostęp do PEŁNEGO /marketing (wszystkie zakładki, Projekty, Wydarzenia) —
+// rola marketing, plus admin (tak jak wszędzie indziej w appce admin
+// widzi/zarządza każdą sekcją). CELOWO nie obejmuje content_creator —
+// Sprint A: osoba tylko z tą rolą dostaje osobny, uproszczony widok (patrz
+// isContentCreator + /marketing/page.tsx), nie szerszy dostęp do reszty
+// modułu (projekty, wydarzenia, ustawienia zostają zablokowane, bo te
+// strony dalej sprawdzają WYŁĄCZNIE tę funkcję).
 export function canAccessMarketing(employee: SessionEmployee): boolean {
   return employee.roles.includes("marketing") || employee.roles.includes("admin");
+}
+
+// Sprint A (uproszczony widok dla Oliwii i podobnych) — osoba nagrywająca
+// treści, bez bycia pełnoprawnym członkiem zespołu marketingu. Zwykłe
+// "includes", nie wyłączność na wszystkie role (w przeciwieństwie do
+// isPersonalTrainerOnly) — Oliwia ma równolegle recepcja+sprzątanie, to jej
+// prawdziwe etaty, nie mają nic wspólnego z tym, czy dostaje pełny czy
+// uproszczony /marketing.
+export function isContentCreator(employee: SessionEmployee): boolean {
+  return employee.roles.includes("content_creator");
 }
 
 // Dostęp do /kasa — rola recepcja (zamknięcie dnia, KW/KP) plus admin

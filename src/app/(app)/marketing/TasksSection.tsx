@@ -111,11 +111,14 @@ export async function TasksSection({
       )
       .order("due_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false }),
+    // "content_creator" dołożony obok "marketing" (Sprint A) — Oliwia ma
+    // teraz tę rolę zamiast marketing, ale zespół wciąż musi móc przypisać
+    // jej zadanie z tego widoku.
     supabase
       .from("employee")
       .select("id, name, color_hex, employee_role!inner(role)")
       .eq("active", true)
-      .eq("employee_role.role", "marketing")
+      .in("employee_role.role", ["marketing", "content_creator"])
       .order("name"),
     // Wszystkie projekty, obu typów (patrz migracja 0065) — marketingowe do
     // dropdownu (tylko aktywne, dropdown w Edytuj MUSI dołożyć też projekt
@@ -136,7 +139,7 @@ export async function TasksSection({
   // Dopasowanie po imieniu, nie na sztywno wpisany UUID (patrz Sprint D, D1)
   // — jeśli nikt o tym dokładnie imieniu nie ma roli marketing, pola
   // nagraniowe po prostu zostają dostępne tylko przez ręczny toggle.
-  const recordingAssigneeId = assignees.find((a) => a.name === "Oliwia")?.id;
+  const recordingAssigneeId = assignees.find((a) => a.name.split(" ")[0] === "Oliwia")?.id;
 
   const allTasks = allTasksRaw.filter((t) => !t.archived);
   const archivedTasks = allTasksRaw.filter((t) => t.archived);

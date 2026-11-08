@@ -98,11 +98,14 @@ export async function ContentCalendarSection({
       .gte("scheduled_date", dateKeys[0])
       .lte("scheduled_date", dateKeys[dateKeys.length - 1])
       .order("scheduled_date"),
+    // "content_creator" dołożony obok "marketing" (Sprint A) — przypisanie
+    // treści Oliwii tworzy jej automatycznie powiązane zadanie (patrz
+    // createLinkedTaskIfNeeded), które zobaczy w swoim uproszczonym widoku.
     supabase
       .from("employee")
       .select("id, name, color_hex, employee_role!inner(role)")
       .eq("active", true)
-      .eq("employee_role.role", "marketing")
+      .in("employee_role.role", ["marketing", "content_creator"])
       .order("name"),
     // Które wpisy mają już automatycznie utworzone zadanie (patrz
     // createLinkedTaskIfNeeded w actions.ts) — tylko żeby pokazać małą
