@@ -38,7 +38,7 @@ export async function TaskWeekView({ date, assigneeFilter }: { date: string; ass
     .from("marketing_task")
     .select("id, title, due_date, status, assignee_employee_id")
     .eq("archived", false)
-    .neq("status", "done")
+    .neq("status", "opublikowane")
     .not("due_date", "is", null);
   const allTasks = filterByAssignee((tasksRaw ?? []) as Task[], assigneeFilter);
 
@@ -95,7 +95,7 @@ export async function TaskWeekView({ date, assigneeFilter }: { date: string; ass
                     <div key={t.id} className={`flex items-start gap-1 rounded px-1.5 py-1 ${style}`}>
                       <form action={setTaskStatus} className="pt-0.5">
                         <input type="hidden" name="id" value={t.id} />
-                        <input type="hidden" name="status" value="done" />
+                        <input type="hidden" name="status" value="opublikowane" />
                         <button
                           type="submit"
                           aria-label="Oznacz jako zrobione"

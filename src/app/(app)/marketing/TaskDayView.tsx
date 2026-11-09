@@ -43,7 +43,7 @@ export async function TaskDayView({ date, assigneeFilter }: { date: string; assi
       .from("marketing_task")
       .select("id, title, due_date, status, priority, assignee_employee_id")
       .eq("archived", false)
-      .neq("status", "done")
+      .neq("status", "opublikowane")
       .not("due_date", "is", null),
     supabase
       .from("employee")
@@ -120,7 +120,7 @@ export async function TaskDayView({ date, assigneeFilter }: { date: string; assi
                   <div key={t.id} className="flex items-start gap-2.5 rounded-xl border border-zinc-200 bg-white p-2.5">
                     <form action={setTaskStatus} className="pt-0.5">
                       <input type="hidden" name="id" value={t.id} />
-                      <input type="hidden" name="status" value="done" />
+                      <input type="hidden" name="status" value="opublikowane" />
                       <button
                         type="submit"
                         aria-label="Oznacz jako zrobione"

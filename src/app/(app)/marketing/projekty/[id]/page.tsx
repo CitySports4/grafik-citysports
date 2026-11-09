@@ -110,7 +110,7 @@ export default async function ProjectWorkspacePage({ params }: { params: Promise
   const assigneeById = new Map(((assigneesRaw ?? []) as Assignee[]).map((a) => [a.id, a]));
   const today = new Date().toISOString().slice(0, 10);
 
-  const tasksByStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], done: [] };
+  const tasksByStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], gotowe: [], opublikowane: [] };
   for (const t of tasks) tasksByStatus[t.status].push(t);
 
   return (
@@ -146,25 +146,25 @@ export default async function ProjectWorkspacePage({ params }: { params: Promise
           <div className="flex flex-col gap-2">
             {tasks.map((t) => {
               const assignee = t.assignee_employee_id ? assigneeById.get(t.assignee_employee_id) : null;
-              const done = t.status === "done";
-              const overdue = !done && t.due_date !== null && t.due_date < today;
+              const published = t.status === "opublikowane";
+              const overdue = !published && t.due_date !== null && t.due_date < today;
               return (
                 <div key={t.id} className={`flex items-start gap-2.5 rounded-xl border p-2.5 ${overdue ? "border-red-200 bg-red-50" : "border-zinc-200 bg-white"}`}>
                   <form action={setTaskStatus} className="pt-0.5">
                     <input type="hidden" name="id" value={t.id} />
-                    <input type="hidden" name="status" value={done ? "todo" : "done"} />
+                    <input type="hidden" name="status" value={published ? "todo" : "opublikowane"} />
                     <button
                       type="submit"
-                      aria-label={done ? "Cofnij na Do zrobienia" : "Oznacz jako zrobione"}
+                      aria-label={published ? "Cofnij na Do zrobienia" : "Oznacz jako opublikowane"}
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[10px] transition-colors ${
-                        done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
+                        published ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
                       }`}
                     >
-                      {done && "✓"}
+                      {published && "✓"}
                     </button>
                   </form>
                   <div className="min-w-0 flex-1 text-sm">
-                    <p className={`font-semibold ${done ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
+                    <p className={`font-semibold ${published ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                       <span className={`rounded-full px-2 py-0.5 font-bold ${PRIORITY_BADGE[t.priority]}`}>{TASK_PRIORITY_LABELS[t.priority]}</span>
                       {assignee && (

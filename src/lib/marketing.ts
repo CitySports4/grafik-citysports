@@ -14,13 +14,20 @@ export const EVENT_PROJECT_STATUS_LABELS: Record<EventProjectStatus, string> = {
 };
 export const EVENT_PROJECT_STATUS_ORDER: EventProjectStatus[] = ["planowanie", "w_toku", "zamkniety"];
 
-export type MarketingTaskStatus = "todo" | "in_progress" | "done";
+// "gotowe"/"opublikowane" zastąpiły dawne jednorazowe "done" (patrz migracja
+// 0067) — materiał/post może być przygotowany ("gotowe", czeka na
+// publikację) zanim faktycznie wyjdzie na Facebooku/Instagramie
+// ("opublikowane"). Te same nazwy co ContentStatus celowo — to ten sam
+// koncept, tylko na poziomie zadania zamiast wpisu w kalendarzu treści (bo
+// większość zadań, zwłaszcza Oliwii, nie ma linkowanej treści).
+export type MarketingTaskStatus = "todo" | "in_progress" | "gotowe" | "opublikowane";
 export const TASK_STATUS_LABELS: Record<MarketingTaskStatus, string> = {
   todo: "Do zrobienia",
   in_progress: "W trakcie",
-  done: "Zrobione",
+  gotowe: "Gotowe — czeka na publikację",
+  opublikowane: "Opublikowane",
 };
-export const TASK_STATUS_ORDER: MarketingTaskStatus[] = ["todo", "in_progress", "done"];
+export const TASK_STATUS_ORDER: MarketingTaskStatus[] = ["todo", "in_progress", "gotowe", "opublikowane"];
 
 export type MarketingTaskPriority = "low" | "normal" | "high";
 export const TASK_PRIORITY_LABELS: Record<MarketingTaskPriority, string> = {
