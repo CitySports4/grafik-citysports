@@ -36,12 +36,12 @@ export default async function EventProjectsPage() {
 
   const { data: tasksRaw } =
     projectNames.length > 0 ? await supabase.from("marketing_task").select("project, status").in("project", projectNames) : { data: [] };
-  const tasks = (tasksRaw ?? []) as { project: string; status: "todo" | "in_progress" | "done" }[];
+  const tasks = (tasksRaw ?? []) as { project: string; status: "todo" | "in_progress" | "gotowe" | "opublikowane" }[];
   const taskCountsByProject = new Map<string, { total: number; done: number }>();
   for (const t of tasks) {
     const c = taskCountsByProject.get(t.project) ?? { total: 0, done: 0 };
     c.total += 1;
-    if (t.status === "done") c.done += 1;
+    if (t.status === "opublikowane") c.done += 1;
     taskCountsByProject.set(t.project, c);
   }
 

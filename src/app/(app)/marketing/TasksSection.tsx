@@ -169,13 +169,13 @@ export async function TasksSection({
   const tasks = showAll ? byAssignee : byAssignee.filter(inScope);
   const hiddenByScopeCount = showAll ? 0 : byAssignee.filter((t) => !inScope(t)).length;
 
-  const byStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], done: [] };
+  const byStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], gotowe: [], opublikowane: [] };
   for (const t of tasks) byStatus[t.status].push(t);
   for (const status of TASK_STATUS_ORDER) {
     byStatus[status].sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
   }
 
-  const overdueCount = byAssignee.filter((t) => t.status !== "done" && t.due_date !== null && t.due_date < today).length;
+  const overdueCount = byAssignee.filter((t) => t.status !== "opublikowane" && t.due_date !== null && t.due_date < today).length;
 
   // "Mój tydzień" — zadania przypisane do mnie z terminem w bieżącym
   // tygodniu (poniedziałek–niedziela), NIEZALEŻNIE od projektu i statusu —
@@ -203,33 +203,35 @@ export async function TasksSection({
 
   function renderTask(t: Task) {
     const assignee = t.assignee_employee_id ? assigneeById.get(t.assignee_employee_id) : null;
-    const done = t.status === "done";
-    const overdue = !done && t.due_date !== null && t.due_date < today;
+    const published = t.status === "opublikowane";
+    const overdue = !published && t.due_date !== null && t.due_date < today;
 
     return (
       <div key={t.id} className={`rounded-xl border p-3 ${overdue ? "border-red-200 bg-red-50" : "border-zinc-200 bg-white"}`}>
         <div className="flex items-start gap-2.5">
-          {/* Checkbox jednym kliknięciem — klik zaznacza jako zrobione, klik
-              na już zrobionym cofa na "Do zrobienia". To GŁÓWNA, najczęstsza
-              interakcja (patrz Todoist/Asana), więc dostaje duży, wygodny
-              obszar dotyku zamiast małego linku tekstowego. */}
+          {/* Checkbox jednym kliknięciem — skrót do "w pełni gotowe": klik
+              zaznacza od razu jako opublikowane (pomijając pośredni etap
+              "Gotowe"), klik na już opublikowanym cofa na "Do zrobienia".
+              Kto chce zaznaczyć pośredni etap ("Gotowe, czeka na
+              publikację") bez razu przechodzić do opublikowane, używa
+              przycisków niżej. */}
           <form action={setTaskStatus} className="pt-0.5">
             <input type="hidden" name="id" value={t.id} />
-            <input type="hidden" name="status" value={done ? "todo" : "done"} />
+            <input type="hidden" name="status" value={published ? "todo" : "opublikowane"} />
             <button
               type="submit"
-              aria-label={done ? "Cofnij na Do zrobienia" : "Oznacz jako zrobione"}
+              aria-label={published ? "Cofnij na Do zrobienia" : "Oznacz jako opublikowane"}
               className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-                done ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
+                published ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
               }`}
             >
-              {done && "✓"}
+              {published && "✓"}
             </button>
           </form>
 
           <div className="min-w-0 flex-1">
-            <p className={`font-semibold ${done ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
-            {t.description && <p className={`mt-0.5 whitespace-pre-wrap text-sm ${done ? "text-zinc-400" : "text-zinc-600"}`}>{t.description}</p>}
+            <p className={`font-semibold ${published ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
+            {t.description && <p className={`mt-0.5 whitespace-pre-wrap text-sm ${published ? "text-zinc-400" : "text-zinc-600"}`}>{t.description}</p>}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
               {/* To zadanie nie jest osobnym bytem — powstało automatycznie z
                   wpisu w kalendarzu treści (patrz createLinkedTaskIfNeeded w
@@ -275,7 +277,7 @@ export async function TasksSection({
                   październik 2026: system ma pomagać przesuwać zadania, nie
                   je ignorować) — zamiast grzebania w "Edytuj" za każdym
                   razem, gdy coś się po prostu nie zdąży na czas. */}
-              {t.due_date && !done && (
+              {t.due_date && !published && (
                 <span className="flex items-center gap-1">
                   <form action={postponeTask}>
                     <input type="hidden" name="id" value={t.id} />
@@ -307,9 +309,45 @@ export async function TasksSection({
                 </form>
               )}
               {t.status === "in_progress" && (
+                <>
+                  <form action={setTaskStatus}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="status" value="todo" />
+                    <button type="submit" className={BTN_GHOST}>
+                      ↺ Cofnij
+                    </button>
+                  </form>
+                  <form action={setTaskStatus}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="status" value="gotowe" />
+                    <button type="submit" className={BTN_GHOST}>
+                      ✅ Gotowe
+                    </button>
+                  </form>
+                </>
+              )}
+              {t.status === "gotowe" && (
+                <>
+                  <form action={setTaskStatus}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="status" value="in_progress" />
+                    <button type="submit" className={BTN_GHOST}>
+                      ↺ Cofnij
+                    </button>
+                  </form>
+                  <form action={setTaskStatus}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="status" value="opublikowane" />
+                    <button type="submit" className={BTN_GHOST}>
+                      📤 Opublikowane
+                    </button>
+                  </form>
+                </>
+              )}
+              {published && (
                 <form action={setTaskStatus}>
                   <input type="hidden" name="id" value={t.id} />
-                  <input type="hidden" name="status" value="todo" />
+                  <input type="hidden" name="status" value="gotowe" />
                   <button type="submit" className={BTN_GHOST}>
                     ↺ Cofnij
                   </button>
@@ -659,7 +697,7 @@ export async function TasksSection({
             // "Zrobione" zwinięte domyślnie, gdy jest ich sporo — to już
             // zakończona praca, nie potrzeba jej mieć stale rozwiniętej przed
             // oczami, ten sam wzorzec co zarchiwizowane plany w PlansSection.
-            const collapsible = status === "done" && list.length > 5;
+            const collapsible = status === "opublikowane" && list.length > 5;
             return (
               <Card key={status}>
                 <h2 className="mb-3 flex items-center gap-2 font-semibold text-zinc-900">

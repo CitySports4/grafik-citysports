@@ -24,7 +24,8 @@ const TABS = [
 // Sprint A — widok dla osoby z rolą content_creator: TYLKO jej zadania
 // (żadnych cudzych, żadnych kampanii/projektów/ustawień), z polami
 // nagraniowymi widoczne wprost, bez priorytetu/projektu/assignee (to i tak
-// zawsze ona). Jedyna dostępna akcja: odhaczyć jako zrobione — żadnej
+// zawsze ona). Jedyne dostępne akcje: oznaczyć materiał jako gotowy (czeka na
+// publikację) i, osobno, jako opublikowany (patrz migracja 0067) — żadnej
 // edycji, dodawania ani usuwania (patrz setTaskStatus w actions.ts, które
 // dla tej roli pilnuje też, że to NA PEWNO jej własne zadanie).
 export async function CreatorView({
@@ -76,28 +77,22 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
     .order("due_date", { ascending: true, nullsFirst: false });
 
   const tasks = (data ?? []) as Task[];
-  const todo = tasks.filter((t) => t.status !== "done");
-  const done = tasks.filter((t) => t.status === "done");
+  const active = tasks.filter((t) => t.status !== "opublikowane");
+  const published = tasks.filter((t) => t.status === "opublikowane");
 
+  // Dwa kontekstowe przyciski zamiast jednego checkboksa "zrobione" — dokładnie
+  // to, o co poprosiła Sasza (migracja 0067): materiał najpierw "gotowy, czeka
+  // na publikację", osobno i później faktycznie "opublikowane".
   function renderTask(t: Task) {
-    const isDone = t.status === "done";
+    const isGotowe = t.status === "gotowe";
+    const isPublished = t.status === "opublikowane";
     return (
       <div key={t.id} className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-3">
-        <form action={setTaskStatus} className="pt-0.5">
-          <input type="hidden" name="id" value={t.id} />
-          <input type="hidden" name="status" value={isDone ? "todo" : "done"} />
-          <button
-            type="submit"
-            aria-label={isDone ? "Cofnij na Do zrobienia" : "Oznacz jako zrobione"}
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-              isDone ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
-            }`}
-          >
-            {isDone && "✓"}
-          </button>
-        </form>
         <div className="min-w-0 flex-1">
-          <p className={`font-semibold ${isDone ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className={`font-semibold ${isPublished ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
+            {isGotowe && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">⏳ Czeka na publikację</span>}
+          </div>
           {t.due_date && (
             <p className="mt-0.5 text-xs text-zinc-500">termin: {new Date(t.due_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "long" })}</p>
           )}
@@ -122,6 +117,20 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
               )}
             </div>
           )}
+          {!isPublished && (
+            <form action={setTaskStatus} className="mt-2">
+              <input type="hidden" name="id" value={t.id} />
+              <input type="hidden" name="status" value={isGotowe ? "opublikowane" : "gotowe"} />
+              <button
+                type="submit"
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white transition-colors ${
+                  isGotowe ? "bg-brand-blue hover:bg-blue-700" : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
+              >
+                {isGotowe ? "📤 Opublikowane" : "✅ Gotowe — czeka na publikację"}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     );
@@ -130,11 +139,11 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
   return (
     <div className="flex flex-col gap-3">
       {tasks.length === 0 && <Card className="text-center text-sm text-zinc-400">Brak zadań.</Card>}
-      {todo.map(renderTask)}
-      {done.length > 0 && (
+      {active.map(renderTask)}
+      {published.length > 0 && (
         <details className="rounded-2xl border border-dashed border-zinc-300 p-3">
-          <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Zrobione ({done.length}) ▾</summary>
-          <div className="mt-3 flex flex-col gap-3">{done.map(renderTask)}</div>
+          <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Opublikowane ({published.length}) ▾</summary>
+          <div className="mt-3 flex flex-col gap-3">{published.map(renderTask)}</div>
         </details>
       )}
     </div>
@@ -219,7 +228,7 @@ async function CreatorCalendar({ employeeId, yearParam, monthParam }: { employee
                 {items.map((t) => (
                   <span
                     key={t.id}
-                    className={`truncate rounded px-1.5 py-1 text-[11px] font-medium ${t.status === "done" ? "bg-emerald-50 text-emerald-700 line-through" : "bg-violet-50 text-violet-700"}`}
+                    className={`truncate rounded px-1.5 py-1 text-[11px] font-medium ${t.status === "opublikowane" ? "bg-emerald-50 text-emerald-700 line-through" : "bg-violet-50 text-violet-700"}`}
                   >
                     {t.recording_format ? RECORDING_FORMAT_ICONS[t.recording_format] : "📋"} {t.title}
                   </span>
