@@ -28,9 +28,16 @@ export async function getCashDay(date: string): Promise<CashDay | null> {
   return data as CashDay | null;
 }
 
-// Saldo otwarcia dla dnia bez wiersza w cash_days jeszcze: zamknięcie
-// poprzedniego dnia (cash_counts slot="close" counted), albo
-// kasa_settings.opening_balance jeśli to dzień startu systemu.
+// Saldo otwarcia dla dnia bez wiersza w cash_days jeszcze: (1) zamknięcie
+// poprzedniego dnia, jeśli jest zapisane (normalna ścieżka produkcyjna —
+// każdy dzień zamykany przed rozpoczęciem następnego); (2) dzień startu
+// systemu -> kasa_settings.opening_balance wprost; (3) dzień PRZED startem
+// (podgląd/weryfikacja okresu testowego, pkt 10 spec) -> cofamy się od
+// kasa_settings.opening_balance dzień po dniu, odejmując ruchy gotówkowe
+// każdego dnia pośredniego (odwrotność wzoru z expectedCashBalance). Bez
+// tego każdy dzień sprzed startu pokazywał saldo startu jako własne
+// otwarcie — np. 09.11 pokazywało saldo z 10.11 (1341,17) zamiast
+// prawdziwego 1217,17.
 export async function resolveOpeningBalance(date: string): Promise<number> {
   const supabase = createServerSupabaseClient();
   const { data: prevDay } = await supabase.from("cash_days").select("id, date").lt("date", date).order("date", { ascending: false }).limit(1).maybeSingle();
@@ -38,8 +45,30 @@ export async function resolveOpeningBalance(date: string): Promise<number> {
     const { data: prevClose } = await supabase.from("cash_counts").select("counted").eq("cash_day_id", prevDay.id).eq("slot", "close").maybeSingle();
     if (prevClose) return prevClose.counted;
   }
+
   const { data: settings } = await supabase.from("kasa_settings").select("opening_balance, start_date").eq("id", 1).single();
-  return settings?.opening_balance ?? 0;
+  const openingAtStart = settings?.opening_balance ?? 0;
+  if (!settings?.start_date || date >= settings.start_date) return openingAtStart;
+
+  // date < start_date, bez zapisanej historii liczeń — cofamy się dzień po
+  // dniu od start_date do date (wyłącznie), odejmując ruch gotówkowy
+  // każdego dnia pośredniego.
+  let balance = openingAtStart;
+  let cursor = settings.start_date;
+  while (cursor > date) {
+    const prevDate = shiftDateKey(cursor, -1);
+    const transactions = await getDayTransactions(prevDate);
+    const totals = computeDayTotals(transactions);
+    balance = balance - totals.cashFiscal + totals.kw - totals.manualKp;
+    cursor = prevDate;
+  }
+  return Math.round(balance * 100) / 100;
+}
+
+function shiftDateKey(date: string, days: number): string {
+  const d = new Date(date + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 export type DayTransaction = {
