@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
-import { parseExcelExport, type ParsedTransaction } from "@/lib/kasa-import";
-import { TX_TYPE_KP, TX_TYPE_KW } from "@/lib/kasa";
+import { parseExcelExport } from "@/lib/kasa-import";
+import { classifyTransaction, needsDocLink, defaultDocForClass, type TxClass } from "@/lib/kasa";
 
 export type ImportSummary = {
   rowsInBatch: number;
@@ -13,9 +13,9 @@ export type ImportSummary = {
   skippedWarnings: number;
   warnings: string[];
   newPaymentForms: string[];
-  // Liczba transakcji KW/KP w tej paczce (nie tylko nowo utworzone linki —
-  // upsert z ignoreDuplicates nie zwraca, które wiersze faktycznie powstały).
-  kwKpInBatch: number;
+  // Rozbicie wg klasyfikacji (pkt 2a) — ile transakcji w tej paczce trafiło
+  // do każdej kategorii, żeby dało się na oko zweryfikować sensowność.
+  classCounts: Partial<Record<TxClass, number>>;
 };
 
 // Import z eksportu Excela eFitness (krok 0 specyfikacji — Data Lake API
@@ -29,7 +29,8 @@ export async function importKasaExcel(formData: FormData) {
   if (!(file instanceof File) || file.size === 0) throw new Error("Wybierz plik eksportu Excela.");
 
   const buffer = await file.arrayBuffer();
-  const { transactions, warnings } = parseExcelExport(buffer);
+  const { transactions, warnings: parseWarnings } = parseExcelExport(buffer);
+  const warnings = [...parseWarnings];
 
   const supabase = createServerSupabaseClient();
 
@@ -46,22 +47,34 @@ export async function importKasaExcel(formData: FormData) {
     for (const f of inserted ?? []) formByName.set(f.name, f);
   }
 
-  const rows = transactions.map((t: ParsedTransaction) => ({
-    source: "excel" as const,
-    type: t.type,
-    value: t.value,
-    payment_form_name: t.paymentFormName,
-    payment_form_id: formByName.get(t.paymentFormName)?.id ?? null,
-    user_name: t.userName,
-    contractor: t.contractor,
-    member_ref: t.memberRef,
-    description: t.description,
-    number: t.number,
-    full_number: t.fullNumber,
-    transaction_date: t.transactionDate,
-    transaction_at: t.transactionAt,
-    updated_at: new Date().toISOString(),
-  }));
+  const rows = transactions.map((t, idx) => {
+    const txClass = classifyTransaction(t.fullNumber, t.typeLabel);
+    // "System niczego nie zgaduje" (pkt 2a) — nieznany Typ albo numer
+    // dokumentu bez prefiksu KW/KP trafia do przeglądu, zawsze widocznie.
+    if (txClass === "unknown") {
+      warnings.push({ row: idx + 2, message: `Nierozpoznana operacja: numer "${t.fullNumber}", Typ "${t.typeLabel}" — do przeglądu` });
+    }
+    return {
+      source: "excel" as const,
+      type_label: t.typeLabel,
+      tx_class: txClass,
+      value: t.value,
+      payment_form_name: t.paymentFormName,
+      payment_form_id: formByName.get(t.paymentFormName)?.id ?? null,
+      user_name: t.userName,
+      contractor: t.contractor,
+      member_ref: t.memberRef,
+      description: t.description,
+      number: t.number,
+      full_number: t.fullNumber,
+      transaction_date: t.transactionDate,
+      transaction_at: t.transactionAt,
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  const classCounts: Partial<Record<TxClass, number>> = {};
+  for (const r of rows) classCounts[r.tx_class] = (classCounts[r.tx_class] ?? 0) + 1;
 
   let imported = 0;
   const batchSize = 500;
@@ -72,35 +85,32 @@ export async function importKasaExcel(formData: FormData) {
     imported += batch.length;
   }
 
-  // Dokument KW/KP dostaje status "Do uzupełnienia" od razu po imporcie
-  // (pkt 4 spec) — ale tylko dla NOWYCH transakcji (on conflict do nothing),
-  // żeby nie nadpisywać już uzupełnionego statusu przy ponownym imporcie.
-  const { data: kwKpTx } = await supabase
-    .from("efitness_transactions")
-    .select("id")
-    .in("type", [TX_TYPE_KW, TX_TYPE_KP])
-    .in(
-      "full_number",
-      rows.filter((r) => r.type === TX_TYPE_KW || r.type === TX_TYPE_KP).map((r) => r.full_number)
-    );
-  const kwKpLinksCreated = kwKpTx?.length ?? 0;
-  if (kwKpTx && kwKpTx.length > 0) {
-    const { error } = await supabase
-      .from("cash_doc_links")
-      .upsert(
-        kwKpTx.map((t) => ({ transaction_id: t.id })),
+  // KW/KP (wszystko poza zwykłą sprzedażą, patrz needsDocLink) dostaje
+  // wiersz w cash_doc_links z domyślnym statusem wg klasy (pkt 2a) — ale
+  // tylko dla NOWYCH transakcji (ignoreDuplicates), żeby nie nadpisywać już
+  // uzupełnionego/ręcznie zmienionego statusu przy ponownym imporcie.
+  const linkableFullNumbers = [...new Set(rows.filter((r) => needsDocLink(r.tx_class)).map((r) => r.full_number))];
+  if (linkableFullNumbers.length > 0) {
+    const { data: linkableTx } = await supabase.from("efitness_transactions").select("id, tx_class").in("full_number", linkableFullNumbers);
+    if (linkableTx && linkableTx.length > 0) {
+      const { error } = await supabase.from("cash_doc_links").upsert(
+        linkableTx.map((t) => {
+          const { docType, status } = defaultDocForClass(t.tx_class as TxClass);
+          return { transaction_id: t.id, doc_type: docType, status };
+        }),
         { onConflict: "transaction_id", ignoreDuplicates: true }
       );
-    if (error) throw new Error(dbErrorMessage(error));
+      if (error) throw new Error(dbErrorMessage(error));
+    }
   }
 
   const summary: ImportSummary = {
-    rowsInBatch: transactions.length + warnings.length,
+    rowsInBatch: transactions.length + parseWarnings.length,
     imported,
     skippedWarnings: warnings.length,
     warnings: warnings.slice(0, 50).map((w) => `Wiersz ${w.row}: ${w.message}`),
     newPaymentForms,
-    kwKpInBatch: kwKpLinksCreated,
+    classCounts,
   };
 
   const { error: logError } = await supabase.from("kasa_audit_log").insert({
