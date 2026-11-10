@@ -167,15 +167,33 @@ export function sumNonfiscal(transactions: { value: number; category: PaymentCat
   return round2(transactions.filter((t) => t.category === "nonfiscal").reduce((s, t) => s + t.value, 0));
 }
 
-// "KW" do raportu (pkt 2a: "Wszystkie KW ... trafiają do RK jako rozchód")
-// — kw_expense + kw_wallet + kw_correction razem, tylko forma Gotówka
-// (fizyczna gotówka z kasy; karta/online nie powinny się tu zdarzać, ale
-// gdyby się trafiły, nie mają zmniejszać stanu fizycznej gotówki).
-export function sumKw(transactions: { value: number; category: PaymentCategory; txClass: TxClass }[]): number {
+// Czy ta transakcja FAKTYCZNIE pomniejszyła fizyczną gotówkę w kasie —
+// kw_expense zawsze tak (prawdziwy wydatek, "Wypłata z kasy"). kw_wallet i
+// kw_correction NIE, dopóki recepcja ręcznie nie potwierdzi wydatku,
+// zmieniając typ dokumentu z automatycznie przypisanego
+// (wallet_operation/client_correction, patrz defaultDocForClass) na jedną z
+// "prawdziwych" opcji. Odkryte 10.11.2026 przy uzgadnianiu sald z Saszą:
+// "Pobranie na poczet opłaty wpisowej" (Uzupełnienie portfela) miało netto 0
+// w kasie, a "Zakup wody" — TEN SAM eFitness Typ! — fizycznie zmniejszyło
+// gotówkę. Sam tx_class więc nie wystarcza, trzeba ręcznego potwierdzenia
+// per transakcja (dokładnie to, co pkt 2a nazywa "z możliwością... zmiany
+// na wydatek").
+export function kwReducesCash(txClass: TxClass, docType: DocType | null): boolean {
+  if (txClass === "kw_expense") return true;
+  if (txClass === "kw_wallet" || txClass === "kw_correction") {
+    return docType !== null && docType !== "wallet_operation" && docType !== "client_correction";
+  }
+  return false;
+}
+
+// "KW" do raportu i do stanu kasy (pkt 2a: "Wszystkie KW [czyli każdy
+// WYPŁYW GOTÓWKI] trafiają do RK jako rozchód") — tylko forma Gotówka
+// (karta/online nie powinny się tu zdarzać, ale gdyby się trafiły, nie mają
+// zmniejszać stanu fizycznej gotówki) i tylko transakcje, które faktycznie
+// zmniejszyły gotówkę (patrz kwReducesCash).
+export function sumKw(transactions: { value: number; category: PaymentCategory; txClass: TxClass; docType: DocType | null }[]): number {
   return round2(
-    transactions
-      .filter((t) => (t.txClass === "kw_expense" || t.txClass === "kw_wallet" || t.txClass === "kw_correction") && t.category === "cash")
-      .reduce((s, t) => s + Math.abs(t.value), 0)
+    transactions.filter((t) => kwReducesCash(t.txClass, t.docType) && t.category === "cash").reduce((s, t) => s + Math.abs(t.value), 0)
   );
 }
 
