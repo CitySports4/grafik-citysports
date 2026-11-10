@@ -1,10 +1,13 @@
-// Bramka PIN-em już w /recepcja/layout.tsx. Moduł w przebudowie na v1 —
-// patrz app/(app)/kasa/page.tsx.
-export default function RecepcjaKasaPage() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-      <p className="text-lg font-bold text-zinc-900">💰 Kasa</p>
-      <p className="text-sm text-zinc-500">Moduł w przebudowie na v1 — wróci tutaj wkrótce.</p>
-    </div>
-  );
+import { CashDayScreen } from "@/app/(app)/kasa/CashDayScreen";
+import { today } from "@/app/(app)/kasa/data";
+
+// Bramka PIN-em już w /recepcja/layout.tsx. Bez osobistej sesji — liczący
+// wybierany z osób na dzisiejszej zmianie (patrz getEmployeesOnShift),
+// bez linku do Historii (cofnięcie zamknięcia dnia zostaje tylko dla
+// admina po osobistym zalogowaniu w /kasa/historia).
+export default async function RecepcjaKasaPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+  const params = await searchParams;
+  const date = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : today();
+
+  return <CashDayScreen date={date} basePath="/recepcja/kasa" employee={null} />;
 }
