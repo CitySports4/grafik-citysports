@@ -114,10 +114,13 @@ export function isPersonalTrainerOnly(employee: SessionEmployee): boolean {
   return employee.roles.length === 1 && employee.roles[0] === "trener_personalny";
 }
 
-// Podgląd grafiku treningów personalnych (bez pełnej edycji) dotyczy
-// recepcji i admina — to oni realnie rozliczają się z trenerami.
+// Podgląd grafiku treningów personalnych (bez pełnej edycji) — tylko admin.
+// Zwykła recepcja (Oliwia, Karol — bez roli admin) ma to w widoku profilu
+// recepcji (/recepcja/treningi/rozliczenia), nie w osobistej nawigacji —
+// ustalone 10.11.2026, żeby nie dublować tej samej funkcji w dwóch miejscach
+// dla tych samych osób.
 export function canPreviewPersonalTraining(employee: SessionEmployee): boolean {
-  return employee.roles.includes("recepcja") || employee.roles.includes("admin");
+  return employee.roles.includes("admin");
 }
 
 // Czy pracownik rozlicza się godzinowo — patrz komentarz przy hourlyRate.
@@ -146,10 +149,11 @@ export function isContentCreator(employee: SessionEmployee): boolean {
   return employee.roles.includes("content_creator");
 }
 
-// Dostęp do /kasa — rola recepcja (zamknięcie dnia, KW/KP) plus admin
-// (korekty, ustawienia) — dokładnie jak w specyfikacji modułu.
+// Dostęp do /kasa (osobista nawigacja) — tylko admin. Zwykła recepcja (bez
+// roli admin) ma Kasę w widoku profilu recepcji (/recepcja/kasa), nie tutaj
+// — ustalone 10.11.2026, ta sama zasada co canPreviewPersonalTraining.
 export function canAccessKasa(employee: SessionEmployee): boolean {
-  return employee.roles.includes("recepcja") || employee.roles.includes("admin");
+  return employee.roles.includes("admin");
 }
 
 export async function requireEmployee(): Promise<SessionEmployee> {
