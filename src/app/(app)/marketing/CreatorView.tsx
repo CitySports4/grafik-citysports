@@ -67,6 +67,27 @@ export async function CreatorView({
   );
 }
 
+// Koniec tygodnia (niedziela) i miesiąca bieżącego dnia — tydzień od
+// poniedziałku, tak jak kalendarz treści (patrz CreatorCalendar poniżej).
+function endOfWeekKey(d: Date): string {
+  const dayIndex = (d.getDay() + 6) % 7; // 0=pon..6=niedz
+  const end = new Date(d);
+  end.setDate(d.getDate() + (6 - dayIndex));
+  return toDateKey(end);
+}
+function endOfMonthKey(d: Date): string {
+  return toDateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+}
+
+type TaskBucket = "zalegle" | "tydzien" | "miesiac" | "pozniej";
+const BUCKET_ORDER: TaskBucket[] = ["zalegle", "tydzien", "miesiac", "pozniej"];
+const BUCKET_LABELS: Record<TaskBucket, string> = {
+  zalegle: "Zaległe",
+  tydzien: "W tym tygodniu",
+  miesiac: "W tym miesiącu",
+  pozniej: "Później",
+};
+
 async function CreatorTasks({ employeeId }: { employeeId: string }) {
   const supabase = createServerSupabaseClient();
   const { data } = await supabase
@@ -79,6 +100,27 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
   const tasks = (data ?? []) as Task[];
   const active = tasks.filter((t) => t.status !== "opublikowane");
   const published = tasks.filter((t) => t.status === "opublikowane");
+
+  // Zadania "w ogóle razem, bez info czy to na ten tydzień czy za miesiąc"
+  // był konkretny feedback (Oliwia) — grupujemy wg terminu, żeby priorytet
+  // był widoczny na pierwszy rzut oka, bez liczenia dat w głowie.
+  const now = new Date();
+  const todayKey = toDateKey(now);
+  const weekEndKey = endOfWeekKey(now);
+  const monthEndKey = endOfMonthKey(now);
+  function bucketFor(t: Task): TaskBucket {
+    if (!t.due_date) return "pozniej";
+    if (t.due_date < todayKey) return "zalegle";
+    if (t.due_date <= weekEndKey) return "tydzien";
+    if (t.due_date <= monthEndKey) return "miesiac";
+    return "pozniej";
+  }
+  const grouped = new Map<TaskBucket, Task[]>();
+  for (const t of active) {
+    const b = bucketFor(t);
+    if (!grouped.has(b)) grouped.set(b, []);
+    grouped.get(b)!.push(t);
+  }
 
   // Dwa kontekstowe przyciski zamiast jednego checkboksa "zrobione" — dokładnie
   // to, o co poprosiła Sasza (migracja 0067): materiał najpierw "gotowy, czeka
@@ -137,9 +179,16 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-5">
       {tasks.length === 0 && <Card className="text-center text-sm text-zinc-400">Brak zadań.</Card>}
-      {active.map(renderTask)}
+      {BUCKET_ORDER.filter((b) => grouped.has(b)).map((b) => (
+        <div key={b} className="flex flex-col gap-3">
+          <p className={`text-xs font-bold uppercase tracking-wide ${b === "zalegle" ? "text-red-600" : "text-zinc-500"}`}>
+            {BUCKET_LABELS[b]} ({grouped.get(b)!.length})
+          </p>
+          {grouped.get(b)!.map(renderTask)}
+        </div>
+      ))}
       {published.length > 0 && (
         <details className="rounded-2xl border border-dashed border-zinc-300 p-3">
           <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Opublikowane ({published.length}) ▾</summary>
