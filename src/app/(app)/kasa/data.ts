@@ -52,13 +52,23 @@ export async function resolveOpeningBalance(date: string): Promise<number> {
 
   // date < start_date, bez zapisanej historii liczeń — cofamy się dzień po
   // dniu od start_date do date (wyłącznie), odejmując ruch gotówkowy
-  // każdego dnia pośredniego.
+  // każdego dnia pośredniego. JEDNO zapytanie za cały zakres (patrz
+  // getTransactionsInRange), nie N sekwencyjnych zapytań dzień po dniu —
+  // tamta wersja potrafiła być bardzo wolna na telefonie (każdy dzień
+  // wstecz = kolejny round-trip do bazy, a przy np. 10 dniach to 10-20
+  // zapytań jedno po drugim).
+  const rangeTransactions = await getTransactionsInRange(date, settings.start_date);
+  const byDate = new Map<string, DayTransaction[]>();
+  for (const t of rangeTransactions) {
+    if (!byDate.has(t.transactionDate)) byDate.set(t.transactionDate, []);
+    byDate.get(t.transactionDate)!.push(t);
+  }
+
   let balance = openingAtStart;
   let cursor = settings.start_date;
   while (cursor > date) {
     const prevDate = shiftDateKey(cursor, -1);
-    const transactions = await getDayTransactions(prevDate);
-    const totals = computeDayTotals(transactions);
+    const totals = computeDayTotals(byDate.get(prevDate) ?? []);
     balance = balance - totals.cashFiscal + totals.kw - totals.manualKp;
     cursor = prevDate;
   }
@@ -84,32 +94,45 @@ export type DayTransaction = {
   docType: DocType | null;
 };
 
-export async function getDayTransactions(date: string): Promise<DayTransaction[]> {
-  const supabase = createServerSupabaseClient();
-  const { data } = await supabase
-    .from("efitness_transactions")
-    .select("id, value, tx_class, transaction_at, full_number, contractor, description, type_label, payment_forms_map(category)")
-    .eq("transaction_date", date)
-    .order("transaction_at", { ascending: true });
-  const rows = (data ?? []) as unknown as (Omit<DayTransaction, "category" | "docType"> & { payment_forms_map: { category: PaymentCategory } | null })[];
+type RawTxRow = Omit<DayTransaction, "category" | "docType"> & { transaction_date: string; payment_forms_map: { category: PaymentCategory } | null };
 
-  // Osobne, zawężone zapytanie zamiast zagnieżdżonego select — cash_doc_links
-  // ma unikalny transaction_id (1:1), ale kształt zwrotki zagnieżdżonej
-  // relacji bywa niejednoznaczny (obiekt vs tablica); mapa po id jest
-  // prostsza i pewna, a filtr po id tej konkretnej doby nie ciągnie całej
-  // (rosnącej z czasem) tabeli cash_doc_links.
+// Dokłada category (z payment_forms_map) i docType (z cash_doc_links) do
+// surowych wierszy efitness_transactions — wspólne dla zapytania o jeden
+// dzień i o cały zakres dat, żeby nie dublować logiki. Osobne zapytanie o
+// doc_type zamiast zagnieżdżonego select — cash_doc_links ma unikalny
+// transaction_id (1:1), ale kształt zwrotki zagnieżdżonej relacji bywa
+// niejednoznaczny (obiekt vs tablica); mapa po id jest prostsza i pewna,
+// a filtr po konkretnych id nie ciągnie całej (rosnącej z czasem) tabeli.
+async function enrichTransactions<T extends RawTxRow>(supabase: ReturnType<typeof createServerSupabaseClient>, rows: T[]) {
   const ids = rows.map((r) => r.id);
   const docTypeByTx = new Map<string, DocType | null>();
   if (ids.length > 0) {
     const { data: linksRaw } = await supabase.from("cash_doc_links").select("transaction_id, doc_type").in("transaction_id", ids);
     for (const l of linksRaw ?? []) docTypeByTx.set(l.transaction_id, l.doc_type as DocType | null);
   }
-
   return rows.map((t) => ({
     ...t,
-    category: t.payment_forms_map?.category ?? "ignore",
+    category: t.payment_forms_map?.category ?? ("ignore" as PaymentCategory),
     docType: docTypeByTx.get(t.id) ?? null,
   }));
+}
+
+const TX_SELECT = "id, value, tx_class, transaction_at, full_number, contractor, description, type_label, transaction_date, payment_forms_map(category)";
+
+export async function getDayTransactions(date: string): Promise<DayTransaction[]> {
+  const supabase = createServerSupabaseClient();
+  const { data } = await supabase.from("efitness_transactions").select(TX_SELECT).eq("transaction_date", date).order("transaction_at", { ascending: true });
+  return enrichTransactions(supabase, (data ?? []) as unknown as RawTxRow[]);
+}
+
+// Wszystkie transakcje z zakresu [fromDate, toDateExclusive) w JEDNYM
+// zapytaniu — używane przez resolveOpeningBalance do cofania się przez
+// kilka dni naraz, zamiast odpytywać bazę osobno dla każdego dnia.
+async function getTransactionsInRange(fromDate: string, toDateExclusive: string): Promise<(DayTransaction & { transactionDate: string })[]> {
+  const supabase = createServerSupabaseClient();
+  const { data } = await supabase.from("efitness_transactions").select(TX_SELECT).gte("transaction_date", fromDate).lt("transaction_date", toDateExclusive);
+  const enriched = await enrichTransactions(supabase, (data ?? []) as unknown as RawTxRow[]);
+  return enriched.map((t) => ({ ...t, transactionDate: t.transaction_date }));
 }
 
 export type DayTotals = {
