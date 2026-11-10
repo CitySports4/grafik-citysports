@@ -59,6 +59,7 @@ export async function importKasaExcel(formData: FormData) {
     number: t.number,
     full_number: t.fullNumber,
     transaction_date: t.transactionDate,
+    transaction_at: t.transactionAt,
     updated_at: new Date().toISOString(),
   }));
 
