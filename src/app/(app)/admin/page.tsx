@@ -70,15 +70,15 @@ export default function AdminHomePage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <CardLink href="/kasa">
             <h2 className="font-semibold text-zinc-900">Zamknięcie dnia</h2>
-            <p className="mt-1 text-sm text-zinc-500">Wpływy, liczenie gotówki, KW/KP, zamknięcie dnia (RD).</p>
+            <p className="mt-1 text-sm text-zinc-500">Liczenie gotówki, KW/KP, zamknięcie dnia (RD) — w budowie.</p>
           </CardLink>
           <CardLink href="/kasa/historia">
             <h2 className="font-semibold text-zinc-900">Historia</h2>
-            <p className="mt-1 text-sm text-zinc-500">Archiwum dni, różnice, cofanie zamknięcia.</p>
+            <p className="mt-1 text-sm text-zinc-500">Archiwum dni, różnice, cofanie zamknięcia — w budowie.</p>
           </CardLink>
           <CardLink href="/admin/kasa">
-            <h2 className="font-semibold text-zinc-900">Ustawienia</h2>
-            <p className="mt-1 text-sm text-zinc-500">Numeracja RD, limit gotówki, kategorie KW.</p>
+            <h2 className="font-semibold text-zinc-900">Import z eFitness</h2>
+            <p className="mt-1 text-sm text-zinc-500">Wgraj eksport Excela, mapowanie form płatności.</p>
           </CardLink>
         </div>
       </div>

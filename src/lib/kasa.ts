@@ -1,86 +1,141 @@
-// Logika modułu Kasa (zamknięcie dnia, KW/KP, numeracja) — funkcje czyste,
-// bez dostępu do bazy, ten sam wzorzec co kids-classes.ts/marketing.ts.
-// Warstwa zapytań/akcji żyje w app/(app)/kasa.
+// Logika modułu Kasa v1 (SPEC_kasa_v1.md) — funkcje czyste, bez dostępu do
+// bazy, ten sam wzorzec co kids-classes.ts/marketing.ts/task-calendar.ts.
+// Warstwa importu (eFitness) żyje w lib/kasa-import.ts, zapytania/akcje w
+// app/(app)/kasa.
 
-export type CashDayStatus = "open" | "closed" | "corrected";
+// Typ transakcji eFitness (pole "Type" z /transactions/, patrz pkt 1 spec).
+// 7/8 (nieopłacone) pomijane już na etapie importu — nie trafiają do bazy.
+export type EfitnessTransactionType = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export const TX_TYPE_RATA = 0;
+export const TX_TYPE_PORTFEL = 1;
+export const TX_TYPE_BAR = 2;
+export const TX_TYPE_KW = 3;
+export const TX_TYPE_KP = 4;
+export const TX_TYPE_INNE = 5;
+export const TX_TYPE_PREPAID = 6;
+
+export type PaymentCategory = "cash" | "card" | "nonfiscal" | "online" | "ignore";
+
+export type CashCountSlot = "open" | "shift" | "close";
+export const CASH_COUNT_SLOT_ORDER: CashCountSlot[] = ["open", "shift", "close"];
+export const CASH_COUNT_SLOT_LABELS: Record<CashCountSlot, string> = {
+  open: "Otwarcie (ok. 8:00)",
+  shift: "Zmiana (ok. 14:00)",
+  close: "Zamknięcie",
+};
+
+export type CashDayStatus = "open" | "closed";
 export const CASH_DAY_STATUS_LABELS: Record<CashDayStatus, string> = {
   open: "Otwarty",
   closed: "Zamknięty",
-  corrected: "Skorygowany",
 };
 
-export type CashCountSlot = "08:00" | "14:00" | "zamkniecie";
-export const CASH_COUNT_SLOT_ORDER: CashCountSlot[] = ["08:00", "14:00", "zamkniecie"];
-export const CASH_COUNT_SLOT_LABELS: Record<CashCountSlot, string> = {
-  "08:00": "Liczenie 08:00",
-  "14:00": "Liczenie 14:00",
-  zamkniecie: "Zamknięcie",
+export type CashMonthStatus = "open" | "closed";
+
+export type DocStatus = "todo" | "complete" | "waiting";
+export const DOC_STATUS_LABELS: Record<DocStatus, string> = {
+  todo: "Do uzupełnienia",
+  complete: "Kompletny",
+  waiting: "Oczekuje",
+};
+export const DOC_STATUS_ICONS: Record<DocStatus, string> = {
+  todo: "📄",
+  complete: "✅",
+  waiting: "⏳",
 };
 
-export type CashIncomeWindow = "do_8" | "8_14" | "14_zamkniecie";
-export const CASH_INCOME_WINDOW_ORDER: CashIncomeWindow[] = ["do_8", "8_14", "14_zamkniecie"];
-export const CASH_INCOME_WINDOW_LABELS: Record<CashIncomeWindow, string> = {
-  do_8: "Do 8:00",
-  "8_14": "8:00–14:00",
-  "14_zamkniecie": "14:00–zamknięcie",
+export type DocType = "receipt" | "ksef_invoice" | "foreign_invoice" | "awaiting_invoice" | "other";
+export const DOC_TYPE_LABELS: Record<DocType, string> = {
+  receipt: "Paragon",
+  ksef_invoice: "Faktura w KSeF",
+  foreign_invoice: "Faktura spoza KSeF / bez polskiego NIP",
+  awaiting_invoice: "Czekamy na fakturę",
+  other: "Inne",
 };
-
-export type CashDocumentType = "KW" | "KP";
-export const CASH_DOCUMENT_TYPE_LABELS: Record<CashDocumentType, string> = {
-  KW: "Rozchód (KW)",
-  KP: "Przychód spoza sprzedaży (KP)",
+// Czy dana opcja wymaga skanu/zdjęcia (pkt 4 spec) — paragon i faktura
+// spoza KSeF tak, faktura w KSeF nie (księgowa ma dostęp do KSeF).
+export const DOC_TYPE_REQUIRES_ATTACHMENT: Record<DocType, boolean> = {
+  receipt: true,
+  ksef_invoice: false,
+  foreign_invoice: true,
+  awaiting_invoice: false,
+  other: true,
 };
-
-export type AttachmentKind = "paragon" | "faktura" | "raport_okresowy" | "terminal" | "potwierdzenie_karty" | "inne";
-export const ATTACHMENT_KIND_LABELS: Record<AttachmentKind, string> = {
-  paragon: "Paragon",
-  faktura: "Faktura",
-  raport_okresowy: "Raport okresowy (kasa fiskalna)",
-  terminal: "Wydruk z terminala",
-  potwierdzenie_karty: "Potwierdzenie kartowe",
-  inne: "Inne",
-};
-
-// Suma wpływów gotówką ze wszystkich okien dnia — jedyna część wpływów,
-// która faktycznie zmienia stan FIZYCZNEJ gotówki w szufladzie (karta nie).
-export function totalCashIncome(entries: { cash_amount: number }[]): number {
-  return Math.round(entries.reduce((sum, e) => sum + e.cash_amount, 0) * 100) / 100;
+// Status wynikowy po wyborze opcji — "waiting" tylko dla "czekamy na
+// fakturę", reszta od razu kompletna.
+export function docStatusForType(docType: DocType): DocStatus {
+  return docType === "awaiting_invoice" ? "waiting" : "complete";
 }
 
-// Stan oczekiwany w kasie = otwarcie + gotówka ze sprzedaży + KP − KW.
-// Karta i online NIE wchodzą do fizycznej gotówki, więc nie wliczamy
-// cash_income_entry.card_amount — to jest osobna, zgadzana z terminalem
-// liczba (patrz "Uzgodnienia" w specyfikacji, Faza 6, jeszcze nie
-// zaimplementowana).
-export function expectedClosing(
-  openingBalance: number,
-  incomeEntries: { cash_amount: number }[],
-  documents: { type: CashDocumentType; amount: number }[]
-): number {
-  const income = totalCashIncome(incomeEntries);
-  const kp = documents.filter((d) => d.type === "KP").reduce((s, d) => s + d.amount, 0);
-  const kw = documents.filter((d) => d.type === "KW").reduce((s, d) => s + d.amount, 0);
-  return Math.round((openingBalance + income + kp - kw) * 100) / 100;
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+export type TxLike = { type: number; value: number; category: PaymentCategory };
+
+// Suma transakcji sprzedaży (pomija KW/KP, to osobne wielkości) dla danej
+// kategorii formy płatności — "Gotówka fiskalna" / "Karta (eFitness)" / Niefiskalne.
+export function sumSales(transactions: TxLike[], category: PaymentCategory): number {
+  return round2(
+    transactions.filter((t) => t.category === category && t.type !== TX_TYPE_KW && t.type !== TX_TYPE_KP).reduce((s, t) => s + t.value, 0)
+  );
+}
+
+export function sumByType(transactions: { type: number; value: number }[], type: number): number {
+  return round2(transactions.filter((t) => t.type === type).reduce((s, t) => s + t.value, 0));
+}
+
+export type DepositSplit = {
+  depositsCard: number;
+  depositsCash: number;
+  // true, gdy surowe kaucje_kartą (przed przycięciem) wychodzi poza [0, nonfiscal] —
+  // czerwona rozbieżność terminala wymagająca wyjaśnienia (pkt 2 spec).
+  terminalDiscrepancy: boolean;
+  rawDepositsCard: number;
+};
+
+// Automatyczny podział kaucji za butelki (system kaucyjny) na kartę/gotówkę
+// — eFitness nie rozróżnia formy zapłaty kaucji (zawsze "Niefiskalna"), więc
+// liczymy z sumy z terminala, którą recepcja i tak wpisuje przy zamknięciu:
+//   kaucje_kartą   = suma_z_terminala − karta_eFitness
+//   kaucje_gotówką = niefiskalne − kaucje_kartą (przycięte do [0, niefiskalne])
+export function splitDeposits(terminalTotal: number, cardEfitness: number, nonfiscal: number): DepositSplit {
+  const rawDepositsCard = round2(terminalTotal - cardEfitness);
+  const terminalDiscrepancy = rawDepositsCard < 0 || rawDepositsCard > nonfiscal;
+  const depositsCard = Math.min(Math.max(rawDepositsCard, 0), nonfiscal);
+  const depositsCash = round2(nonfiscal - depositsCard);
+  return { depositsCard, depositsCash, terminalDiscrepancy, rawDepositsCard };
+}
+
+// Stan gotówki oczekiwany w szufladzie = otwarcie + gotówka fiskalna +
+// kaucje gotówką + KP − KW (pkt 2 spec). Karta/online nie wchodzą do
+// fizycznej gotówki.
+export function expectedCashBalance(params: { openingBalance: number; cashFiscal: number; depositsCash: number; kp: number; kw: number }): number {
+  return round2(params.openingBalance + params.cashFiscal + params.depositsCash + params.kp - params.kw);
 }
 
 export function cashDifference(expected: number, counted: number): number {
-  return Math.round((counted - expected) * 100) / 100;
+  return round2(counted - expected);
 }
 
-// Numer dokumentu RRRR/M/NNNNN (miesiąc BEZ zera wiodącego, 5 cyfr pozycji w
-// miesiącu) — dokładnie jak na dotychczasowych papierowych KW (patrz
-// specyfikacja, przykład "2026/9/00014"). countThisMonthSoFar = ile
-// dokumentów TEGO SAMEGO typu już istnieje w tym miesiącu (liczone przez
-// wywołującego, bo wymaga zapytania do bazy).
-export function formatDocumentNumber(date: string, countThisMonthSoFar: number): string {
-  const [year, month] = date.split("-");
-  const seq = String(countThisMonthSoFar + 1).padStart(5, "0");
-  return `${year}/${Number(month)}/${seq}`;
+// Uzgodnienie z raportem fiskalnym dobowym (FAWAG BOX), opcjonalne — różnica
+// między tym, co recepcja wpisała z wydruku, a sumą gotówka+karta z eFitness
+// (bez niefiskalnych, patrz pkt 2 spec).
+export function fiscalReconciliationDiff(fiscalDailyTotal: number, cashFiscal: number, cardEfitness: number): number {
+  return round2(fiscalDailyTotal - (cashFiscal + cardEfitness));
 }
 
-// Numer RD — kolejny, ciągły, bez odniesienia do miesiąca (patrz
-// specyfikacja: RD 326 … RD 358 ciągiem przez wrzesień). Sam numer bierzemy
-// z kasa_settings.next_rd_number (wywołujący inkrementuje po użyciu).
+// Numer RD — kolejny, ciągły, kontynuacja papierowej numeracji (np. RD 359),
+// bez odniesienia do miesiąca. Sam numer: max(rd_number)+1 albo
+// kasa_settings.first_rd_number, jeśli to pierwsze zamknięcie — liczy
+// wywołujący (wymaga zapytania do bazy).
 export function formatRdNumber(n: number): string {
   return `RD ${n}`;
+}
+
+// Saldo otwarcia 01.11, liczone wstecz od znanego punktu kontrolnego (pkt 10
+// spec, test startowy): saldo_otwarcia = saldo_znane − Σ(ruchy gotówkowe od
+// otwarcia do dnia znanego salda włącznie).
+export function openingBalanceFromKnownPoint(knownBalance: number, cashMovementsSinceOpening: number): number {
+  return round2(knownBalance - cashMovementsSinceOpening);
 }
