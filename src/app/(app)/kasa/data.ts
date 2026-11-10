@@ -1,6 +1,6 @@
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { toDateKey } from "@/lib/schedule-month";
-import { sumSales, sumNonfiscal, sumKw, sumManualKp, type PaymentCategory, type TxClass } from "@/lib/kasa";
+import { sumSales, sumNonfiscal, sumKw, sumManualKp, type PaymentCategory, type TxClass, type DocType } from "@/lib/kasa";
 
 export type CashDay = {
   id: string;
@@ -81,6 +81,7 @@ export type DayTransaction = {
   description: string | null;
   type_label: string;
   category: PaymentCategory;
+  docType: DocType | null;
 };
 
 export async function getDayTransactions(date: string): Promise<DayTransaction[]> {
@@ -90,9 +91,24 @@ export async function getDayTransactions(date: string): Promise<DayTransaction[]
     .select("id, value, tx_class, transaction_at, full_number, contractor, description, type_label, payment_forms_map(category)")
     .eq("transaction_date", date)
     .order("transaction_at", { ascending: true });
-  return ((data ?? []) as unknown as (Omit<DayTransaction, "category"> & { payment_forms_map: { category: PaymentCategory } | null })[]).map((t) => ({
+  const rows = (data ?? []) as unknown as (Omit<DayTransaction, "category" | "docType"> & { payment_forms_map: { category: PaymentCategory } | null })[];
+
+  // Osobne, zawężone zapytanie zamiast zagnieżdżonego select — cash_doc_links
+  // ma unikalny transaction_id (1:1), ale kształt zwrotki zagnieżdżonej
+  // relacji bywa niejednoznaczny (obiekt vs tablica); mapa po id jest
+  // prostsza i pewna, a filtr po id tej konkretnej doby nie ciągnie całej
+  // (rosnącej z czasem) tabeli cash_doc_links.
+  const ids = rows.map((r) => r.id);
+  const docTypeByTx = new Map<string, DocType | null>();
+  if (ids.length > 0) {
+    const { data: linksRaw } = await supabase.from("cash_doc_links").select("transaction_id, doc_type").in("transaction_id", ids);
+    for (const l of linksRaw ?? []) docTypeByTx.set(l.transaction_id, l.doc_type as DocType | null);
+  }
+
+  return rows.map((t) => ({
     ...t,
     category: t.payment_forms_map?.category ?? "ignore",
+    docType: docTypeByTx.get(t.id) ?? null,
   }));
 }
 
