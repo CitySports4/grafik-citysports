@@ -6,27 +6,23 @@
 // tego samego kształtu co przyszły DataLakeSource ma produkować, więc
 // podmiana źródła później nie dotyka niczego poza tym plikiem.
 //
-// UWAGA (zweryfikowane na pierwszym realnym pliku, cash_01-11_09-11_1.xlsx,
-// 127 wierszy, 06-09.11.2026):
-// - Data ma godzinę: "RRRR-MM-DD GG:MM" (string, nie liczba Excela) —
-//   potrzebne do expectedCashBalance per liczenie (pkt 3), nie tylko do dnia.
-// - "Dokument sprzedaży" to wewnętrzny numeryczny ID (np. "20261109204040716"),
-//   nie numer raportu kasowego — pomijamy go w opisie.
-// - "Typ" (4 wartości w próbce: Inne, Uzupełnienie portfela, Wpłata raty,
-//   Zakup w barze) NIE pozwala jednoznacznie rozróżnić KW/KP tak jak
-//   zakładała specyfikacja — jedyny pewny KW w próbce ("Zakup wody",
-//   KW/2026/11/00004, -3,50 zł) miał Typ="Uzupełnienie portfela", nie
-//   "Wypłata z kasy". Jedyny spójny sygnał: prefiks "Numer dokumentu"
-//   (KW/ vs KP/) ZAWSZE zgadza się ze znakiem Wartość. Do potwierdzenia z
-//   Saszą: jak odróżnić "rzadkie KP" (pkt 4, np. zasilenie z banku) od
-//   zwykłej sprzedaży, która też dostaje numer "KP/..." — na razie
-//   TYPE_LABEL_MAP jest tylko pomocniczy/informacyjny, KW/KP w dalszej
-//   części systemu liczone są po prefiksie numeru dokumentu.
+// UWAGA (zweryfikowane na realnych plikach, 31.10+03-09.11.2026, 222
+// wiersze): Data ma godzinę "RRRR-MM-DD GG:MM" (string, nie liczba Excela)
+// — potrzebne do expectedCashBalance per liczenie (pkt 3), nie tylko do
+// dnia. "Dokument sprzedaży" to wewnętrzny numeryczny ID sprzedaży (np.
+// "20261109204040716"), nie numer raportu kasowego — pomijamy go w opisie.
+//
+// "Typ" (tekst z kolumny) NIE jest tłumaczony tu na numeryczny kod — w
+// eFitness każda operacja kasowa (także zwykła sprzedaż) dostaje numer KP
+// albo KW, więc numeryczny Type z dokumentacji API nie wystarcza do
+// klasyfikacji. Ten plik tylko PARSUJE format Excela; klasyfikacja
+// (classifyTransaction, wg prefiksu numeru dokumentu + tekstu "Typ") żyje w
+// lib/kasa.ts, wspólna z przyszłym DataLakeSource.
 import * as XLSX from "xlsx";
 
 export type ParsedTransaction = {
   source: "excel";
-  type: number;
+  typeLabel: string;
   value: number;
   paymentFormName: string;
   userName: string;
@@ -41,15 +37,6 @@ export type ParsedTransaction = {
 
 export type ImportWarning = { row: number; message: string };
 export type ParseResult = { transactions: ParsedTransaction[]; warnings: ImportWarning[] };
-
-const TYPE_LABEL_MAP: Record<string, number> = {
-  "Wpłata raty": 0,
-  "Uzupełnienie portfela": 1,
-  "Zakup w barze": 2,
-  "Wypłata z kasy": 3,
-  "Wpłata do kasy": 4,
-  Inne: 5,
-};
 
 // Zwraca { date: "RRRR-MM-DD", at: ISO string | null }. Obsługuje string
 // "RRRR-MM-DD GG:MM" (format realnego eksportu), DD.MM.RRRR/DD-MM-RRRR i
@@ -113,16 +100,9 @@ export function parseExcelExport(buffer: ArrayBuffer): ParseResult {
       warnings.push({ row: rowNum, message: `Nie rozpoznano kwoty: "${String(row["Wartość"])}"` });
       return;
     }
-    const typLabel = cell(row, "Typ");
-    let type = TYPE_LABEL_MAP[typLabel];
-    if (type === undefined) {
-      type = 5;
-      warnings.push({ row: rowNum, message: `Nierozpoznany "Typ": "${typLabel}" — przypisano jako "inne"` });
-    }
-
     transactions.push({
       source: "excel",
-      type,
+      typeLabel: cell(row, "Typ"),
       value,
       paymentFormName: cell(row, "Forma płatności"),
       userName: cell(row, "Użytkownik"),

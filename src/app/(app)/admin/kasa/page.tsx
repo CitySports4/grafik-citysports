@@ -4,6 +4,7 @@ import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { BackLink } from "@/components/BackLink";
 import { importKasaExcel, setPaymentFormCategory, type ImportSummary } from "./actions";
+import { TX_CLASS_LABELS, type TxClass } from "@/lib/kasa";
 
 const CATEGORY_LABELS: Record<string, string> = {
   cash: "Gotówka",
@@ -80,8 +81,8 @@ export default async function KasaImportPage() {
               <p className="text-xs text-zinc-500">zaimportowano</p>
             </div>
             <div className="rounded-lg bg-zinc-50 p-2.5 text-center">
-              <p className="text-xl font-bold text-zinc-900">{lastImport.kwKpInBatch}</p>
-              <p className="text-xs text-zinc-500">KW/KP w paczce</p>
+              <p className="text-xl font-bold text-zinc-900">{lastImport.rowsInBatch}</p>
+              <p className="text-xs text-zinc-500">wierszy w pliku</p>
             </div>
             <div className={`rounded-lg p-2.5 text-center ${lastImport.skippedWarnings > 0 ? "bg-amber-50" : "bg-zinc-50"}`}>
               <p className={`text-xl font-bold ${lastImport.skippedWarnings > 0 ? "text-amber-700" : "text-zinc-900"}`}>{lastImport.skippedWarnings}</p>
@@ -99,6 +100,16 @@ export default async function KasaImportPage() {
               Nowe formy płatności (ustaw kategorię niżej): <span className="font-semibold">{lastImport.newPaymentForms.join(", ")}</span>
             </p>
           )}
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {(Object.keys(lastImport.classCounts) as TxClass[]).map((cls) => (
+              <span
+                key={cls}
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${cls === "unknown" ? "bg-red-50 text-red-700" : "bg-zinc-100 text-zinc-700"}`}
+              >
+                {TX_CLASS_LABELS[cls]}: {lastImport.classCounts[cls]}
+              </span>
+            ))}
+          </div>
           {lastImport.warnings.length > 0 && (
             <details className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-3">
               <summary className="cursor-pointer text-xs font-semibold text-amber-700 marker:content-none">

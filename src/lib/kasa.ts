@@ -3,18 +3,89 @@
 // Warstwa importu (eFitness) żyje w lib/kasa-import.ts, zapytania/akcje w
 // app/(app)/kasa.
 
-// Typ transakcji eFitness (pole "Type" z /transactions/, patrz pkt 1 spec).
-// 7/8 (nieopłacone) pomijane już na etapie importu — nie trafiają do bazy.
-export type EfitnessTransactionType = 0 | 1 | 2 | 3 | 4 | 5 | 6;
-export const TX_TYPE_RATA = 0;
-export const TX_TYPE_PORTFEL = 1;
-export const TX_TYPE_BAR = 2;
-export const TX_TYPE_KW = 3;
-export const TX_TYPE_KP = 4;
-export const TX_TYPE_INNE = 5;
-export const TX_TYPE_PREPAID = 6;
-
 export type PaymentCategory = "cash" | "card" | "nonfiscal" | "online" | "ignore";
+
+// Klasyfikacja operacji eFitness (pkt 2a spec, ostateczne reguły ustalone
+// 10.11.2026 na prawdziwych danych) — w eFitness KAŻDA operacja kasowa
+// dostaje numer KP (wpływ) albo KW (wypływ), także zwykła sprzedaż, więc
+// numeryczny "Type" z dokumentacji API (0-8) NIE wystarcza. Kierunek =
+// prefiks numeru dokumentu (zawsze zgodny ze znakiem kwoty), rodzaj =
+// tekst kolumny "Typ" (9 możliwych wartości potwierdzonych przez Saszę).
+export const KNOWN_TYPE_LABELS = [
+  "Inne",
+  "Uzupełnienie portfela",
+  "Wpłata do kasy",
+  "Wpłata raty",
+  "Wypłata raty",
+  "Wypłata z baru",
+  "Wypłata z kasy",
+  "Zakup vouchera",
+  "Zakup w barze",
+] as const;
+export type KnownTypeLabel = (typeof KNOWN_TYPE_LABELS)[number];
+
+export type TxClass = "sale" | "manual_kp" | "kw_expense" | "kw_wallet" | "kw_correction" | "unknown";
+export const TX_CLASS_LABELS: Record<TxClass, string> = {
+  sale: "Sprzedaż",
+  manual_kp: "Ręczny KP (wpłata do kasy)",
+  kw_expense: "KW — wydatek",
+  kw_wallet: "KW — operacja portfela klienta",
+  kw_correction: "KW — zwrot/korekta klienta",
+  unknown: "Nierozpoznane — do przeglądu",
+};
+
+// fullNumber: pełny numer dokumentu z eFitness ("KP/2026/11/00080" albo
+// "KW/2026/11/00004"). typeLabel: wartość kolumny "Typ" (eksport Excela)
+// albo przetłumaczony numeryczny Type z przyszłego Data Lake API. Nieznany
+// Typ albo brak prefiksu KW/KP -> "unknown", system NICZEGO NIE ZGADUJE
+// (wymóg Saszy) — takie operacje trafiają do przeglądu, nie są cicho
+// wliczane do żadnej sumy.
+export function classifyTransaction(fullNumber: string, typeLabel: string): TxClass {
+  const isKw = fullNumber.startsWith("KW/");
+  const isKp = fullNumber.startsWith("KP/");
+  if ((!isKw && !isKp) || !(KNOWN_TYPE_LABELS as readonly string[]).includes(typeLabel)) return "unknown";
+  if (isKp) return typeLabel === "Wpłata do kasy" ? "manual_kp" : "sale";
+  if (typeLabel === "Wypłata z kasy") return "kw_expense";
+  if (typeLabel === "Uzupełnienie portfela") return "kw_wallet";
+  return "kw_correction";
+}
+
+// Czy ta klasa potrzebuje wiersza w cash_doc_links (pozycja na liście
+// KW/KP do uzupełnienia, pkt 3-4 spec) — zwykła sprzedaż nie, reszta tak.
+export function needsDocLink(txClass: TxClass): boolean {
+  return txClass !== "sale";
+}
+
+// Domyślny doc_type i status nadawane automatycznie przy imporcie (pkt 2a):
+// - kw_expense: zawsze "Do uzupełnienia" (prawdziwy wydatek, wymaga dokumentu)
+// - kw_wallet: "Operacja portfela klienta", ale ZAWSZE "todo"/do przeglądu —
+//   parowanie z KP +X (netto 0 w kasie) opisane w specyfikacji jako hipoteza
+//   NIE potwierdziło się wiarygodnie na danych testowych (ani dla KW/…/00002
+//   "Pobranie na poczet opłaty wpisowej", ani jednoznacznie dla KW/…/00004
+//   "Zakup wody" — najbliższa kwotowo sprzedaż +3,50 zł była 7h później),
+//   więc nie zgadujemy automatycznego "complete".
+// - kw_correction: "Zwrot/korekta klienta", domyślnie "complete" (nie
+//   wymaga dokumentu), recepcja może dodać notatkę/skan i ręcznie przełączyć
+//   na jedną z opcji z pkt 4 ("wydatek").
+// - manual_kp: dokument opcjonalny (pkt 4), ale zostaje "todo" żeby był
+//   widoczny na liście do ewentualnego uzupełnienia.
+// - unknown: "todo" + brak doc_type, zawsze do ręcznego przeglądu.
+export function defaultDocForClass(txClass: TxClass): { docType: DocType | null; status: DocStatus } {
+  switch (txClass) {
+    case "kw_expense":
+      return { docType: null, status: "todo" };
+    case "kw_wallet":
+      return { docType: "wallet_operation", status: "todo" };
+    case "kw_correction":
+      return { docType: "client_correction", status: "complete" };
+    case "manual_kp":
+      return { docType: null, status: "todo" };
+    case "unknown":
+      return { docType: null, status: "todo" };
+    case "sale":
+      return { docType: null, status: "complete" };
+  }
+}
 
 export type CashCountSlot = "open" | "shift" | "close";
 export const CASH_COUNT_SLOT_ORDER: CashCountSlot[] = ["open", "shift", "close"];
@@ -44,25 +115,35 @@ export const DOC_STATUS_ICONS: Record<DocStatus, string> = {
   waiting: "⏳",
 };
 
-export type DocType = "receipt" | "ksef_invoice" | "foreign_invoice" | "awaiting_invoice" | "other";
+// "client_correction"/"wallet_operation" — dwie automatyczne kategorie dla
+// KW innych niż "wydatek" (pkt 2a), nadawane przy imporcie, patrz
+// defaultDocForClass. Pozostałe pięć to ręczny wybór recepcji przy
+// uzupełnianiu dokumentu (pkt 4).
+export type DocType = "receipt" | "ksef_invoice" | "foreign_invoice" | "awaiting_invoice" | "client_correction" | "wallet_operation" | "other";
 export const DOC_TYPE_LABELS: Record<DocType, string> = {
   receipt: "Paragon",
   ksef_invoice: "Faktura w KSeF",
   foreign_invoice: "Faktura spoza KSeF / bez polskiego NIP",
   awaiting_invoice: "Czekamy na fakturę",
+  client_correction: "Zwrot / korekta klienta",
+  wallet_operation: "Operacja portfela klienta",
   other: "Inne",
 };
 // Czy dana opcja wymaga skanu/zdjęcia (pkt 4 spec) — paragon i faktura
-// spoza KSeF tak, faktura w KSeF nie (księgowa ma dostęp do KSeF).
+// spoza KSeF tak, reszta nie.
 export const DOC_TYPE_REQUIRES_ATTACHMENT: Record<DocType, boolean> = {
   receipt: true,
   ksef_invoice: false,
   foreign_invoice: true,
   awaiting_invoice: false,
+  client_correction: false,
+  wallet_operation: false,
   other: true,
 };
 // Status wynikowy po wyborze opcji — "waiting" tylko dla "czekamy na
-// fakturę", reszta od razu kompletna.
+// fakturę", reszta od razu kompletna. (defaultDocForClass nadpisuje to przy
+// imporcie dla "wallet_operation", które mimo braku wymaganego załącznika
+// zostaje "todo" — do przeglądu, nie automatycznie kompletne.)
 export function docStatusForType(docType: DocType): DocStatus {
   return docType === "awaiting_invoice" ? "waiting" : "complete";
 }
@@ -71,18 +152,37 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export type TxLike = { type: number; value: number; category: PaymentCategory };
+export type TxLike = { value: number; category: PaymentCategory; txClass: TxClass };
 
-// Suma transakcji sprzedaży (pomija KW/KP, to osobne wielkości) dla danej
-// kategorii formy płatności — "Gotówka fiskalna" / "Karta (eFitness)" / Niefiskalne.
+// "Gotówka fiskalna" / "Karta (eFitness)" — suma zwykłej sprzedaży
+// (tx_class="sale") dla danej kategorii formy płatności (pkt 2a: KP + forma
+// + Typ≠"Wpłata do kasy", co classifyTransaction już koduje jako "sale").
 export function sumSales(transactions: TxLike[], category: PaymentCategory): number {
+  return round2(transactions.filter((t) => t.txClass === "sale" && t.category === category).reduce((s, t) => s + t.value, 0));
+}
+
+// "Niefiskalne" (kaucje za butelki) — wszystko z formą Niefiskalna,
+// niezależnie od tx_class (w praktyce zawsze "sale", ale pkt 2a nie zawęża).
+export function sumNonfiscal(transactions: { value: number; category: PaymentCategory }[]): number {
+  return round2(transactions.filter((t) => t.category === "nonfiscal").reduce((s, t) => s + t.value, 0));
+}
+
+// "KW" do raportu (pkt 2a: "Wszystkie KW ... trafiają do RK jako rozchód")
+// — kw_expense + kw_wallet + kw_correction razem, tylko forma Gotówka
+// (fizyczna gotówka z kasy; karta/online nie powinny się tu zdarzać, ale
+// gdyby się trafiły, nie mają zmniejszać stanu fizycznej gotówki).
+export function sumKw(transactions: { value: number; category: PaymentCategory; txClass: TxClass }[]): number {
   return round2(
-    transactions.filter((t) => t.category === category && t.type !== TX_TYPE_KW && t.type !== TX_TYPE_KP).reduce((s, t) => s + t.value, 0)
+    transactions
+      .filter((t) => (t.txClass === "kw_expense" || t.txClass === "kw_wallet" || t.txClass === "kw_correction") && t.category === "cash")
+      .reduce((s, t) => s + Math.abs(t.value), 0)
   );
 }
 
-export function sumByType(transactions: { type: number; value: number }[], type: number): number {
-  return round2(transactions.filter((t) => t.type === type).reduce((s, t) => s + t.value, 0));
+// "KP ręczny" (pkt 2a: rzadkie, np. zasilenie kasy z banku) — tylko
+// tx_class="manual_kp", forma Gotówka.
+export function sumManualKp(transactions: { value: number; category: PaymentCategory; txClass: TxClass }[]): number {
+  return round2(transactions.filter((t) => t.txClass === "manual_kp" && t.category === "cash").reduce((s, t) => s + t.value, 0));
 }
 
 export type DepositSplit = {
