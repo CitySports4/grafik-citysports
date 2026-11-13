@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { after } from "next/server";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { SessionEmployee } from "@/lib/session";
@@ -36,11 +37,15 @@ export async function CashDayScreen({
   historiaHref?: string;
   employee: SessionEmployee | null;
 }) {
-  // Zawsze świeże dane przed pokazaniem ekranu (pkt 1 spec: "przed każdym
-  // liczeniem") — bez osobnego przycisku, z throttlingiem w środku (patrz
-  // autoRefreshKasaFromDataLake), żeby częste przełączanie zakładek nie
-  // odpytywało Data Lake bez potrzeby.
-  await autoRefreshKasaFromDataLake();
+  // Zawsze świeże dane (pkt 1 spec: "przed każdym liczeniem"), ale NIE
+  // czekamy na synchronizację przed renderem — pełne pobranie z Data Lake
+  // (zapytanie HTTP + kilka round-tripów do bazy) potrafi trwać sekundy,
+  // a to właśnie blokowało przełączanie między dniami. `after()` odkłada
+  // wywołanie na moment PO wysłaniu odpowiedzi: ten ekran może pokazać dane
+  // o chwilę starsze niż najnowsze, ale synchronizacja i tak leci w tle
+  // (throttling 2 min w środku, patrz autoRefreshKasaFromDataLake) i
+  // następne otwarcie zakładki widzi już świeże dane.
+  after(() => autoRefreshKasaFromDataLake());
 
   const day = await getCashDay(date);
   const [transactions, counts, docLinks, shiftEmployees] = await Promise.all([
