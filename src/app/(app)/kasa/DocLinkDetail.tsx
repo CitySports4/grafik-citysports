@@ -1,10 +1,21 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
+import { getSessionEmployee } from "@/lib/session";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { BackLink } from "@/components/BackLink";
-import { DOC_TYPE_LABELS, DOC_TYPE_REQUIRES_ATTACHMENT, DOC_STATUS_LABELS, DOC_STATUS_ICONS, TX_CLASS_LABELS, type DocType, type DocStatus } from "@/lib/kasa";
+import {
+  DOC_TYPE_LABELS,
+  DOC_TYPE_REQUIRES_ATTACHMENT,
+  DOC_STATUS_LABELS,
+  DOC_STATUS_ICONS,
+  TX_CLASS_LABELS,
+  extractDocNumberFromDescription,
+  type DocType,
+  type DocStatus,
+} from "@/lib/kasa";
+import { getDocLinkAttachments, getEmployeesOnShift } from "./data";
 import { saveDocLink } from "./actions";
 
 const DOC_TYPE_OPTIONS: DocType[] = ["receipt", "ksef_invoice", "foreign_invoice", "awaiting_invoice", "client_correction", "wallet_operation", "other"];
@@ -39,6 +50,16 @@ export async function DocLinkDetail({ id, backHref }: { id: string; backHref: st
     transaction_date: string;
     type_label: string;
   };
+
+  const employee = await getSessionEmployee();
+  const [attachments, shiftEmployees] = await Promise.all([
+    getDocLinkAttachments(data.id),
+    employee ? Promise.resolve([]) : getEmployeesOnShift(tx.transaction_date),
+  ]);
+  // Numer dokumentu jest zawsze w opisie eFitness (np. "Paragon nr.
+  // 357619/1355") — podpowiadamy go, żeby nie przepisywać ręcznie, ale
+  // tylko jeśli pole jeszcze puste (nie nadpisujemy tego, co ktoś już wpisał).
+  const suggestedKsefNumber = data.ksef_number || extractDocNumberFromDescription(tx.description) || "";
 
   return (
     <div className="flex flex-col gap-5">
@@ -80,13 +101,51 @@ export async function DocLinkDetail({ id, backHref }: { id: string; backHref: st
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-zinc-700">Numer faktury (opcjonalnie)</label>
-            <input type="text" name="ksef_number" defaultValue={data.ksef_number ?? ""} className={INPUT} />
+            <input type="text" name="ksef_number" defaultValue={suggestedKsefNumber} className={INPUT} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-zinc-700">Notatka</label>
             <input type="text" name="note" defaultValue={data.note ?? ""} placeholder="np. dostawa, czekamy na FV" className={INPUT} />
           </div>
-          <p className="text-xs text-zinc-400">Dodawanie skanu/zdjęcia dojdzie w ekranie hurtowego uzupełniania dokumentów.</p>
+
+          {attachments.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-zinc-700">Dodane skany/zdjęcia</label>
+              <div className="flex flex-col divide-y divide-zinc-100 rounded-xl border border-zinc-200">
+                {attachments.map((a) => (
+                  <a
+                    key={a.id}
+                    href={a.url ?? "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-brand-blue hover:bg-zinc-50"
+                  >
+                    📎 {a.originalName}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-zinc-700">Dodaj skan / zdjęcie paragonu</label>
+            <p className="text-xs text-zinc-400">Zrób zdjęcie telefonem albo wybierz skan z plików.</p>
+            <input type="file" name="attachment" accept="image/*,.pdf" capture="environment" className="text-sm" />
+          </div>
+          {!employee && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-zinc-700">Kto dodaje załącznik (jeśli dodajesz)</label>
+              <select name="employee_id" defaultValue="" className={INPUT}>
+                <option value="" disabled>
+                  Wybierz…
+                </option>
+                {shiftEmployees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <SubmitButton className="self-start rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
             Zapisz
           </SubmitButton>

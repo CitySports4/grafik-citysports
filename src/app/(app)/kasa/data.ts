@@ -239,6 +239,27 @@ export async function getDayDocLinks(date: string): Promise<DocLinkRow[]> {
   }));
 }
 
+export type DocAttachment = { id: string; originalName: string; url: string | null };
+
+// Skany/zdjęcia dopięte do jednego KW/KP (pkt 4 spec) — bucket prywatny
+// (kasa-dokumenty), więc link do podglądu to podpisany URL ważny godzinę,
+// generowany tu, po stronie serwera, a nie publiczny storage_path wprost.
+export async function getDocLinkAttachments(linkId: string): Promise<DocAttachment[]> {
+  const supabase = createServerSupabaseClient();
+  const { data } = await supabase
+    .from("cash_attachments")
+    .select("id, storage_path, original_name")
+    .eq("link_id", linkId)
+    .order("uploaded_at", { ascending: true });
+  const rows = (data ?? []) as { id: string; storage_path: string; original_name: string }[];
+  return Promise.all(
+    rows.map(async (r) => {
+      const { data: signed } = await supabase.storage.from("kasa-dokumenty").createSignedUrl(r.storage_path, 3600);
+      return { id: r.id, originalName: r.original_name, url: signed?.signedUrl ?? null };
+    })
+  );
+}
+
 export type ShiftEmployee = { id: string; name: string; color_hex: string };
 
 // Kto miał zmianę danego dnia — do wyboru "kto liczy" na kiosku recepcji
