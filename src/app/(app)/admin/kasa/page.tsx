@@ -54,16 +54,16 @@ export default async function KasaImportPage() {
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Kasa — import z eFitness</h1>
         <p className="text-sm text-zinc-500">
-          Dane logowania do eFitness Data Lake API już są podłączone — „Odśwież” pobiera zmiany od ostatniego importu. Eksport Excela zostaje jako plan
-          awaryjny (eFitness → Sprzedaż → Kasa → zakres dat → „Eksport do Excela”).
+          Dane logowania do eFitness Data Lake API już są podłączone — ekran „Kasa” sam odświeża dane przy każdym otwarciu (nie częściej niż co 2 min),
+          więc ten przycisk jest głównie do wymuszenia odświeżenia na żądanie. Eksport Excela zostaje jako plan awaryjny (eFitness → Sprzedaż → Kasa →
+          zakres dat → „Eksport do Excela”).
         </p>
       </div>
 
       <Card>
         <h2 className="mb-1 font-semibold text-zinc-900">Odśwież z Data Lake</h2>
         <p className="mb-3 text-sm text-zinc-500">
-          Pobiera zmiany (UpdatedFrom = ostatni import − 1 dzień) z GET /transactions/, upsert po Id — bezpiecznie klikać wielokrotnie. Na razie ręcznie;
-          cron co 10-15 min (Supabase Edge Function) jest kolejnym krokiem.
+          Pobiera zmiany (UpdatedFrom = ostatnia synchronizacja − 1 dzień) z GET /transactions/, upsert po Id — bezpiecznie klikać wielokrotnie.
         </p>
         <form action={importKasaDataLake}>
           <SubmitButton className="rounded-xl bg-brand-blue px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
