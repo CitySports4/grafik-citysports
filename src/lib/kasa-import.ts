@@ -192,10 +192,17 @@ export async function fetchDataLakePaymentForms(): Promise<DataLakePaymentForm[]
 // "Wypłata z kasy", Type 4=CashDeskIn zawsze KP = "Wpłata do kasy"; Type
 // 1=portfel KW = "Uzupełnienie portfela", potwierdzone przy uzgadnianiu sald
 // 10.11.2026) albo jednoznacznie nazwane w spec (Type 6=prepaid =
-// "Zakup vouchera"). Każda inna kombinacja (np. Type 1 KP — wpłata na
-// portfel, nie zaobserwowana na próbce) zostaje nieprzetłumaczona ->
-// classifyTransaction zwróci "unknown" i trafi do przeglądu. System niczego
-// nie zgaduje — lepiej "do przeglądu" niż źle zaklasyfikowane.
+// "Zakup vouchera"). Type 1=portfel KP (zawsze forma Online/Karta
+// kredytowa na próbce, NIGDY Gotówka) to depozyt/kaucja wpłacona online —
+// Sasza potwierdziła 13.11.2026: ani wpłata kaucji online, ani jej
+// późniejsze pobranie (np. za nieodwołaną wizytę) nie dotykają fizycznej
+// gotówki, więc dostaje "Uzupełnienie portfela" tak jak KW (isKp w
+// classifyTransaction i tak zamienia to na "sale" — liczy się tylko do
+// kategorii formy płatności, a Online/Karta nigdy nie wpada do
+// cashFiscal). Każda inna, naprawdę nieprzewidziana kombinacja zostaje
+// nieprzetłumaczona -> classifyTransaction zwróci "unknown" i trafi do
+// przeglądu. System niczego nie zgaduje — lepiej "do przeglądu" niż źle
+// zaklasyfikowane.
 function typeLabelFromDataLake(type: string, evidence: string | null): string | null {
   const isKp = evidence === "KP";
   const isKw = evidence === "KW";
@@ -205,7 +212,7 @@ function typeLabelFromDataLake(type: string, evidence: string | null): string | 
       if (isKw) return "Wypłata raty";
       return null;
     case "1": // portfel
-      return isKw ? "Uzupełnienie portfela" : null;
+      return isKw || isKp ? "Uzupełnienie portfela" : null;
     case "2": // bar
       if (isKp) return "Zakup w barze";
       if (isKw) return "Wypłata z baru";
