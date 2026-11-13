@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/session";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { BackLink } from "@/components/BackLink";
-import { importKasaExcel, setPaymentFormCategory, type ImportSummary } from "./actions";
+import { importKasaExcel, importKasaDataLake, setPaymentFormCategory, type ImportSummary } from "./actions";
 import { TX_CLASS_LABELS, type TxClass } from "@/lib/kasa";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -24,7 +24,13 @@ export default async function KasaImportPage() {
 
   const supabase = createServerSupabaseClient();
   const [{ data: lastImportRaw }, { data: paymentForms }, { data: txStats }] = await Promise.all([
-    supabase.from("kasa_audit_log").select("note, created_at").eq("action", "import_excel").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase
+      .from("kasa_audit_log")
+      .select("note, created_at, action")
+      .in("action", ["import_excel", "import_api"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     supabase.from("payment_forms_map").select("id, name, category").order("name"),
     supabase.from("efitness_transactions").select("transaction_date").order("transaction_date", { ascending: true }).limit(1),
   ]);
@@ -35,6 +41,7 @@ export default async function KasaImportPage() {
   } catch {
     lastImport = null;
   }
+  const lastImportSource = lastImportRaw?.action === "import_api" ? "Data Lake" : "Excel";
 
   const { count: totalCount } = await supabase.from("efitness_transactions").select("id", { count: "exact", head: true });
   const earliestDate = txStats?.[0]?.transaction_date ?? null;
@@ -46,13 +53,26 @@ export default async function KasaImportPage() {
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Kasa — import z eFitness</h1>
         <p className="text-sm text-zinc-500">
-          Dane logowania do eFitness Data Lake API jeszcze nie przyszły — na razie import ręczny z eksportu Excela (eFitness → Sprzedaż → Kasa → zakres
-          dat → „Eksport do Excela”).
+          Dane logowania do eFitness Data Lake API już są podłączone — „Odśwież” pobiera zmiany od ostatniego importu. Eksport Excela zostaje jako plan
+          awaryjny (eFitness → Sprzedaż → Kasa → zakres dat → „Eksport do Excela”).
         </p>
       </div>
 
       <Card>
-        <h2 className="mb-1 font-semibold text-zinc-900">Wgraj eksport</h2>
+        <h2 className="mb-1 font-semibold text-zinc-900">Odśwież z Data Lake</h2>
+        <p className="mb-3 text-sm text-zinc-500">
+          Pobiera zmiany (UpdatedFrom = ostatni import − 1 dzień) z GET /transactions/, upsert po Id — bezpiecznie klikać wielokrotnie. Na razie ręcznie;
+          cron co 10-15 min (Supabase Edge Function) jest kolejnym krokiem.
+        </p>
+        <form action={importKasaDataLake}>
+          <SubmitButton className="rounded-xl bg-brand-blue px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+            Odśwież
+          </SubmitButton>
+        </form>
+      </Card>
+
+      <Card>
+        <h2 className="mb-1 font-semibold text-zinc-900">Albo wgraj eksport Excela</h2>
         <p className="mb-3 text-sm text-zinc-500">Upsert po numerze dokumentu + dacie + kwocie — ponowny import tego samego pliku jest bezpieczny.</p>
         <form action={importKasaExcel} className="flex flex-wrap items-center gap-2">
           <input type="file" name="file" accept=".xlsx,.xls" required className="flex-1 text-sm" />
@@ -74,7 +94,9 @@ export default async function KasaImportPage() {
 
       {lastImport && (
         <Card>
-          <h2 className="mb-3 font-semibold text-zinc-900">Ostatni import</h2>
+          <h2 className="mb-3 font-semibold text-zinc-900">
+            Ostatni import <span className="font-normal text-zinc-400">({lastImportSource})</span>
+          </h2>
           <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-lg bg-zinc-50 p-2.5 text-center">
               <p className="text-xl font-bold text-zinc-900">{lastImport.imported}</p>
