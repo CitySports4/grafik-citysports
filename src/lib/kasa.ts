@@ -148,6 +148,17 @@ export function docStatusForType(docType: DocType): DocStatus {
   return docType === "awaiting_invoice" ? "waiting" : "complete";
 }
 
+// Numer dokumentu (paragonu/faktury) jest zawsze w opisie transakcji z
+// eFitness — np. "Paragon nr. 357619/1355", "Paragon nr: 265813" — więc
+// podpowiadamy go jako domyślną wartość pola "Numer faktury" zamiast kazać
+// przepisywać ręcznie. Tylko gdy jest jednoznaczny wzorzec "nr" — inaczej
+// system niczego nie zgaduje, pole zostaje puste do ręcznego wpisania.
+export function extractDocNumberFromDescription(description: string | null): string | null {
+  if (!description) return null;
+  const match = description.match(/nr[.:]?\s*([\w/-]+)/i);
+  return match ? match[1] : null;
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }

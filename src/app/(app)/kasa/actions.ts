@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { getSessionEmployee } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
-import { expectedCashBalance, cashDifference, splitDeposits, docStatusForType, type DocType, type CashCountSlot } from "@/lib/kasa";
+import { expectedCashBalance, cashDifference, splitDeposits, docStatusForType, DOC_TYPE_REQUIRES_ATTACHMENT, DOC_TYPE_LABELS, type DocType, type CashCountSlot } from "@/lib/kasa";
 import { getDayTransactions, computeDayTotals, resolveOpeningBalance } from "./data";
 
 function revalidate(date: string) {
@@ -130,8 +130,10 @@ export async function closeCashDay(formData: FormData) {
 }
 
 // Uzupełnienie jednego dokumentu KW/KP (pkt 4) — pojedyncze, bez presji
-// czasowej. Załącznik (skan/zdjęcie) dochodzi w kolejnym kroku (ekran
-// hurtowy); tu można już wybrać typ dokumentu i dodać notatkę/nr faktury.
+// czasowej: typ dokumentu, notatka/nr faktury i (dla typów, które tego
+// wymagają — patrz DOC_TYPE_REQUIRES_ATTACHMENT) skan/zdjęcie paragonu,
+// zapisywane wprost tutaj (bucket "kasa-dokumenty", migracja 0071) — bez
+// czekania na przyszły ekran hurtowy, zgłoszone 13.11.2026.
 export async function saveDocLink(formData: FormData) {
   const employee = await getSessionEmployee();
   const id = String(formData.get("id") ?? "");
@@ -144,11 +146,33 @@ export async function saveDocLink(formData: FormData) {
   const status = docStatusForType(docType);
 
   const supabase = createServerSupabaseClient();
+
+  const fileField = formData.get("attachment");
+  const hasNewFile = fileField instanceof File && fileField.size > 0;
+  if (DOC_TYPE_REQUIRES_ATTACHMENT[docType] && !hasNewFile) {
+    const { count } = await supabase.from("cash_attachments").select("id", { count: "exact", head: true }).eq("link_id", id);
+    if (!count) throw new Error(`„${DOC_TYPE_LABELS[docType]}” wymaga skanu/zdjęcia — dodaj załącznik przed zapisem.`);
+  }
+
   const { error } = await supabase
     .from("cash_doc_links")
     .update({ doc_type: docType, note, ksef_number: ksefNumber || null, status, updated_by_employee_id: employee?.id ?? null, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
+
+  if (hasNewFile) {
+    const file = fileField as File;
+    const uploaderId = employee?.id ?? String(formData.get("employee_id") ?? "");
+    if (!uploaderId) throw new Error("Wybierz osobę, która dodaje załącznik.");
+    const safeName = file.name.replace(/[^\w.-]+/g, "_");
+    const path = `kw/${id}/${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from("kasa-dokumenty").upload(path, file, { contentType: file.type || undefined });
+    if (uploadError) throw new Error(`Nie udało się zapisać załącznika: ${uploadError.message}`);
+    const { error: attachError } = await supabase
+      .from("cash_attachments")
+      .insert({ link_id: id, kind: "kw_doc", storage_path: path, original_name: file.name, uploaded_by_employee_id: uploaderId });
+    if (attachError) throw new Error(dbErrorMessage(attachError));
+  }
 
   revalidatePath("/kasa");
   revalidatePath("/recepcja/kasa");
