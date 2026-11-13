@@ -7,6 +7,21 @@ function money(n: number): string {
   return n.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 }
 
+// Tailwind "capitalize" wielkie litery daje KAŻDEMU słowu, co po polsku
+// jest błędne — tylko pierwsza litera całego ciągu (patrz CashDayScreen).
+function capitalizeFirst(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function monthKey(date: string): string {
+  return date.slice(0, 7); // "RRRR-MM"
+}
+
+function monthLabel(key: string): string {
+  const [year, month] = key.split("-");
+  return capitalizeFirst(new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("pl-PL", { month: "long", year: "numeric" }));
+}
+
 export default async function KasaHistoriaPage() {
   const employee = await requireEmployee();
   if (!canAccessKasa(employee)) {
@@ -82,31 +97,44 @@ export default async function KasaHistoriaPage() {
                   <th className="px-3 py-2.5" />
                 </tr>
               </thead>
-              <tbody>
-                {days.map((d) => {
-                  const close = closeByDay.get(d.id);
-                  const ok = close ? close.difference === 0 : true;
-                  return (
-                    <tr key={d.id} className="border-t border-zinc-100 hover:bg-zinc-50/60">
-                      <td className="px-3 py-2.5 font-semibold text-zinc-900">{d.rd_number}</td>
-                      <td className="whitespace-nowrap px-3 py-2.5 capitalize text-zinc-700">
-                        {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { weekday: "short", day: "numeric", month: "long" })}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-semibold text-zinc-900">{close ? money(close.counted) : "—"}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-                          {ok ? "zgadza się" : `różnica ${close!.difference > 0 ? "+" : ""}${money(close!.difference)}`}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <Link href={`/kasa?date=${d.date}`} className="font-semibold text-brand-blue hover:underline">
-                          Otwórz →
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
+              {Object.entries(
+                days.reduce<Record<string, typeof days>>((groups, d) => {
+                  const key = monthKey(d.date);
+                  (groups[key] ??= []).push(d);
+                  return groups;
+                }, {})
+              ).map(([key, monthDays]) => (
+                <tbody key={key}>
+                  <tr>
+                    <td colSpan={5} className="bg-zinc-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      {monthLabel(key)}
+                    </td>
+                  </tr>
+                  {monthDays.map((d) => {
+                    const close = closeByDay.get(d.id);
+                    const ok = close ? close.difference === 0 : true;
+                    return (
+                      <tr key={d.id} className="border-t border-zinc-100 hover:bg-zinc-50/60">
+                        <td className="px-3 py-2.5 font-semibold text-zinc-900">{d.rd_number ?? "—"}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 capitalize text-zinc-700">
+                          {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { weekday: "short", day: "numeric", month: "long" })}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-zinc-900">{close ? money(close.counted) : "—"}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                            {ok ? "zgadza się" : `różnica ${close!.difference > 0 ? "+" : ""}${money(close!.difference)}`}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <Link href={`/kasa?date=${d.date}`} className="font-semibold text-brand-blue hover:underline">
+                            Otwórz →
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              ))}
             </table>
           </div>
         </>
