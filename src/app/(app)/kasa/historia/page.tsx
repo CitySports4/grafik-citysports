@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { requireEmployee, canAccessKasa } from "@/lib/session";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { Card, CardLink } from "@/components/Card";
 import { BackLink } from "@/components/BackLink";
 
 function money(n: number): string {
@@ -40,6 +39,9 @@ export default async function KasaHistoriaPage() {
       : { data: [] };
   const closeByDay = new Map((countsRaw ?? []).map((c) => [c.cash_day_id, c]));
 
+  const withDiff = days.filter((d) => closeByDay.has(d.id));
+  const mismatched = withDiff.filter((d) => closeByDay.get(d.id)!.difference !== 0);
+
   return (
     <div className="flex flex-col gap-6">
       <BackLink href="/kasa" label="Kasa" />
@@ -49,28 +51,65 @@ export default async function KasaHistoriaPage() {
       </div>
 
       {days.length === 0 ? (
-        <Card className="text-center text-sm text-zinc-400">Brak zamkniętych dni.</Card>
+        <p className="text-center text-sm text-zinc-400">Brak zamkniętych dni.</p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {days.map((d) => {
-            const close = closeByDay.get(d.id);
-            const ok = close ? close.difference === 0 : true;
-            return (
-              <CardLink key={d.id} href={`/kasa?date=${d.date}`} className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-zinc-900">
-                    RD {d.rd_number} ·{" "}
-                    {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { weekday: "short", day: "numeric", month: "long" })}
-                  </p>
-                  {close && <p className="text-sm text-zinc-500">stan kasy: {money(close.counted)}</p>}
-                </div>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-                  {ok ? "zgadza się" : "różnica"}
-                </span>
-              </CardLink>
-            );
-          })}
-        </div>
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-zinc-50 p-3 text-center">
+              <p className="text-xl font-bold text-zinc-900">{days.length}</p>
+              <p className="text-xs text-zinc-500">zamkniętych dni</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-3 text-center">
+              <p className="text-xl font-bold text-emerald-700">{withDiff.length - mismatched.length}</p>
+              <p className="text-xs text-emerald-700">zgadza się</p>
+            </div>
+            <div className={`rounded-xl p-3 text-center ${mismatched.length > 0 ? "bg-red-50" : "bg-zinc-50"}`}>
+              <p className={`text-xl font-bold ${mismatched.length > 0 ? "text-red-700" : "text-zinc-900"}`}>{mismatched.length}</p>
+              <p className={`text-xs ${mismatched.length > 0 ? "text-red-700" : "text-zinc-500"}`}>różnica</p>
+            </div>
+          </div>
+
+          {/* Tylko admin, tylko komputer (jak panel admina / ScheduleTable)
+          — bez telefonu nie ma po co dublować tabeli listą kart. */}
+          <div className="overflow-x-auto rounded-2xl bg-white">
+            <table className="w-full min-w-[480px] border-collapse text-sm">
+              <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2.5">RD</th>
+                  <th className="px-3 py-2.5">Data</th>
+                  <th className="px-3 py-2.5 text-right">Stan kasy</th>
+                  <th className="px-3 py-2.5">Wynik</th>
+                  <th className="px-3 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {days.map((d) => {
+                  const close = closeByDay.get(d.id);
+                  const ok = close ? close.difference === 0 : true;
+                  return (
+                    <tr key={d.id} className="border-t border-zinc-100 hover:bg-zinc-50/60">
+                      <td className="px-3 py-2.5 font-semibold text-zinc-900">{d.rd_number}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 capitalize text-zinc-700">
+                        {new Date(d.date + "T00:00:00").toLocaleDateString("pl-PL", { weekday: "short", day: "numeric", month: "long" })}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-semibold text-zinc-900">{close ? money(close.counted) : "—"}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                          {ok ? "zgadza się" : `różnica ${close!.difference > 0 ? "+" : ""}${money(close!.difference)}`}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <Link href={`/kasa?date=${d.date}`} className="font-semibold text-brand-blue hover:underline">
+                          Otwórz →
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       <Link href="/kasa" className="text-center text-sm font-semibold text-zinc-500 hover:text-zinc-800">

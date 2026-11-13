@@ -66,12 +66,14 @@ export async function DocLinkDetail({ id, backHref }: { id: string; backHref: st
       <BackLink href={backHref} label="Kasa" />
 
       <Card>
-        <div className="flex items-start justify-between gap-2">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <p className="font-bold text-zinc-900">{tx.contractor || tx.full_number}</p>
             <p className="text-sm text-zinc-500">{tx.full_number}</p>
           </div>
-          <span className={`text-xl font-black ${tx.value < 0 ? "text-red-600" : "text-zinc-900"}`}>{money(Math.abs(tx.value))}</span>
+          <span className={`shrink-0 whitespace-nowrap text-xl font-black ${tx.value < 0 ? "text-red-600" : "text-zinc-900"}`}>
+            {money(Math.abs(tx.value))}
+          </span>
         </div>
         {tx.description && <p className="mt-2 text-sm text-zinc-700">{tx.description}</p>}
         <p className="mt-2 text-xs text-zinc-400">
@@ -100,7 +102,7 @@ export async function DocLinkDetail({ id, backHref }: { id: string; backHref: st
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-zinc-700">Numer faktury (opcjonalnie)</label>
+            <label className="text-xs font-semibold text-zinc-700">Numer dokumentu (opcjonalnie)</label>
             <input type="text" name="ksef_number" defaultValue={suggestedKsefNumber} className={INPUT} />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -129,7 +131,13 @@ export async function DocLinkDetail({ id, backHref }: { id: string; backHref: st
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-zinc-700">Dodaj skan / zdjęcie paragonu</label>
             <p className="text-xs text-zinc-400">Zrób zdjęcie telefonem albo wybierz skan z plików.</p>
-            <input type="file" name="attachment" accept="image/*,.pdf" capture="environment" className="text-sm" />
+            <input
+              type="file"
+              name="attachment"
+              accept="image/*,.pdf"
+              capture="environment"
+              className="text-sm text-zinc-500 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3.5 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-zinc-900"
+            />
           </div>
           {!employee && (
             <div className="flex flex-col gap-1.5">
