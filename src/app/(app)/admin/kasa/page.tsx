@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/session";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import { BackLink } from "@/components/BackLink";
+import { Banner } from "@/components/Banner";
 import { importKasaExcel, importKasaDataLake, setPaymentFormCategory, type ImportSummary } from "./actions";
 import { TX_CLASS_LABELS, type TxClass } from "@/lib/kasa";
 
@@ -118,9 +119,9 @@ export default async function KasaImportPage() {
             </div>
           </div>
           {lastImport.newPaymentForms.length > 0 && (
-            <p className="mb-2 text-sm text-amber-700">
+            <Banner variant="warning" className="mb-3">
               Nowe formy płatności (ustaw kategorię niżej): <span className="font-semibold">{lastImport.newPaymentForms.join(", ")}</span>
-            </p>
+            </Banner>
           )}
           <div className="mb-3 flex flex-wrap gap-1.5">
             {(Object.keys(lastImport.classCounts) as TxClass[]).map((cls) => (
@@ -133,8 +134,8 @@ export default async function KasaImportPage() {
             ))}
           </div>
           {lastImport.warnings.length > 0 && (
-            <details className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-3">
-              <summary className="cursor-pointer text-xs font-semibold text-amber-700 marker:content-none">
+            <details className="rounded-xl bg-amber-50 p-3">
+              <summary className="cursor-pointer text-xs font-semibold text-amber-800 marker:content-none">
                 Ostrzeżenia ({lastImport.skippedWarnings}
                 {lastImport.warnings.length < lastImport.skippedWarnings ? `, pokazano ${lastImport.warnings.length}` : ""}) ▾
               </summary>
@@ -154,27 +155,43 @@ export default async function KasaImportPage() {
           Decyduje, co liczy się jako gotówka fiskalna / karta / niefiskalne (kaucje) / online / pomijane. Nierozpoznane formy wpadają tu automatycznie
           jako „Pomijane” przy imporcie.
         </p>
-        <div className="flex flex-col gap-1.5">
-          {(paymentForms ?? []).map((f) => (
-            <div key={f.id} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-1.5 text-sm">
-              <span className="font-semibold text-zinc-900">{f.name}</span>
-              <form action={setPaymentFormCategory} className="flex items-center gap-2">
-                <input type="hidden" name="id" value={f.id} />
-                <select name="category" defaultValue={f.category} className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
-                  {CATEGORY_OPTIONS.map((c) => (
-                    <option key={c} value={c}>
-                      {CATEGORY_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
-                <SubmitButton className="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
-                  Zapisz
-                </SubmitButton>
-              </form>
-            </div>
-          ))}
-          {(paymentForms ?? []).length === 0 && <p className="text-sm text-zinc-400">Brak form płatności — zaimportuj dane.</p>}
-        </div>
+        {(paymentForms ?? []).length === 0 ? (
+          <p className="text-sm text-zinc-400">Brak form płatności — zaimportuj dane.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl bg-zinc-50">
+            <table className="w-full min-w-[420px] border-collapse text-sm">
+              <thead className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2.5">Forma płatności</th>
+                  <th className="px-3 py-2.5">Kategoria kasowa</th>
+                  <th className="px-3 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {(paymentForms ?? []).map((f) => (
+                  <tr key={f.id} className="border-t border-zinc-200">
+                    <td className="px-3 py-2 font-semibold text-zinc-900">{f.name}</td>
+                    <td colSpan={2} className="px-3 py-1.5">
+                      <form action={setPaymentFormCategory} className="flex items-center gap-2">
+                        <input type="hidden" name="id" value={f.id} />
+                        <select name="category" defaultValue={f.category} className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm">
+                          {CATEGORY_OPTIONS.map((c) => (
+                            <option key={c} value={c}>
+                              {CATEGORY_LABELS[c]}
+                            </option>
+                          ))}
+                        </select>
+                        <SubmitButton className="shrink-0 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
+                          Zapisz
+                        </SubmitButton>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   );
