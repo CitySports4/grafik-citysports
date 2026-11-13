@@ -69,14 +69,21 @@ export async function resolveOpeningBalance(date: string): Promise<number> {
   const byDate = groupByTransactionDate(rangeTransactions);
 
   let balance = anchorBalance;
-  let cursor = anchorDate;
   if (forward) {
+    // Zaczynamy dzień PO kotwicy, nie od niej — anchorBalance to już saldo
+    // ZAMKNIĘCIA anchorDate (po jego własnym ruchu), więc doliczanie ruchu
+    // anchorDate jeszcze raz tutaj liczyłoby go podwójnie. Wyłapane
+    // 13.11.2026 dopiero po uzupełnieniu historii 1-9.11 (każdy dzień ma już
+    // własne zamknięcie) — wcześniej niewidoczne, bo jedyny ówczesny dzień
+    // kotwicy (10.11) akurat miał zerowy ruch gotówkowy.
+    let cursor = shiftDateKey(anchorDate, 1);
     while (cursor < date) {
       const totals = computeDayTotals(byDate.get(cursor) ?? []);
       balance = balance + totals.cashFiscal - totals.kw + totals.manualKp;
       cursor = shiftDateKey(cursor, 1);
     }
   } else {
+    let cursor = anchorDate;
     while (cursor > date) {
       const prevDate = shiftDateKey(cursor, -1);
       const totals = computeDayTotals(byDate.get(prevDate) ?? []);
