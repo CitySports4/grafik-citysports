@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
-import { parseExcelExport } from "@/lib/kasa-import";
+import { parseExcelExport, fetchDataLakeTransactions, type ParsedTransaction, type ImportWarning } from "@/lib/kasa-import";
 import { classifyTransaction, needsDocLink, defaultDocForClass, type TxClass } from "@/lib/kasa";
 
 export type ImportSummary = {
@@ -30,6 +30,46 @@ export async function importKasaExcel(formData: FormData) {
 
   const buffer = await file.arrayBuffer();
   const { transactions, warnings: parseWarnings } = parseExcelExport(buffer);
+  await runImport(transactions, parseWarnings, employee.id, "import_excel");
+  revalidatePath("/admin/kasa");
+}
+
+// Import z Data Lake API (krok 1 specyfikacji) — okno UpdatedFrom = ostatni
+// import_api − 1 dzień (pkt 1 spec: zmiany/anulacje nadpisują się przez
+// upsert po Id, więc 1-dniowy zakład jest bezpieczny), albo start_date z
+// kasa_settings jeśli to pierwszy import. Na razie wyzwalane ręcznie
+// przyciskiem „Odśwież” (jak w specyfikacji — ma być też cron co 10-15 min,
+// to osobny krok: Supabase Edge Function).
+export async function importKasaDataLake() {
+  const employee = await requireAdmin();
+  const supabase = createServerSupabaseClient();
+
+  const { data: lastImport } = await supabase
+    .from("kasa_audit_log")
+    .select("created_at")
+    .eq("action", "import_api")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let updatedFrom: string;
+  if (lastImport) {
+    const d = new Date(lastImport.created_at);
+    d.setDate(d.getDate() - 1);
+    updatedFrom = d.toISOString().slice(0, 10);
+  } else {
+    const { data: settings } = await supabase.from("kasa_settings").select("start_date").eq("id", 1).single();
+    updatedFrom = settings?.start_date ?? new Date().toISOString().slice(0, 10);
+  }
+
+  const { transactions, warnings: parseWarnings } = await fetchDataLakeTransactions(updatedFrom);
+  await runImport(transactions, parseWarnings, employee.id, "import_api");
+  revalidatePath("/admin/kasa");
+}
+
+// Wspólna ścieżka zapisu do bazy dla obu źródeł (Excel i Data Lake) — patrz
+// komentarz w lib/kasa-import.ts, oba produkują ten sam ParsedTransaction.
+async function runImport(transactions: ParsedTransaction[], parseWarnings: ImportWarning[], employeeId: string, action: "import_excel" | "import_api") {
   const warnings = [...parseWarnings];
 
   const supabase = createServerSupabaseClient();
@@ -55,7 +95,7 @@ export async function importKasaExcel(formData: FormData) {
       warnings.push({ row: idx + 2, message: `Nierozpoznana operacja: numer "${t.fullNumber}", Typ "${t.typeLabel}" — do przeglądu` });
     }
     return {
-      source: "excel" as const,
+      source: t.source,
       type_label: t.typeLabel,
       tx_class: txClass,
       value: t.value,
@@ -114,13 +154,13 @@ export async function importKasaExcel(formData: FormData) {
   };
 
   const { error: logError } = await supabase.from("kasa_audit_log").insert({
-    employee_id: employee.id,
-    action: "import_excel",
+    employee_id: employeeId,
+    action,
     note: JSON.stringify(summary),
   });
   if (logError) throw new Error(dbErrorMessage(logError));
 
-  revalidatePath("/admin/kasa");
+  return summary;
 }
 
 export async function setPaymentFormCategory(formData: FormData) {
