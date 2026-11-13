@@ -5,6 +5,7 @@ import type { SessionEmployee } from "@/lib/session";
 import { CASH_COUNT_SLOT_LABELS, CASH_COUNT_SLOT_ORDER, DOC_STATUS_ICONS, DOC_STATUS_LABELS, expectedCashBalance, type CashCountSlot } from "@/lib/kasa";
 import { getCashDay, getDayTransactions, computeDayTotals, getDayCounts, getDayDocLinks, getEmployeesOnShift, resolveOpeningBalance, type CashCount } from "./data";
 import { saveCashCount, closeCashDay } from "./actions";
+import { autoRefreshKasaFromDataLake } from "@/app/(app)/admin/kasa/actions";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-base outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -35,6 +36,12 @@ export async function CashDayScreen({
   historiaHref?: string;
   employee: SessionEmployee | null;
 }) {
+  // Zawsze świeże dane przed pokazaniem ekranu (pkt 1 spec: "przed każdym
+  // liczeniem") — bez osobnego przycisku, z throttlingiem w środku (patrz
+  // autoRefreshKasaFromDataLake), żeby częste przełączanie zakładek nie
+  // odpytywało Data Lake bez potrzeby.
+  await autoRefreshKasaFromDataLake();
+
   const day = await getCashDay(date);
   const [transactions, counts, docLinks, shiftEmployees] = await Promise.all([
     getDayTransactions(date),

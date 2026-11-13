@@ -34,42 +34,74 @@ export async function importKasaExcel(formData: FormData) {
   revalidatePath("/admin/kasa");
 }
 
-// Import z Data Lake API (krok 1 specyfikacji) — okno UpdatedFrom = ostatni
-// import_api − 1 dzień (pkt 1 spec: zmiany/anulacje nadpisują się przez
-// upsert po Id, więc 1-dniowy zakład jest bezpieczny), albo start_date z
-// kasa_settings jeśli to pierwszy import. Na razie wyzwalane ręcznie
-// przyciskiem „Odśwież” (jak w specyfikacji — ma być też cron co 10-15 min,
-// to osobny krok: Supabase Edge Function).
-export async function importKasaDataLake() {
-  const employee = await requireAdmin();
+// Pobranie z Data Lake od ostatniej synchronizacji (okno UpdatedFrom =
+// ostatnia synchronizacja − 1 dzień, pkt 1 spec: zmiany/anulacje nadpisują
+// się przez upsert po Id, więc 1-dniowy zakład jest bezpieczny; albo
+// start_date z kasa_settings, jeśli to pierwsza synchronizacja w ogóle).
+// Wspólne dla ręcznego przycisku "Odśwież" (admin, loguje do audytu) i
+// cichego auto-odświeżenia przy otwarciu ekranu Kasy (patrz
+// autoRefreshKasaFromDataLake niżej) — oba mają dokładnie ten sam problem
+// "ile wstecz pytać", więc jeden licznik czasu, kasa_settings.last_api_sync_at,
+// zamiast kasa_audit_log (który jest śladem RĘCZNYCH akcji, nie stanem
+// synchronizacji — employee_id tam jest NOT NULL, auto-odświeżenie nie ma
+// naturalnego "kto").
+async function fetchDataLakeSinceLastSync() {
   const supabase = createServerSupabaseClient();
-
-  const { data: lastImport } = await supabase
-    .from("kasa_audit_log")
-    .select("created_at")
-    .eq("action", "import_api")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: settings } = await supabase.from("kasa_settings").select("start_date, last_api_sync_at").eq("id", 1).single();
 
   let updatedFrom: string;
-  if (lastImport) {
-    const d = new Date(lastImport.created_at);
+  if (settings?.last_api_sync_at) {
+    const d = new Date(settings.last_api_sync_at);
     d.setDate(d.getDate() - 1);
     updatedFrom = d.toISOString().slice(0, 10);
   } else {
-    const { data: settings } = await supabase.from("kasa_settings").select("start_date").eq("id", 1).single();
     updatedFrom = settings?.start_date ?? new Date().toISOString().slice(0, 10);
   }
 
-  const { transactions, warnings: parseWarnings } = await fetchDataLakeTransactions(updatedFrom);
+  const result = await fetchDataLakeTransactions(updatedFrom);
+  const { error } = await supabase.from("kasa_settings").update({ last_api_sync_at: new Date().toISOString() }).eq("id", 1);
+  if (error) throw new Error(dbErrorMessage(error));
+  return result;
+}
+
+// Import z Data Lake API (krok 1 specyfikacji), wyzwalane ręcznie przyciskiem
+// „Odśwież” — loguje do kasa_audit_log (podsumowanie widoczne na ekranie).
+export async function importKasaDataLake() {
+  const employee = await requireAdmin();
+  const { transactions, warnings: parseWarnings } = await fetchDataLakeSinceLastSync();
   await runImport(transactions, parseWarnings, employee.id, "import_api");
   revalidatePath("/admin/kasa");
 }
 
+// Ciche auto-odświeżenie przy KAŻDYM otwarciu /kasa i /recepcja/kasa (patrz
+// CashDayScreen) — zgodnie ze specyfikacją ("przed każdym liczeniem"), żeby
+// recepcja/admin zawsze widzieli świeże dane bez klikania. Throttling 2 min
+// (last_api_sync_at), żeby częste przełączanie zakładek nie odpytywało Data
+// Lake bez potrzeby. Bez requireAdmin (obie strony i tak już widzą te dane)
+// i bez wpisu do kasa_audit_log (nie ma naturalnego "kto", i nie powinno
+// zaśmiecać śladu ręcznych akcji przy każdym wejściu na ekran) — podsumowanie
+// zobaczysz dopiero po ręcznym "Odśwież" w /admin/kasa. Błąd połknięty
+// celowo: zepsuta synchronizacja w tle nie może wywalić ekranu Kasy.
+export async function autoRefreshKasaFromDataLake(): Promise<void> {
+  try {
+    const supabase = createServerSupabaseClient();
+    const { data: settings } = await supabase.from("kasa_settings").select("last_api_sync_at").eq("id", 1).maybeSingle();
+    if (settings?.last_api_sync_at) {
+      const elapsedMs = Date.now() - new Date(settings.last_api_sync_at).getTime();
+      if (elapsedMs < 2 * 60 * 1000) return;
+    }
+    const { transactions, warnings } = await fetchDataLakeSinceLastSync();
+    await runImport(transactions, warnings, null, "import_api");
+  } catch {
+    // patrz komentarz wyżej — celowo ciche.
+  }
+}
+
 // Wspólna ścieżka zapisu do bazy dla obu źródeł (Excel i Data Lake) — patrz
 // komentarz w lib/kasa-import.ts, oba produkują ten sam ParsedTransaction.
-async function runImport(transactions: ParsedTransaction[], parseWarnings: ImportWarning[], employeeId: string, action: "import_excel" | "import_api") {
+// employeeId=null (auto-odświeżenie) pomija wpis do kasa_audit_log — patrz
+// autoRefreshKasaFromDataLake.
+async function runImport(transactions: ParsedTransaction[], parseWarnings: ImportWarning[], employeeId: string | null, action: "import_excel" | "import_api") {
   const warnings = [...parseWarnings];
 
   const supabase = createServerSupabaseClient();
@@ -153,12 +185,14 @@ async function runImport(transactions: ParsedTransaction[], parseWarnings: Impor
     classCounts,
   };
 
-  const { error: logError } = await supabase.from("kasa_audit_log").insert({
-    employee_id: employeeId,
-    action,
-    note: JSON.stringify(summary),
-  });
-  if (logError) throw new Error(dbErrorMessage(logError));
+  if (employeeId) {
+    const { error: logError } = await supabase.from("kasa_audit_log").insert({
+      employee_id: employeeId,
+      action,
+      note: JSON.stringify(summary),
+    });
+    if (logError) throw new Error(dbErrorMessage(logError));
+  }
 
   return summary;
 }
