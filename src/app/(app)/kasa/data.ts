@@ -28,51 +28,72 @@ export async function getCashDay(date: string): Promise<CashDay | null> {
   return data as CashDay | null;
 }
 
-// Saldo otwarcia dla dnia bez wiersza w cash_days jeszcze: (1) zamknięcie
-// poprzedniego dnia, jeśli jest zapisane (normalna ścieżka produkcyjna —
-// każdy dzień zamykany przed rozpoczęciem następnego); (2) dzień startu
-// systemu -> kasa_settings.opening_balance wprost; (3) dzień PRZED startem
-// (podgląd/weryfikacja okresu testowego, pkt 10 spec) -> cofamy się od
-// kasa_settings.opening_balance dzień po dniu, odejmując ruchy gotówkowe
-// każdego dnia pośredniego (odwrotność wzoru z expectedCashBalance). Bez
-// tego każdy dzień sprzed startu pokazywał saldo startu jako własne
-// otwarcie — np. 09.11 pokazywało saldo z 10.11 (1341,17) zamiast
-// prawdziwego 1217,17.
+// Saldo otwarcia dla dnia bez wiersza w cash_days jeszcze: punkt zaczepienia
+// łańcucha to NAJNOWSZE naprawdę zapisane zamknięcie przed `date` (albo,
+// jeśli żadnego nie ma, start systemu z kasa_settings) — NIEKONIECZNIE
+// dzień bezpośrednio poprzedni: recepcja mogła nie zamykać kilku dni pod
+// rząd (np. dane dociągnięte naraz z Data Lake, 10-13.11.2026). Od punktu
+// zaczepienia idziemy do `date` dzień po dniu, doliczając (date po punkcie
+// zaczepienia) albo odejmując (date przed, podgląd/weryfikacja okresu
+// testowego, pkt 10 spec) ruch gotówkowy każdego dnia pośredniego —
+// odwrotności/powtórzenia wzoru z expectedCashBalance. Zgłoszone
+// 13.11.2026: licząc tylko najbliższy ISTNIEJĄCY wiersz cash_days (a nie
+// pilnując, że to naprawdę dzień bezpośrednio poprzedni), 13.11 brało
+// zamknięcie z 10.11 (1341,17, jedyny zamknięty dzień) i całkowicie
+// pomijało 11-12.11 — zamiast prawdziwego 1458,67.
 export async function resolveOpeningBalance(date: string): Promise<number> {
   const supabase = createServerSupabaseClient();
-  const { data: prevDay } = await supabase.from("cash_days").select("id, date").lt("date", date).order("date", { ascending: false }).limit(1).maybeSingle();
-  if (prevDay) {
-    const { data: prevClose } = await supabase.from("cash_counts").select("counted").eq("cash_day_id", prevDay.id).eq("slot", "close").maybeSingle();
-    if (prevClose) return prevClose.counted;
-  }
+
+  const { data: prevCloseRow } = await supabase
+    .from("cash_days")
+    .select("date, cash_counts!inner(counted)")
+    .eq("cash_counts.slot", "close")
+    .lt("date", date)
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const prevClose = (prevCloseRow as unknown as { date: string; cash_counts: { counted: number }[] } | null) ?? null;
 
   const { data: settings } = await supabase.from("kasa_settings").select("opening_balance, start_date").eq("id", 1).single();
   const openingAtStart = settings?.opening_balance ?? 0;
-  if (!settings?.start_date || date >= settings.start_date) return openingAtStart;
 
-  // date < start_date, bez zapisanej historii liczeń — cofamy się dzień po
-  // dniu od start_date do date (wyłącznie), odejmując ruch gotówkowy
-  // każdego dnia pośredniego. JEDNO zapytanie za cały zakres (patrz
-  // getTransactionsInRange), nie N sekwencyjnych zapytań dzień po dniu —
-  // tamta wersja potrafiła być bardzo wolna na telefonie (każdy dzień
-  // wstecz = kolejny round-trip do bazy, a przy np. 10 dniach to 10-20
-  // zapytań jedno po drugim).
-  const rangeTransactions = await getTransactionsInRange(date, settings.start_date);
+  const anchorDate = prevClose?.date ?? settings?.start_date ?? date;
+  const anchorBalance = prevClose ? prevClose.cash_counts[0].counted : openingAtStart;
+  if (date === anchorDate || !settings?.start_date) return anchorBalance;
+
+  // JEDNO zapytanie za cały zakres (patrz getTransactionsInRange), nie N
+  // sekwencyjnych zapytań dzień po dniu — tamta wersja potrafiła być bardzo
+  // wolna na telefonie (każdy dzień = kolejny round-trip do bazy).
+  const forward = date > anchorDate;
+  const rangeTransactions = forward ? await getTransactionsInRange(anchorDate, date) : await getTransactionsInRange(date, anchorDate);
+  const byDate = groupByTransactionDate(rangeTransactions);
+
+  let balance = anchorBalance;
+  let cursor = anchorDate;
+  if (forward) {
+    while (cursor < date) {
+      const totals = computeDayTotals(byDate.get(cursor) ?? []);
+      balance = balance + totals.cashFiscal - totals.kw + totals.manualKp;
+      cursor = shiftDateKey(cursor, 1);
+    }
+  } else {
+    while (cursor > date) {
+      const prevDate = shiftDateKey(cursor, -1);
+      const totals = computeDayTotals(byDate.get(prevDate) ?? []);
+      balance = balance - totals.cashFiscal + totals.kw - totals.manualKp;
+      cursor = prevDate;
+    }
+  }
+  return Math.round(balance * 100) / 100;
+}
+
+function groupByTransactionDate(rows: (DayTransaction & { transactionDate: string })[]): Map<string, DayTransaction[]> {
   const byDate = new Map<string, DayTransaction[]>();
-  for (const t of rangeTransactions) {
+  for (const t of rows) {
     if (!byDate.has(t.transactionDate)) byDate.set(t.transactionDate, []);
     byDate.get(t.transactionDate)!.push(t);
   }
-
-  let balance = openingAtStart;
-  let cursor = settings.start_date;
-  while (cursor > date) {
-    const prevDate = shiftDateKey(cursor, -1);
-    const totals = computeDayTotals(byDate.get(prevDate) ?? []);
-    balance = balance - totals.cashFiscal + totals.kw - totals.manualKp;
-    cursor = prevDate;
-  }
-  return Math.round(balance * 100) / 100;
+  return byDate;
 }
 
 function shiftDateKey(date: string, days: number): string {
