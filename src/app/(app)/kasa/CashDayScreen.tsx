@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { SessionEmployee } from "@/lib/session";
-import { CASH_COUNT_SLOT_LABELS, CASH_COUNT_SLOT_ORDER, DOC_STATUS_ICONS, DOC_STATUS_LABELS, type CashCountSlot } from "@/lib/kasa";
+import { CASH_COUNT_SLOT_LABELS, CASH_COUNT_SLOT_ORDER, DOC_STATUS_ICONS, DOC_STATUS_LABELS, expectedCashBalance, type CashCountSlot } from "@/lib/kasa";
 import { getCashDay, getDayTransactions, computeDayTotals, getDayCounts, getDayDocLinks, getEmployeesOnShift, resolveOpeningBalance, type CashCount } from "./data";
 import { saveCashCount, closeCashDay } from "./actions";
 
@@ -48,7 +48,18 @@ export async function CashDayScreen({
   const closeCounted = countsBySlot.get("close");
   const isClosed = day?.status === "closed";
 
-  const stanKasy = closeCounted ? closeCounted.counted : openingBalance + totals.cashFiscal - totals.kw + totals.manualKp;
+  // Ile ma być TERAZ w kasetce, zanim ktokolwiek policzy — recepcja ma to
+  // widzieć PRZED wpisaniem swojej kwoty (nie dopiero po zapisaniu), żeby
+  // liczenie było sprawdzeniem, nie zgadywaniem. "open": samo saldo otwarcia
+  // (żadny ruch dnia jeszcze nie wchodzi, zgodnie z saveCashCount). "shift":
+  // saldo otwarcia + ruchy dnia do tej pory (bez kaucji — te rozdzielamy
+  // tylko przy "close", gdy znamy sumę z terminala). "close": NIE da się
+  // policzyć z góry, bo wzór potrzebuje terminal_total, który recepcja
+  // dopiero wpisuje w tym samym formularzu — zostaje ujawniane po zapisie.
+  const expectedShift = expectedCashBalance({ openingBalance, cashFiscal: totals.cashFiscal, depositsCash: 0, kp: totals.manualKp, kw: totals.kw });
+  const expectedBySlot: Record<CashCountSlot, number | null> = { open: openingBalance, shift: expectedShift, close: null };
+
+  const stanKasy = closeCounted ? closeCounted.counted : expectedShift;
 
   const prevDate = shiftDate(date, -1);
   const nextDate = shiftDate(date, 1);
@@ -105,6 +116,7 @@ export async function CashDayScreen({
             slot={slot}
             date={date}
             count={countsBySlot.get(slot)}
+            expected={expectedBySlot[slot]}
             isClosed={isClosed}
             employee={employee}
             shiftEmployees={shiftEmployees}
@@ -177,6 +189,7 @@ function CountCard({
   slot,
   date,
   count,
+  expected,
   isClosed,
   employee,
   shiftEmployees,
@@ -184,6 +197,7 @@ function CountCard({
   slot: CashCountSlot;
   date: string;
   count: CashCount | undefined;
+  expected: number | null;
   isClosed: boolean;
   employee: SessionEmployee | null;
   shiftEmployees: { id: string; name: string }[];
@@ -212,12 +226,18 @@ function CountCard({
   return (
     <Card>
       <p className={`${LABEL} mb-2`}>{CASH_COUNT_SLOT_LABELS[slot]}</p>
+      {expected !== null && (
+        <div className="mb-2.5 rounded-xl bg-blue-50 px-3.5 py-2.5 text-center">
+          <p className="text-xs font-semibold text-brand-blue">Powinno być teraz w kasetce</p>
+          <p className="text-xl font-black text-brand-navy">{money(expected)}</p>
+        </div>
+      )}
       <form action={saveCashCount} className="flex flex-col gap-2.5">
         <input type="hidden" name="date" value={date} />
         <input type="hidden" name="slot" value={slot} />
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-zinc-700">Gotówka w szufladzie</label>
-          <p className="text-xs text-zinc-400">Policz fizycznie banknoty i monety w kasie.</p>
+          <p className="text-xs text-zinc-400">Policz fizycznie banknoty i monety w kasie, i wpisz ile faktycznie naliczyłaś/eś.</p>
           <input type="number" step="0.01" name="counted" required inputMode="decimal" className={INPUT} />
         </div>
         {slot === "close" && (
