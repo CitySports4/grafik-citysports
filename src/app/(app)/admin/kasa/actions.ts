@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
@@ -73,28 +74,44 @@ export async function importKasaDataLake() {
   revalidatePath("/admin/kasa");
 }
 
+// Throttling samo w sobie jest szybkie (jedno zapytanie) — rozbite na
+// osobną funkcję, żeby CashDayScreen mógł sprawdzić PRZED renderem, czy
+// synchronizacja w ogóle się odbędzie, bez czekania na nią (patrz niżej).
+async function shouldSyncKasaFromDataLake(): Promise<boolean> {
+  const supabase = createServerSupabaseClient();
+  const { data: settings } = await supabase.from("kasa_settings").select("last_api_sync_at").eq("id", 1).maybeSingle();
+  if (!settings?.last_api_sync_at) return true;
+  return Date.now() - new Date(settings.last_api_sync_at).getTime() >= 2 * 60 * 1000;
+}
+
 // Ciche auto-odświeżenie przy KAŻDYM otwarciu /kasa i /recepcja/kasa (patrz
 // CashDayScreen) — zgodnie ze specyfikacją ("przed każdym liczeniem"), żeby
-// recepcja/admin zawsze widzieli świeże dane bez klikania. Throttling 2 min
+// recepcja/admin zawsze widzieli świeże dane. Throttling 2 min
 // (last_api_sync_at), żeby częste przełączanie zakładek nie odpytywało Data
-// Lake bez potrzeby. Bez requireAdmin (obie strony i tak już widzą te dane)
-// i bez wpisu do kasa_audit_log (nie ma naturalnego "kto", i nie powinno
-// zaśmiecać śladu ręcznych akcji przy każdym wejściu na ekran) — podsumowanie
-// zobaczysz dopiero po ręcznym "Odśwież" w /admin/kasa. Błąd połknięty
-// celowo: zepsuta synchronizacja w tle nie może wywalić ekranu Kasy.
-export async function autoRefreshKasaFromDataLake(): Promise<void> {
-  try {
-    const supabase = createServerSupabaseClient();
-    const { data: settings } = await supabase.from("kasa_settings").select("last_api_sync_at").eq("id", 1).maybeSingle();
-    if (settings?.last_api_sync_at) {
-      const elapsedMs = Date.now() - new Date(settings.last_api_sync_at).getTime();
-      if (elapsedMs < 2 * 60 * 1000) return;
+// Lake bez potrzeby. Sam fetch + upsert (wolna część: zapytanie HTTP + kilka
+// round-tripów do bazy) leci w after(), PO wysłaniu odpowiedzi — nie blokuje
+// przejścia między dniami. Zwraca, czy synchronizacja faktycznie wystartowała
+// (throttling jeszcze nie minął = false), żeby ekran wiedział, czy warto się
+// za chwilę samo odświeżyć (patrz RefreshOnMount) — bez tego recepcja widzi
+// dane z przed chwili i dowiaduje się o świeższych tylko przy następnym
+// przejściu na inny dzień, co zgłoszone 14.11.2026 jako "nie mam aktualnych
+// danych". Bez requireAdmin (obie strony i tak już widzą te dane) i bez
+// wpisu do kasa_audit_log (nie ma naturalnego "kto", i nie powinno zaśmiecać
+// śladu ręcznych akcji przy każdym wejściu na ekran) — podsumowanie zobaczysz
+// dopiero po ręcznym "Odśwież" w /admin/kasa. Błąd w tle połknięty celowo:
+// zepsuta synchronizacja nie może wywalić ekranu Kasy.
+export async function autoRefreshKasaFromDataLake(): Promise<boolean> {
+  const willSync = await shouldSyncKasaFromDataLake();
+  if (!willSync) return false;
+  after(async () => {
+    try {
+      const { transactions, warnings } = await fetchDataLakeSinceLastSync();
+      await runImport(transactions, warnings, null, "import_api");
+    } catch {
+      // patrz komentarz wyżej — celowo ciche.
     }
-    const { transactions, warnings } = await fetchDataLakeSinceLastSync();
-    await runImport(transactions, warnings, null, "import_api");
-  } catch {
-    // patrz komentarz wyżej — celowo ciche.
-  }
+  });
+  return true;
 }
 
 // Wspólna ścieżka zapisu do bazy dla obu źródeł (Excel i Data Lake) — patrz
