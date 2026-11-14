@@ -84,6 +84,19 @@ async function shouldSyncKasaFromDataLake(): Promise<boolean> {
   return Date.now() - new Date(settings.last_api_sync_at).getTime() >= 2 * 60 * 1000;
 }
 
+// Rdzeń synchronizacji z Data Lake, bez throttlingu i bez chowania błędów —
+// wspólny dla autoRefreshKasaFromDataLake (chowa błąd, patrz niżej) i crona
+// /api/cron/kasa-sync (patrz vercel.json), który celowo NIE chowa błędu: to
+// jedyna droga, którą zepsuta synchronizacja (np. brakujące DATALAKE_* w
+// środowisku produkcyjnym — tak było naprawdę, odkryte 14.11.2026, zob.
+// komentarz w autoRefreshKasaFromDataLake) staje się widoczna — jako
+// niepowodzenie zadania w logach Vercel — zamiast cicho stać w miejscu
+// tygodniami bez żadnego sygnału.
+export async function syncKasaFromDataLake(): Promise<ImportSummary> {
+  const { transactions, warnings } = await fetchDataLakeSinceLastSync();
+  return runImport(transactions, warnings, null, "import_api");
+}
+
 // Ciche auto-odświeżenie przy KAŻDYM otwarciu /kasa i /recepcja/kasa (patrz
 // CashDayScreen) — zgodnie ze specyfikacją ("przed każdym liczeniem"), żeby
 // recepcja/admin zawsze widzieli świeże dane. Throttling 2 min
@@ -99,14 +112,21 @@ async function shouldSyncKasaFromDataLake(): Promise<boolean> {
 // wpisu do kasa_audit_log (nie ma naturalnego "kto", i nie powinno zaśmiecać
 // śladu ręcznych akcji przy każdym wejściu na ekran) — podsumowanie zobaczysz
 // dopiero po ręcznym "Odśwież" w /admin/kasa. Błąd w tle połknięty celowo:
-// zepsuta synchronizacja nie może wywalić ekranu Kasy.
+// zepsuta synchronizacja nie może wywalić ekranu Kasy — ALE to właśnie ta
+// cisza sprawiła, że brak DATALAKE_* w środowisku produkcyjnym (Vercel) stał
+// w miejscu niezauważony od uruchomienia funkcji aż do 14.11.2026 (last_api_
+// sync_at było NULL cały czas — zero udanych synchronizacji na produkcji).
+// Dlatego oprócz tej cichej wersji istnieje też /api/cron/kasa-sync (patrz
+// vercel.json), który odpala ten sam rdzeń (syncKasaFromDataLake) co 15 min
+// NIEZALEŻNIE od otwartych zakładek i NIE chowa błędu — niepowodzenie zadania
+// crona jest widoczne w logach Vercel, więc kolejna taka awaria nie przejdzie
+// bez śladu przez tygodnie.
 export async function autoRefreshKasaFromDataLake(): Promise<boolean> {
   const willSync = await shouldSyncKasaFromDataLake();
   if (!willSync) return false;
   after(async () => {
     try {
-      const { transactions, warnings } = await fetchDataLakeSinceLastSync();
-      await runImport(transactions, warnings, null, "import_api");
+      await syncKasaFromDataLake();
     } catch {
       // patrz komentarz wyżej — celowo ciche.
     }

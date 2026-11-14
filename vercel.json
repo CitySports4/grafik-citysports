@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/data-retention", "schedule": "0 4 * * 0" }
+    { "path": "/api/cron/data-retention", "schedule": "0 4 * * 0" },
+    { "path": "/api/cron/kasa-sync", "schedule": "*/15 * * * *" }
   ]
 }
