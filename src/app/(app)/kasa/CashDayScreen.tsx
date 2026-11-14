@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { after } from "next/server";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { SessionEmployee } from "@/lib/session";
@@ -7,6 +6,7 @@ import { CASH_COUNT_SLOT_LABELS, CASH_COUNT_SLOT_ORDER, DOC_STATUS_ICONS, DOC_ST
 import { getCashDay, getDayTransactions, computeDayTotals, getDayCounts, getDayDocLinks, getEmployeesOnShift, resolveOpeningBalance, type CashCount } from "./data";
 import { saveCashCount, closeCashDay } from "./actions";
 import { autoRefreshKasaFromDataLake } from "@/app/(app)/admin/kasa/actions";
+import { RefreshOnMount } from "./RefreshOnMount";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-base outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -38,14 +38,15 @@ export async function CashDayScreen({
   employee: SessionEmployee | null;
 }) {
   // Zawsze świeże dane (pkt 1 spec: "przed każdym liczeniem"), ale NIE
-  // czekamy na synchronizację przed renderem — pełne pobranie z Data Lake
-  // (zapytanie HTTP + kilka round-tripów do bazy) potrafi trwać sekundy,
-  // a to właśnie blokowało przełączanie między dniami. `after()` odkłada
-  // wywołanie na moment PO wysłaniu odpowiedzi: ten ekran może pokazać dane
-  // o chwilę starsze niż najnowsze, ale synchronizacja i tak leci w tle
-  // (throttling 2 min w środku, patrz autoRefreshKasaFromDataLake) i
-  // następne otwarcie zakładki widzi już świeże dane.
-  after(() => autoRefreshKasaFromDataLake());
+  // czekamy na CAŁĄ synchronizację przed renderem — tylko na throttling
+  // (jedno szybkie zapytanie), żeby wiedzieć, czy się odbędzie. Faktyczny
+  // fetch z Data Lake + upsert (wolna część, potrafi trwać sekundy) leci w
+  // after() w środku autoRefreshKasaFromDataLake, już po wysłaniu
+  // odpowiedzi — to właśnie blokowało przełączanie między dniami. Gdy
+  // synchronizacja faktycznie wystartowała, RefreshOnMount dogania ją chwilę
+  // później samym odświeżeniem ekranu (bez klikania), żeby recepcja nie
+  // została z danymi z przed chwili do następnego przejścia na inny dzień.
+  const willSync = await autoRefreshKasaFromDataLake();
 
   const day = await getCashDay(date);
   const [transactions, counts, docLinks, shiftEmployees] = await Promise.all([
@@ -62,14 +63,15 @@ export async function CashDayScreen({
 
   // Ile ma być TERAZ w kasetce, zanim ktokolwiek policzy — recepcja ma to
   // widzieć PRZED wpisaniem swojej kwoty (nie dopiero po zapisaniu), żeby
-  // liczenie było sprawdzeniem, nie zgadywaniem. "open": samo saldo otwarcia
-  // (żadny ruch dnia jeszcze nie wchodzi, zgodnie z saveCashCount). "shift":
-  // saldo otwarcia + ruchy dnia do tej pory (bez kaucji — te rozdzielamy
-  // tylko przy "close", gdy znamy sumę z terminala). "close": NIE da się
-  // policzyć z góry, bo wzór potrzebuje terminal_total, który recepcja
-  // dopiero wpisuje w tym samym formularzu — zostaje ujawniane po zapisie.
+  // liczenie było sprawdzeniem, nie zgadywaniem, w KAŻDYM z trzech liczeń.
+  // "open": samo saldo otwarcia (żadny ruch dnia jeszcze nie wchodzi,
+  // zgodnie z saveCashCount). "shift"/"close": saldo otwarcia + ruchy dnia
+  // do tej pory, bez podziału kaucji na gotówkę/kartę — ten podział wymaga
+  // terminal_total, który recepcja wpisuje dopiero w formularzu "close", więc
+  // tu to tylko orientacyjny szacunek (patrz ostrzeżenie w CountCard); dokładna
+  // wartość z uwzględnieniem kaucji liczy się i zapisuje po zapisaniu "close".
   const expectedShift = expectedCashBalance({ openingBalance, cashFiscal: totals.cashFiscal, depositsCash: 0, kp: totals.manualKp, kw: totals.kw });
-  const expectedBySlot: Record<CashCountSlot, number | null> = { open: openingBalance, shift: expectedShift, close: null };
+  const expectedBySlot: Record<CashCountSlot, number | null> = { open: openingBalance, shift: expectedShift, close: expectedShift };
 
   const stanKasy = closeCounted ? closeCounted.counted : expectedShift;
 
@@ -81,6 +83,7 @@ export async function CashDayScreen({
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-5 pb-8">
+      {willSync && <RefreshOnMount />}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Link href={dayLink(basePath, prevDate)} className="rounded-lg px-2 py-1 text-sm font-semibold text-zinc-500 hover:bg-zinc-100">
@@ -242,6 +245,9 @@ function CountCard({
         <div className="mb-2.5 rounded-xl bg-blue-50 px-3.5 py-2.5 text-center">
           <p className="text-xs font-semibold text-brand-blue">Powinno być teraz w kasetce</p>
           <p className="text-xl font-black text-brand-navy">{money(expected)}</p>
+          {slot === "close" && (
+            <p className="mt-1 text-[11px] text-brand-blue/70">Orientacyjnie — dokładną kwotę z kaucjami zobaczysz po wpisaniu sumy z terminala niżej.</p>
+          )}
         </div>
       )}
       <form action={saveCashCount} className="flex flex-col gap-2.5">
