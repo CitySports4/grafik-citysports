@@ -117,10 +117,12 @@ export async function syncKasaFromDataLake(): Promise<ImportSummary> {
 // w miejscu niezauważony od uruchomienia funkcji aż do 14.11.2026 (last_api_
 // sync_at było NULL cały czas — zero udanych synchronizacji na produkcji).
 // Dlatego oprócz tej cichej wersji istnieje też /api/cron/kasa-sync (patrz
-// vercel.json), który odpala ten sam rdzeń (syncKasaFromDataLake) co 15 min
-// NIEZALEŻNIE od otwartych zakładek i NIE chowa błędu — niepowodzenie zadania
-// crona jest widoczne w logach Vercel, więc kolejna taka awaria nie przejdzie
-// bez śladu przez tygodnie.
+// vercel.json), który odpala ten sam rdzeń (syncKasaFromDataLake) RAZ DZIENNIE
+// (plan Hobby na Vercelu pozwala cronom co najwyżej raz dziennie — częstszy
+// harmonogram psuje cały deployment, tak jak się stało 14.11.2026) NIEZALEŻNIE
+// od otwartych zakładek i NIE chowa błędu — niepowodzenie zadania crona jest
+// widoczne w logach Vercel, więc kolejna taka awaria nie przejdzie bez śladu
+// przez tygodnie.
 export async function autoRefreshKasaFromDataLake(): Promise<boolean> {
   const willSync = await shouldSyncKasaFromDataLake();
   if (!willSync) return false;
