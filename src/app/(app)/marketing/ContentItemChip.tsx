@@ -13,13 +13,16 @@ import {
   CONTENT_FORMAT_LABELS,
   CONTENT_FORMAT_ICONS,
   isApprovalPending,
+  approvalBadge,
   type ContentPlatform,
   type ContentStatus,
   type ContentPurpose,
   type ContentFormat,
+  type ApprovalBadge,
 } from "@/lib/marketing";
 import { updateContent, deleteContent, reviewContent } from "./actions";
 import { useMarketingProjects } from "./useMarketingProjects";
+import { CopyField } from "./CopyField";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
@@ -35,9 +38,18 @@ type ContentItem = {
   needs_review: boolean;
   approved: boolean;
   review_note: string;
+  reviewed_at: string | null;
   notes: string;
   assignee_employee_id: string | null;
   project: string;
+  hook: string;
+  content_fb: string;
+  content_ig: string;
+  screen_captions: string;
+  what_to_record: string;
+  hashtags: string;
+  to_confirm: string;
+  link_utm: string;
 };
 type Assignee = { id: string; name: string; color_hex: string };
 
@@ -46,6 +58,22 @@ const STATUS_PILL: Record<ContentStatus, string> = {
   w_przygotowaniu: "bg-amber-100 text-amber-700",
   gotowe: "bg-sky-100 text-sky-700",
   opublikowane: "bg-emerald-100 text-emerald-700",
+};
+
+// Cztery stany akceptacji (propozycja Marketing -> Grafik, 18.11.2026, krok
+// 3) — patrz approvalBadge w lib/marketing.ts, to czysto wizualna warstwa
+// nad tą samą regułą publikacji co dotąd.
+const BADGE_STYLE: Record<ApprovalBadge, string> = {
+  approved: "border-emerald-200 bg-emerald-50",
+  needs_changes: "border-red-200 bg-red-50",
+  auto_approved: "border-sky-200 bg-sky-50",
+  pending: "border-amber-200 bg-amber-50",
+};
+const BADGE_TEXT: Record<ApprovalBadge, (scheduledDate: string) => string> = {
+  approved: () => "✅ Zatwierdzono — admin",
+  needs_changes: () => "✏️ Wymaga poprawki — zobacz uwagę niżej. Wpis wrócił do „W przygotowaniu”.",
+  auto_approved: () => "🕒 Zatwierdzono automatycznie — minął termin publikacji bez reakcji.",
+  pending: (scheduledDate) => `⏳ Czeka na akceptację — automatycznie dopuszczona ${scheduledDate}, jeśli nikt wcześniej nie zareaguje.`,
 };
 
 // Chip w siatce kalendarza otwiera pełną edycję jako PŁYWAJĄCE OKNO (Modal),
@@ -76,6 +104,7 @@ export function ContentItemChip({
   const assignee = item.assignee_employee_id ? assignees.find((a) => a.id === item.assignee_employee_id) : null;
   const published = item.status === "opublikowane";
   const pendingApproval = isApprovalPending(item, today);
+  const badge = approvalBadge(item, today);
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -107,6 +136,10 @@ export function ContentItemChip({
   }
 
   async function handleReview(approved: boolean) {
+    if (!approved && !reviewNoteDraft.trim()) {
+      setError("Napisz, co poprawić.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -171,15 +204,13 @@ export function ContentItemChip({
             )}
             {hasLinkedTask && <p className="text-xs text-zinc-500">📋 Ma powiązane zadanie w zakładce Zadania.</p>}
 
-            {/* Akceptacja — tylko dla treści oznaczonych needs_review. Nie
-                blokuje bezterminowo: patrz isApprovalPending, blokada sama
-                znika w dniu publikacji, więc komunikat mówi o tym wprost
-                zamiast tylko "czeka". */}
+            {/* Akceptacja — tylko dla treści oznaczonych needs_review. Cztery
+                stany (propozycja Marketing -> Grafik, 18.11.2026, krok 3) —
+                nie blokuje bezterminowo: patrz isApprovalPending, blokada
+                sama znika w dniu publikacji niezależnie od stanu poniżej. */}
             {item.needs_review && (
-              <div className={`rounded-xl border p-2.5 text-xs ${item.approved ? "border-emerald-200 bg-emerald-50" : pendingApproval ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-zinc-50"}`}>
-                <p className="font-semibold text-zinc-800">
-                  {item.approved ? "✅ Zaakceptowane przez admina" : pendingApproval ? `⏳ Czeka na akceptację — automatycznie dopuszczona ${item.scheduled_date}, jeśli nikt wcześniej nie zareaguje.` : "Nie zaakceptowane, ale termin publikacji już minął/jest dziś — można publikować."}
-                </p>
+              <div className={`rounded-xl border p-2.5 text-xs ${BADGE_STYLE[badge]}`}>
+                <p className="font-semibold text-zinc-800">{BADGE_TEXT[badge](item.scheduled_date)}</p>
                 {item.review_note && <p className="mt-1 whitespace-pre-wrap text-zinc-600">💬 {item.review_note}</p>}
                 {isAdmin && (
                   <div className="mt-2 flex flex-col gap-1.5">
@@ -293,6 +324,20 @@ export function ContentItemChip({
                 <label className="text-sm font-semibold text-zinc-900">Notatki</label>
                 <textarea name="notes" defaultValue={item.notes} rows={3} className={INPUT} />
               </div>
+
+              {/* Gotowe pola treści z przyciskiem "Kopiuj" (propozycja
+                  Marketing -> Grafik, 18.11.2026, krok 2) — każde wklejane
+                  wprost przy publikacji, zamiast przepisywać z notatek. */}
+              <p className="mt-1 text-xs font-bold uppercase tracking-wide text-zinc-500">Treść</p>
+              <CopyField name="hook" label="Haczyk" defaultValue={item.hook} />
+              <CopyField name="content_fb" label="Treść FB" defaultValue={item.content_fb} rows={4} />
+              <CopyField name="content_ig" label="Treść IG" defaultValue={item.content_ig} rows={4} />
+              <CopyField name="screen_captions" label="Napisy na ekran" defaultValue={item.screen_captions} rows={3} />
+              <CopyField name="what_to_record" label="Co nagrać" defaultValue={item.what_to_record} />
+              <CopyField name="hashtags" label="Hashtagi" defaultValue={item.hashtags} rows={1} />
+              <CopyField name="to_confirm" label="Do potwierdzenia" defaultValue={item.to_confirm} rows={2} />
+              <CopyField name="link_utm" label="Link (z UTM)" defaultValue={item.link_utm} rows={1} />
+
               <div className="flex items-center gap-2">
                 <button type="submit" disabled={busy} className={BTN_PRIMARY}>
                   {busy ? "Zapisywanie…" : "Zapisz"}

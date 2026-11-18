@@ -5,7 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, canAccessMarketing, isContentCreator } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { toDateKey } from "@/lib/schedule-month";
-import { PLATFORM_LABELS, isApprovalPending, type ContentPlatform } from "@/lib/marketing";
+import { isApprovalPending } from "@/lib/marketing";
 import { extractMarketingImport } from "@/lib/marketing-import";
 
 // Bramka wspólna dla wszystkich akcji tego modułu — rola marketing albo
@@ -194,6 +194,21 @@ export async function setTaskArchived(formData: FormData) {
 
 // ---------- Kalendarz treści ----------
 
+// Gotowe pola treści z przyciskiem "Kopiuj" w UI (propozycja Marketing ->
+// Grafik, 18.11.2026, krok 2) — zawsze opcjonalne, jak notes.
+function readContentFields(formData: FormData) {
+  return {
+    hook: String(formData.get("hook") ?? "").trim(),
+    content_fb: String(formData.get("content_fb") ?? "").trim(),
+    content_ig: String(formData.get("content_ig") ?? "").trim(),
+    screen_captions: String(formData.get("screen_captions") ?? "").trim(),
+    what_to_record: String(formData.get("what_to_record") ?? "").trim(),
+    hashtags: String(formData.get("hashtags") ?? "").trim(),
+    to_confirm: String(formData.get("to_confirm") ?? "").trim(),
+    link_utm: String(formData.get("link_utm") ?? "").trim(),
+  };
+}
+
 // Szybkie odznaczenie statusu jednym kliknięciem (patrz checkbox-przycisk w
 // ContentCalendarSection) — bez otwierania pełnego formularza edycji.
 export async function setContentStatus(formData: FormData) {
@@ -229,33 +244,6 @@ async function assertCanPublish(supabase: ReturnType<typeof createServerSupabase
   }
 }
 
-// Treść z przypisaną osobą dostaje automatycznie powiązane zadanie (patrz
-// migracja 0054) — bez przypisanej osoby nie ma kogo by miał dotyczyć, więc
-// nic się nie tworzy. Zadanie żyje potem niezależnie: nie odznacza się samo,
-// gdy treść dostanie status "Opublikowane", i odwrotnie — to świadomie dwie
-// osobne rzeczy do odhaczenia.
-async function createLinkedTaskIfNeeded(
-  supabase: ReturnType<typeof createServerSupabaseClient>,
-  contentId: string,
-  title: string,
-  platform: string,
-  scheduled_date: string,
-  assignee_employee_id: string,
-  created_by_employee_id: string,
-  project: string
-) {
-  const { error } = await supabase.from("marketing_task").insert({
-    title,
-    description: `Z kalendarza treści — ${PLATFORM_LABELS[platform as ContentPlatform] ?? platform}, publikacja ${scheduled_date}.`,
-    due_date: scheduled_date,
-    assignee_employee_id,
-    content_id: contentId,
-    created_by_employee_id,
-    project,
-  });
-  if (error) throw new Error(dbErrorMessage(error));
-}
-
 export async function createContent(formData: FormData) {
   const employee = await requireMarketingAccess();
   const title = String(formData.get("title") ?? "").trim();
@@ -271,28 +259,21 @@ export async function createContent(formData: FormData) {
   if (!title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
 
   const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
-    .from("marketing_content")
-    .insert({
-      title,
-      platform,
-      scheduled_date,
-      status,
-      purpose,
-      format,
-      needs_review,
-      notes,
-      assignee_employee_id,
-      project,
-      created_by_employee_id: employee.id,
-    })
-    .select("id")
-    .single();
-  if (error || !data) throw new Error(dbErrorMessage(error));
-
-  if (assignee_employee_id) {
-    await createLinkedTaskIfNeeded(supabase, data.id, title, platform, scheduled_date, assignee_employee_id, employee.id, project);
-  }
+  const { error } = await supabase.from("marketing_content").insert({
+    title,
+    platform,
+    scheduled_date,
+    status,
+    purpose,
+    format,
+    needs_review,
+    notes,
+    assignee_employee_id,
+    project,
+    created_by_employee_id: employee.id,
+    ...readContentFields(formData),
+  });
+  if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
 }
 
@@ -317,32 +298,22 @@ export async function updateContent(formData: FormData) {
   }
   const { error } = await supabase
     .from("marketing_content")
-    .update({ title, platform, scheduled_date, status, purpose, format, needs_review, notes, assignee_employee_id, project, updated_at: new Date().toISOString() })
+    .update({
+      title,
+      platform,
+      scheduled_date,
+      status,
+      purpose,
+      format,
+      needs_review,
+      notes,
+      assignee_employee_id,
+      project,
+      updated_at: new Date().toISOString(),
+      ...readContentFields(formData),
+    })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
-
-  // Osoba przypisana dopiero teraz (przy tworzeniu nie było komu dać
-  // zadania) — dociąga je, ale tylko jeśli jeszcze nie istnieje (patrz
-  // content_id), żeby edycja w kółko nie mnożyła duplikatów. Jeśli zadanie
-  // już istnieje, zamiast tworzyć drugie — synchronizujemy jego tytuł/termin
-  // z treścią, żeby np. zmiana tytułu treści (jak scalenie [FB]/[IG] w jedno
-  // "[FB/IG]") nie zostawiała zadania z nieaktualną, rozjechaną nazwą.
-  if (assignee_employee_id) {
-    const { data: existingTask } = await supabase.from("marketing_task").select("id").eq("content_id", id).maybeSingle();
-    if (!existingTask) {
-      await createLinkedTaskIfNeeded(supabase, id, title, platform, scheduled_date, assignee_employee_id, employee.id, project);
-    } else {
-      await supabase
-        .from("marketing_task")
-        .update({
-          title,
-          description: `Z kalendarza treści — ${PLATFORM_LABELS[platform as ContentPlatform] ?? platform}, publikacja ${scheduled_date}.`,
-          due_date: scheduled_date,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existingTask.id);
-    }
-  }
   revalidateMarketing();
 }
 
@@ -366,6 +337,10 @@ export async function reviewContent(formData: FormData) {
   const approved = formData.get("approved") === "true";
   const review_note = String(formData.get("review_note") ?? "").trim();
   if (!id) throw new Error("Brak danych.");
+  // Odrzucenie bez uwagi niczego by nie mówiło autorowi, co poprawić —
+  // "Zostaw uwagę" (propozycja Marketing -> Grafik, 18.11.2026, krok 3) ma
+  // sens tylko z treścią uwagi, inaczej to po prostu "jeszcze nie patrzyłem".
+  if (!approved && !review_note) throw new Error("Przy uwadze do poprawki napisz, co poprawić.");
 
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
@@ -379,7 +354,38 @@ export async function reviewContent(formData: FormData) {
     })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
+
+  // Uwaga do poprawki cofa wpis z "Gotowe" do "W przygotowaniu" — żeby lista
+  // "gotowych do publikacji" naprawdę znaczyła gotowe, nie "gotowe, ale z
+  // uwagą czekającą na poprawkę". Nie rusza "Opublikowane" (nikt nie
+  // zostawia uwagi na czymś, co już wyszło) ani "Pomysł" (nie ma z czego
+  // cofać).
+  if (!approved) {
+    await supabase.from("marketing_content").update({ status: "w_przygotowaniu" }).eq("id", id).eq("status", "gotowe");
+  }
   revalidateMarketing();
+}
+
+// Licznik dla Krzysztofa (propozycja Marketing -> Grafik, 18.11.2026, krok
+// 3) — ile treści naprawdę czeka na JEGO pierwsze spojrzenie: needs_review,
+// jeszcze nie zaakceptowane ani nie odrzucone (reviewed_at puste) i termin
+// jeszcze nie minął (po terminie i tak przechodzi automatycznie, patrz
+// isApprovalPending — to już nie jest "czeka na niego"). Treści z uwagą do
+// poprawki (needs_changes) świadomie pominięte: piłka jest wtedy po stronie
+// autora, nie Krzysztofa, dopóki ktoś nie poprawi i nie zmieni statusu.
+export async function getPendingApprovalCount(): Promise<{ count: number; nearestDate: string | null }> {
+  const supabase = createServerSupabaseClient();
+  const today = toDateKey(new Date());
+  const { data } = await supabase
+    .from("marketing_content")
+    .select("scheduled_date")
+    .eq("needs_review", true)
+    .eq("approved", false)
+    .is("reviewed_at", null)
+    .gt("scheduled_date", today)
+    .order("scheduled_date", { ascending: true });
+  const rows = data ?? [];
+  return { count: rows.length, nearestDate: rows[0]?.scheduled_date ?? null };
 }
 
 // ---------- Strategie i plany ----------
@@ -501,29 +507,22 @@ export async function importMarketingFile(formData: FormData): Promise<ImportRes
       continue;
     }
     const assignee_employee_id = resolveAssignee(c.assignee_name);
-    const { data, error } = await supabase
-      .from("marketing_content")
-      .insert({
-        title: c.title.trim(),
-        platform: c.platform ?? "inne",
-        purpose: c.purpose ?? "relacja",
-        format: c.format ?? "post",
-        scheduled_date: c.scheduled_date,
-        status: c.status ?? "pomysl",
-        notes: c.notes?.trim() ?? "",
-        assignee_employee_id,
-        created_by_employee_id: employee.id,
-      })
-      .select("id")
-      .single();
-    if (error || !data) {
+    const { error } = await supabase.from("marketing_content").insert({
+      title: c.title.trim(),
+      platform: c.platform ?? "inne",
+      purpose: c.purpose ?? "relacja",
+      format: c.format ?? "post",
+      scheduled_date: c.scheduled_date,
+      status: c.status ?? "pomysl",
+      notes: c.notes?.trim() ?? "",
+      assignee_employee_id,
+      created_by_employee_id: employee.id,
+    });
+    if (error) {
       contentSkipped++;
       continue;
     }
     contentCount++;
-    if (assignee_employee_id) {
-      await createLinkedTaskIfNeeded(supabase, data.id, c.title.trim(), c.platform ?? "inne", c.scheduled_date, assignee_employee_id, employee.id, "");
-    }
   }
 
   let plansCount = 0;

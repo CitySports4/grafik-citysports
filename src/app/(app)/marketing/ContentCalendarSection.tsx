@@ -35,9 +35,18 @@ type ContentItem = {
   needs_review: boolean;
   approved: boolean;
   review_note: string;
+  reviewed_at: string | null;
   notes: string;
   assignee_employee_id: string | null;
   project: string;
+  hook: string;
+  content_fb: string;
+  content_ig: string;
+  screen_captions: string;
+  what_to_record: string;
+  hashtags: string;
+  to_confirm: string;
+  link_utm: string;
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
@@ -94,7 +103,9 @@ export async function ContentCalendarSection({
   const [{ data: contentRaw }, { data: assigneesRaw }, { data: linkedTasksRaw }, { data: lastPublishedRaw }, { data: projectsRaw }] = await Promise.all([
     supabase
       .from("marketing_content")
-      .select("id, title, platform, scheduled_date, status, purpose, format, needs_review, approved, review_note, notes, assignee_employee_id, project")
+      .select(
+        "id, title, platform, scheduled_date, status, purpose, format, needs_review, approved, review_note, reviewed_at, notes, assignee_employee_id, project, hook, content_fb, content_ig, screen_captions, what_to_record, hashtags, to_confirm, link_utm"
+      )
       .gte("scheduled_date", dateKeys[0])
       .lte("scheduled_date", dateKeys[dateKeys.length - 1])
       .order("scheduled_date"),
