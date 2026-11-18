@@ -7,10 +7,12 @@ import { ImportFromFile } from "./ImportFromFile";
 import { ThisWeekWidget } from "./ThisWeekWidget";
 import { PendingApprovalBadge } from "./PendingApprovalBadge";
 import { CreatorView } from "./CreatorView";
+import { ProjectsSection } from "./wydarzenia/ProjectsSection";
 
 const TABS = [
   { key: "zadania", label: "Zadania" },
   { key: "kalendarz", label: "Kalendarz treści" },
+  { key: "wydarzenia", label: "Wydarzenia i kampanie" },
   { key: "plany", label: "Strategie i plany" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
@@ -53,14 +55,9 @@ export default async function MarketingPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-bold text-zinc-900">📣 Marketing</h1>
-          <p className="text-sm text-zinc-500">Zadania, kalendarz treści oraz strategie i plany zespołu marketingu.</p>
-        </div>
-        <Link href="/marketing/projekty" className="text-sm font-semibold text-zinc-500 hover:text-brand-orange">
-          ⚙️ Projekty
-        </Link>
+      <div>
+        <h1 className="text-lg font-bold text-zinc-900">📣 Marketing</h1>
+        <p className="text-sm text-zinc-500">Zadania, kalendarz treści, wydarzenia i kampanie oraz strategie i plany zespołu marketingu.</p>
       </div>
 
       <PendingApprovalBadge isAdmin={employee.roles.includes("admin")} />
@@ -93,6 +90,7 @@ export default async function MarketingPage({
       {tab === "kalendarz" && (
         <ContentCalendarSection yearParam={params.year} monthParam={params.month} assigneeFilter={params.osoba} projectFilter={params.projekt} />
       )}
+      {tab === "wydarzenia" && <ProjectsSection />}
       {tab === "plany" && <PlansSection />}
 
       {/* Funkcja zaawansowana, używana rzadko — przeniesiona na sam dół,

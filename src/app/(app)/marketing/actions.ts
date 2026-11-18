@@ -5,7 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, canAccessMarketing, isContentCreator } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { toDateKey } from "@/lib/schedule-month";
-import { isApprovalPending } from "@/lib/marketing";
+import { isApprovalPending, type ProjectType } from "@/lib/marketing";
 import { extractMarketingImport } from "@/lib/marketing-import";
 
 // Bramka wspólna dla wszystkich akcji tego modułu — rola marketing albo
@@ -21,42 +21,52 @@ async function requireMarketingAccess() {
 
 function revalidateMarketing() {
   revalidatePath("/marketing");
-  // "layout" ogarnia cały poddrzewo /marketing/projekty, łącznie z dynamicznym
-  // /marketing/projekty/[id] (tablica projektu) — bez tego odhaczenie zadania
-  // na tamtej stronie zapisałoby się w bazie, ale UI zostałby nieodświeżony
-  // do ręcznego przeładowania.
-  revalidatePath("/marketing/projekty", "layout");
-  // createTask/setTaskStatus są też wywoływane z tablic wydarzeń pod
-  // /projekty/[id] (Sprint D, D2 — zadania eventowe to te same marketing_task,
-  // tylko odfiltrowane do innej sekcji nawigacji) — ten sam powód co wyżej.
-  revalidatePath("/projekty", "layout");
+  // "layout" ogarnia całe poddrzewo /marketing/wydarzenia, łącznie z
+  // dynamicznym /marketing/wydarzenia/[id] (tablica projektu) — bez tego
+  // odhaczenie zadania na tamtej stronie zapisałoby się w bazie, ale UI
+  // zostałby nieodświeżony do ręcznego przeładowania.
+  revalidatePath("/marketing/wydarzenia", "layout");
 }
 
 // ---------- Projekty ----------
 
-export type MarketingProjectOption = { id: string; name: string; color: string };
+export type MarketingProjectOption = { id: string; name: string; color: string; type: ProjectType };
 
 // Czytane przez useMarketingProjects() (hook, komponenty kliencie) — Server
 // Action zamiast bezpośredniego zapytania do Supabase z przeglądarki: w tej
-// bazie NIE MA RLS (autoryzacja jest wyłącznie na poziomie appki, patrz
-// requireMarketingAccess), więc klient Supabase z kluczem anon w przeglądarce
-// ominąłby wszystkie te zabezpieczenia na KAŻDEJ tabeli, nie tylko tej. Server
-// Action trzyma zapytanie po stronie serwera, za tą samą bramką co reszta
-// modułu, a dla przeglądarki wygląda jak zwykłe wywołanie funkcji.
+// bazie NIE MA RLS na większości tabel (autoryzacja jest wyłącznie na
+// poziomie appki, patrz requireMarketingAccess; marketing_project/content/task
+// mają już RLS od migracji 0075, ale to tylko domyka dostęp dla anon — appka
+// i tak zawsze używa service_role, który RLS omija). Server Action trzyma
+// zapytanie po stronie serwera, za tą samą bramką co reszta modułu, a dla
+// przeglądarki wygląda jak zwykłe wywołanie funkcji.
+//
+// Wszystkie typy projektu naraz (migracja 0075 — dawny podział na /projekty
+// "eventowe" i /marketing/projekty "marketingowe" to teraz jedna lista pod
+// "Wydarzenia i kampanie"), żeby dropdown projektu w zadaniu/treści mógł
+// wskazać na którykolwiek z nich.
 export async function getActiveMarketingProjects(): Promise<MarketingProjectOption[]> {
   await requireMarketingAccess();
   const supabase = createServerSupabaseClient();
-  // type="marketing" — projekty eventowe (Wigilia, Półkolonie, ...) żyją w
-  // tej samej tabeli (patrz migracja 0065), ale mają własną sekcję /projekty
-  // i nie powinny zaśmiecać dropdownów treści/zadań marketingu.
-  const { data, error } = await supabase
-    .from("marketing_project")
-    .select("id, name, color")
-    .eq("is_active", true)
-    .eq("type", "marketing")
-    .order("name");
+  const { data, error } = await supabase.from("marketing_project").select("id, name, color, type").eq("is_active", true).order("name");
   if (error) throw new Error(dbErrorMessage(error));
   return (data ?? []) as MarketingProjectOption[];
+}
+
+// project_id (klucz obcy, migracja 0075) zamiast dawnego dopasowania po
+// tekście — "project" zostaje zapisywane RÓWNOLEGLE (nazwa projektu) na czas
+// przejścia, bo kilka starszych widoków (tablice projektów, grupowanie w
+// Kanbanie) wciąż czyta to pole tekstowe. Puste project_id = brak projektu
+// ("Ogólne" ma swój wiersz w bazie, ale wybranie "— bez projektu —" w
+// formularzu to świadomie inna rzecz niż przypisanie do "Ogólne").
+async function resolveProjectFields(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  formData: FormData
+): Promise<{ project: string; project_id: string | null }> {
+  const project_id = String(formData.get("project_id") ?? "") || null;
+  if (!project_id) return { project: "", project_id: null };
+  const { data } = await supabase.from("marketing_project").select("name").eq("id", project_id).single();
+  return { project: data?.name ?? "", project_id };
 }
 
 // ---------- Zadania ----------
@@ -78,7 +88,6 @@ export async function createTask(formData: FormData) {
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
   const priority = String(formData.get("priority") ?? "normal");
   const due_date = String(formData.get("due_date") ?? "") || null;
-  const project = String(formData.get("project") ?? "").trim();
   if (!title) throw new Error("Podaj tytuł zadania.");
 
   const supabase = createServerSupabaseClient();
@@ -88,8 +97,8 @@ export async function createTask(formData: FormData) {
     assignee_employee_id,
     priority,
     due_date,
-    project,
     created_by_employee_id: employee.id,
+    ...(await resolveProjectFields(supabase, formData)),
     ...readRecordingFields(formData),
   });
   if (error) throw new Error(dbErrorMessage(error));
@@ -104,13 +113,21 @@ export async function updateTask(formData: FormData) {
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
   const priority = String(formData.get("priority") ?? "normal");
   const due_date = String(formData.get("due_date") ?? "") || null;
-  const project = String(formData.get("project") ?? "").trim();
   if (!id || !title) throw new Error("Podaj tytuł zadania.");
 
   const supabase = createServerSupabaseClient();
   const { error } = await supabase
     .from("marketing_task")
-    .update({ title, description, assignee_employee_id, priority, due_date, project, updated_at: new Date().toISOString(), ...readRecordingFields(formData) })
+    .update({
+      title,
+      description,
+      assignee_employee_id,
+      priority,
+      due_date,
+      updated_at: new Date().toISOString(),
+      ...(await resolveProjectFields(supabase, formData)),
+      ...readRecordingFields(formData),
+    })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
@@ -255,7 +272,6 @@ export async function createContent(formData: FormData) {
   const needs_review = formData.get("needs_review") === "on";
   const notes = String(formData.get("notes") ?? "").trim();
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
-  const project = String(formData.get("project") ?? "").trim();
   if (!title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
 
   const supabase = createServerSupabaseClient();
@@ -269,8 +285,8 @@ export async function createContent(formData: FormData) {
     needs_review,
     notes,
     assignee_employee_id,
-    project,
     created_by_employee_id: employee.id,
+    ...(await resolveProjectFields(supabase, formData)),
     ...readContentFields(formData),
   });
   if (error) throw new Error(dbErrorMessage(error));
@@ -289,7 +305,6 @@ export async function updateContent(formData: FormData) {
   const needs_review = formData.get("needs_review") === "on";
   const notes = String(formData.get("notes") ?? "").trim();
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
-  const project = String(formData.get("project") ?? "").trim();
   if (!id || !title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
 
   const supabase = createServerSupabaseClient();
@@ -308,8 +323,8 @@ export async function updateContent(formData: FormData) {
       needs_review,
       notes,
       assignee_employee_id,
-      project,
       updated_at: new Date().toISOString(),
+      ...(await resolveProjectFields(supabase, formData)),
       ...readContentFields(formData),
     })
     .eq("id", id);

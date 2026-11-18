@@ -8,6 +8,7 @@ import {
   PLATFORM_LABELS,
   CONTENT_PURPOSE_LABELS,
   CONTENT_FORMAT_LABELS,
+  PROJECT_TYPE_ICONS,
   type ContentPlatform,
   type ContentPurpose,
   type ContentFormat,
@@ -94,11 +95,11 @@ export function AddContentButton({ date, dateLabel, assignees }: { date: string;
               </label>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-zinc-900">Projekt</label>
-                <select name="project" defaultValue="" className={INPUT}>
+                <select name="project_id" defaultValue="" className={INPUT}>
                   <option value="">— bez projektu —</option>
                   {projects.map((p) => (
-                    <option key={p.id} value={p.name}>
-                      {p.name}
+                    <option key={p.id} value={p.id}>
+                      {PROJECT_TYPE_ICONS[p.type]} {p.name}
                     </option>
                   ))}
                 </select>

@@ -153,6 +153,74 @@ export function approvalBadge(
   return "pending";
 }
 
+// Typ projektu (migracja 0075) — "marketing" to "Ogólne" (bez dat/osi
+// komunikacji, zwykły worek na zadania/treści bez przypisanego wydarzenia czy
+// kampanii), "event" to jednodniowe/krótkie wydarzenie (Wigilia, Liga
+// Deblowa), "kampania" to coś z zakresem dat (Półkolonie, Styczeń 2027).
+export type ProjectType = "marketing" | "event" | "kampania";
+export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
+  marketing: "Ogólne",
+  event: "Wydarzenie",
+  kampania: "Kampania",
+};
+export const PROJECT_TYPE_ICONS: Record<ProjectType, string> = {
+  marketing: "📁",
+  event: "🎉",
+  kampania: "📣",
+};
+
+// Oś komunikacji (zgłoszenie 18.11.2026) — kroki wyliczone z dat projektu,
+// NIE zapisane w bazie: liczą się na nowo przy każdym renderze, żeby zmiana
+// daty wydarzenia/kampanii od razu przeliczyła checklistę, bez migracji
+// danych. "Ogólne" nie ma osi w ogóle (puste daty, brak sensu dla worka bez
+// terminu).
+export type TimelineStep = { key: string; label: string; date: string };
+
+function addDays(dateKey: string, days: number): string {
+  const d = new Date(dateKey + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function midpointDate(startKey: string, endKey: string): string {
+  const start = new Date(startKey + "T00:00:00").getTime();
+  const end = new Date(endKey + "T00:00:00").getTime();
+  return new Date(start + (end - start) / 2).toISOString().slice(0, 10);
+}
+
+export function buildProjectTimeline(project: { type: ProjectType; event_date: string | null; end_date: string | null }): TimelineStep[] {
+  if (project.type === "event" && project.event_date) {
+    return [
+      { key: "zapowiedz", label: "Zapowiedź", date: addDays(project.event_date, -14) },
+      { key: "tv", label: "Plansza TV", date: addDays(project.event_date, -7) },
+      { key: "przypomnienie", label: "Przypomnienie", date: addDays(project.event_date, -3) },
+      { key: "relacja", label: "Relacja z wydarzenia", date: addDays(project.event_date, 1) },
+    ];
+  }
+  if (project.type === "kampania" && project.event_date && project.end_date) {
+    return [
+      { key: "start", label: "Start kampanii", date: project.event_date },
+      { key: "polowa", label: "Połowa kampanii", date: midpointDate(project.event_date, project.end_date) },
+      { key: "ostatni_tydzien", label: "Ostatni tydzień", date: addDays(project.end_date, -7) },
+    ];
+  }
+  return [];
+}
+
+// Dopasowanie treści z kalendarza do kroku osi — okno ±2 dni, krok "Plansza
+// TV" dodatkowo wymaga tytułu zaczynającego się od "TV —" (nie ma osobnej
+// platformy TV w ContentPlatform, tytuł jest jedynym odróżnieniem od
+// zwykłego posta w tym samym okienku dat).
+export function matchTimelineStep(step: TimelineStep, content: { scheduled_date: string; title: string }[]): boolean {
+  const WINDOW_DAYS = 2;
+  const stepTime = new Date(step.date + "T00:00:00").getTime();
+  return content.some((c) => {
+    const diffDays = Math.abs(new Date(c.scheduled_date + "T00:00:00").getTime() - stepTime) / 86400000;
+    if (diffDays > WINDOW_DAYS) return false;
+    return step.key === "tv" ? c.title.startsWith("TV —") : true;
+  });
+}
+
 export type PlanType = "strategia" | "plan";
 export const PLAN_TYPE_LABELS: Record<PlanType, string> = {
   strategia: "Strategia",

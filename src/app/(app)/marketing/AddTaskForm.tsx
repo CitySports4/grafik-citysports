@@ -3,14 +3,21 @@
 import { useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { BTN_PRIMARY } from "@/components/button-styles";
-import { TASK_PRIORITY_LABELS, RECORDING_FORMAT_LABELS, type MarketingTaskPriority, type RecordingFormat } from "@/lib/marketing";
+import {
+  TASK_PRIORITY_LABELS,
+  RECORDING_FORMAT_LABELS,
+  PROJECT_TYPE_ICONS,
+  type MarketingTaskPriority,
+  type RecordingFormat,
+  type ProjectType,
+} from "@/lib/marketing";
 import { createTask } from "./actions";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2 text-sm outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 
 type Assignee = { id: string; name: string; color_hex: string };
-type Project = { id: string; name: string; color: string };
+type Project = { id: string; name: string; color: string; type: ProjectType };
 
 // Pola nagraniowe (Sprint D, D1) — widoczne gdy assignee = Oliwia (osoba
 // nagrywająca) ALBO ręczny toggle "To zadanie nagraniowe". Oba warunki
@@ -67,11 +74,11 @@ export function AddTaskForm({
             ))}
           </select>
           <input type="date" name="due_date" className={INPUT} />
-          <select name="project" defaultValue="" className={INPUT}>
+          <select name="project_id" defaultValue="" className={INPUT}>
             <option value="">— bez projektu —</option>
             {activeProjects.map((p) => (
-              <option key={p.id} value={p.name}>
-                {p.name}
+              <option key={p.id} value={p.id}>
+                {PROJECT_TYPE_ICONS[p.type]} {p.name}
               </option>
             ))}
           </select>

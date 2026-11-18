@@ -14,6 +14,7 @@ import {
   CONTENT_FORMAT_ICONS,
   isApprovalPending,
   approvalBadge,
+  PROJECT_TYPE_ICONS,
   type ContentPlatform,
   type ContentStatus,
   type ContentPurpose,
@@ -43,6 +44,7 @@ type ContentItem = {
   notes: string;
   assignee_employee_id: string | null;
   project: string;
+  project_id: string | null;
   hook: string;
   content_fb: string;
   content_ig: string;
@@ -206,7 +208,7 @@ export function ContentItemChip({
               </p>
               {item.project &&
                 (() => {
-                  const color = projects.find((p) => p.name === item.project)?.color ?? "#7c3aed";
+                  const color = projects.find((p) => p.id === item.project_id)?.color ?? "#7c3aed";
                   return (
                     <p className="rounded-full px-2 py-0.5 text-xs font-bold" style={{ backgroundColor: `${color}1a`, color }}>
                       {item.project}
@@ -325,15 +327,17 @@ export function ContentItemChip({
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-zinc-900">Projekt</label>
-                <select name="project" defaultValue={item.project} className={INPUT}>
+                <select name="project_id" defaultValue={item.project_id ?? ""} className={INPUT}>
                   <option value="">— bez projektu —</option>
                   {/* Projekt wpisu mógł zostać zarchiwizowany od ostatniej edycji —
                       dokładamy go jako dodatkową opcję, żeby select pokazywał
                       faktyczną wartość zamiast po cichu ją gubić. */}
-                  {item.project && !projects.some((p) => p.name === item.project) && <option value={item.project}>{item.project} (zarchiwizowany)</option>}
+                  {item.project_id && !projects.some((p) => p.id === item.project_id) && (
+                    <option value={item.project_id}>{item.project} (zarchiwizowany)</option>
+                  )}
                   {projects.map((p) => (
-                    <option key={p.id} value={p.name}>
-                      {p.name}
+                    <option key={p.id} value={p.id}>
+                      {PROJECT_TYPE_ICONS[p.type]} {p.name}
                     </option>
                   ))}
                 </select>

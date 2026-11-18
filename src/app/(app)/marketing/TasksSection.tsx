@@ -11,10 +11,12 @@ import {
   TASK_STATUS_ORDER,
   TASK_PRIORITY_LABELS,
   RECORDING_FORMAT_LABELS,
+  PROJECT_TYPE_ICONS,
   groupByProject,
   type MarketingTaskStatus,
   type MarketingTaskPriority,
   type RecordingFormat,
+  type ProjectType,
 } from "@/lib/marketing";
 import { updateTask, setTaskStatus, deleteTask, postponeTask, setTaskArchived } from "./actions";
 import { AddTaskForm } from "./AddTaskForm";
@@ -36,13 +38,14 @@ type Task = {
   archived: boolean;
   content_id: string | null;
   project: string;
+  project_id: string | null;
   recording_format: RecordingFormat | null;
   recording_look_for: string;
   recording_mood: string;
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
-type Project = { id: string; name: string; color: string };
+type Project = { id: string; name: string; color: string; type: ProjectType };
 
 const PRIORITY_BADGE: Record<MarketingTaskPriority, string> = {
   low: "bg-zinc-100 text-zinc-500",
@@ -117,7 +120,7 @@ export async function TasksSection({
     supabase
       .from("marketing_task")
       .select(
-        "id, title, description, status, priority, due_date, assignee_employee_id, archived, content_id, project, recording_format, recording_look_for, recording_mood"
+        "id, title, description, status, priority, due_date, assignee_employee_id, archived, content_id, project, project_id, recording_format, recording_look_for, recording_mood"
       )
       .order("due_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false }),
@@ -130,20 +133,18 @@ export async function TasksSection({
       .eq("active", true)
       .in("employee_role.role", ["marketing", "content_creator"])
       .order("name"),
-    // Wszystkie projekty, obu typów (patrz migracja 0065) — marketingowe do
-    // dropdownu (tylko aktywne, dropdown w Edytuj MUSI dołożyć też projekt
-    // już zapisanego zadania, nawet jeśli go zarchiwizowano — patrz
-    // renderTask niżej), eventowe tylko po to, żeby odfiltrować ich zadania
-    // z tego widoku (patrz eventProjectNames — /projekty ma być osobną
-    // sekcją, nie zdublowaną listą).
+    // Wszystkie typy projektu naraz (migracja 0075 — dawny podział na
+    // /projekty "eventowe" i /marketing/projekty "marketingowe" to teraz
+    // jedna lista pod "Wydarzenia i kampanie" w tej samej zakładce), dropdown
+    // w Edytuj MUSI dołożyć też projekt już zapisanego zadania, nawet jeśli
+    // go zarchiwizowano — patrz renderTask niżej.
     supabase.from("marketing_project").select("id, name, color, type, is_active"),
   ]);
 
-  const allProjectsRaw = (projectsRaw ?? []) as (Project & { type: "marketing" | "event"; is_active: boolean })[];
-  const activeProjects = allProjectsRaw.filter((p) => p.type === "marketing" && p.is_active);
-  const projectColorByName = new Map(activeProjects.map((p) => [p.name, p.color]));
-  const eventProjectNames = new Set(allProjectsRaw.filter((p) => p.type === "event").map((p) => p.name));
-  const allTasksRaw = ((tasksRaw ?? []) as Task[]).filter((t) => !eventProjectNames.has(t.project));
+  const allProjectsRaw = (projectsRaw ?? []) as (Project & { is_active: boolean })[];
+  const activeProjects = allProjectsRaw.filter((p) => p.is_active);
+  const projectColorByName = new Map(allProjectsRaw.map((p) => [p.name, p.color]));
+  const allTasksRaw = (tasksRaw ?? []) as Task[];
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const assigneeById = new Map(assignees.map((a) => [a.id, a]));
   // Dopasowanie po imieniu, nie na sztywno wpisany UUID (patrz Sprint D, D1)
@@ -376,15 +377,17 @@ export async function TasksSection({
                       ))}
                     </select>
                     <input type="date" name="due_date" defaultValue={t.due_date ?? ""} className={INPUT_SM} />
-                    <select name="project" defaultValue={t.project} className={INPUT_SM}>
+                    <select name="project_id" defaultValue={t.project_id ?? ""} className={INPUT_SM}>
                       <option value="">— bez projektu —</option>
                       {/* Projekt zadania mógł zostać zarchiwizowany od ostatniej
                           edycji — dokładamy go jako dodatkową opcję, żeby select
                           nie gubił cicho wartości. */}
-                      {t.project && !activeProjects.some((p) => p.name === t.project) && <option value={t.project}>{t.project} (zarchiwizowany)</option>}
+                      {t.project_id && !activeProjects.some((p) => p.id === t.project_id) && (
+                        <option value={t.project_id}>{t.project} (zarchiwizowany)</option>
+                      )}
                       {activeProjects.map((p) => (
-                        <option key={p.id} value={p.name}>
-                          {p.name}
+                        <option key={p.id} value={p.id}>
+                          {PROJECT_TYPE_ICONS[p.type]} {p.name}
                         </option>
                       ))}
                     </select>
