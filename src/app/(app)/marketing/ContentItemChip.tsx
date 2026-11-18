@@ -107,17 +107,21 @@ export function ContentItemChip({
   const pendingApproval = isApprovalPending(item, today);
   const badge = approvalBadge(item, today);
 
-  // Karta publikacji w 3 rozwijanych sekcjach (zgłoszenie 18.11.2026) —
-  // wypełniona sekcja startuje otwarta, pusta zwinięta. "Po co" zawsze
-  // otwarta z założenia (pierwsza rzecz do przeczytania). Dla pustych "Tekst
-  // do publikacji"/"Nagranie" o domyślnym otwarciu decyduje format: posty i
-  // wydarzenia FB to głównie pisanie (Tekst do publikacji), rolki i story to
-  // głównie nagrywanie (Nagranie) — pozostałe formaty (aktualność, karuzela,
-  // inne) bez preferencji, zostają zwinięte jeśli puste.
-  const poCoFilled = [item.notes, item.hook, item.to_confirm].filter((v) => v.trim()).length;
-  const tekstFilled = [item.content_fb, item.content_ig, item.hashtags, item.link_utm].filter((v) => v.trim()).length;
+  // Karta publikacji w 3 rozwijanych sekcjach (zgłoszenie 18.11.2026,
+  // doprecyzowane po przeglądzie) — wypełniona sekcja startuje otwarta,
+  // pusta zwinięta. "Po co" zawsze otwarta — "do potwierdzenia" musi być
+  // widoczne od razu, łatwo je przeoczyć w zwiniętej sekcji. Hook przeniesiony
+  // do "Tekst do publikacji" — to część samej treści (pierwsza linijka), nie
+  // powód publikacji. Dla pustych "Tekst do publikacji"/"Nagranie" o
+  // domyślnym otwarciu decyduje format: rolka ma zawsze i opis, i nagranie,
+  // więc otwiera OBIE; samo story tylko nagranie. Post/wydarzenie_fb to
+  // głównie pisanie. "Tekst do publikacji" otwiera się też zawsze, gdy wpis
+  // czeka na akceptację Krzysztofa (pendingApproval) — musi od razu widzieć
+  // tekst, niezależnie od formatu.
+  const poCoFilled = [item.notes, item.to_confirm].filter((v) => v.trim()).length;
+  const tekstFilled = [item.hook, item.content_fb, item.content_ig, item.hashtags, item.link_utm].filter((v) => v.trim()).length;
   const nagranieFilled = [item.screen_captions, item.what_to_record].filter((v) => v.trim()).length;
-  const tekstOpen = tekstFilled > 0 || item.format === "post" || item.format === "wydarzenie_fb";
+  const tekstOpen = tekstFilled > 0 || item.format === "post" || item.format === "wydarzenie_fb" || item.format === "rolka" || pendingApproval;
   const nagranieOpen = nagranieFilled > 0 || item.format === "story" || item.format === "rolka";
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
@@ -336,16 +340,16 @@ export function ContentItemChip({
               </div>
               {/* Karta publikacji w 3 rozwijanych sekcjach zamiast płaskiej
                   listy (zgłoszenie 18.11.2026) — patrz obliczenia wyżej. */}
-              <AccordionSection title="Po co" filledCount={poCoFilled} totalCount={3} defaultOpen>
+              <AccordionSection title="Po co" filledCount={poCoFilled} totalCount={2} defaultOpen>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm font-semibold text-zinc-900">Notatki</label>
                   <textarea name="notes" defaultValue={item.notes} rows={3} className={INPUT} />
                 </div>
-                <CopyField name="hook" label="Haczyk" defaultValue={item.hook} />
                 <CopyField name="to_confirm" label="Do potwierdzenia" defaultValue={item.to_confirm} rows={2} />
               </AccordionSection>
 
-              <AccordionSection title="Tekst do publikacji" filledCount={tekstFilled} totalCount={4} defaultOpen={tekstOpen}>
+              <AccordionSection title="Tekst do publikacji" filledCount={tekstFilled} totalCount={5} defaultOpen={tekstOpen}>
+                <CopyField name="hook" label="Haczyk" defaultValue={item.hook} />
                 <CopyField name="content_fb" label="Treść FB" defaultValue={item.content_fb} rows={4} />
                 <CopyField name="content_ig" label="Treść IG" defaultValue={item.content_ig} rows={4} />
                 <CopyField name="hashtags" label="Hashtagi" defaultValue={item.hashtags} rows={1} />
