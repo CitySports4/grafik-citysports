@@ -100,12 +100,14 @@ export const CONTENT_PURPOSE_ICONS: Record<ContentPurpose, string> = {
 // CONTENT_PURPOSE "relacja", mimo że po polsku Instagram/Facebook nazywają tę
 // funkcję też "Relacja" — to są dwa różne znaczenia tego samego słowa, w
 // kodzie muszą mieć różne nazwy, żeby się nie gryzły.
-export type ContentFormat = "rolka" | "post" | "story" | "aktualnosc" | "inne";
+export type ContentFormat = "rolka" | "post" | "story" | "aktualnosc" | "karuzela" | "wydarzenie_fb" | "inne";
 export const CONTENT_FORMAT_LABELS: Record<ContentFormat, string> = {
   rolka: "Rolka",
   post: "Post",
   story: "Relacja (Story)",
   aktualnosc: "Aktualność na stronie",
+  karuzela: "Karuzela",
+  wydarzenie_fb: "Wydarzenie na Facebooku",
   inne: "Inne",
 };
 export const CONTENT_FORMAT_ICONS: Record<ContentFormat, string> = {
@@ -113,6 +115,8 @@ export const CONTENT_FORMAT_ICONS: Record<ContentFormat, string> = {
   post: "🖼️",
   story: "⭕",
   aktualnosc: "📰",
+  karuzela: "🖼️🖼️",
+  wydarzenie_fb: "📅",
   inne: "📌",
 };
 
@@ -126,6 +130,27 @@ export function isApprovalPending(
   today: string
 ): boolean {
   return item.needs_review && !item.approved && item.scheduled_date > today;
+}
+
+// Trzy stany akceptacji do pokazania w UI (propozycja Marketing -> Grafik,
+// 18.11.2026, krok 3) — czysto opisowe, NIE zmieniają reguły publikacji
+// (patrz isApprovalPending/assertCanPublish w actions.ts, które zostają bez
+// zmian: nawet po "needs_changes" blokada i tak sama znika w dniu
+// scheduled_date, to świadomie ta sama zastawka co dotąd). Rozróżnienie
+// "needs_changes" od "pending" po reviewed_at: Krzysztof już raz spojrzał i
+// zostawił uwagę (approved=false, reviewed_at ustawione), w przeciwieństwie
+// do "jeszcze nikt nie patrzył" (reviewed_at puste). Wołane tylko gdy
+// needs_review jest true — wywołujący sam to sprawdza.
+export type ApprovalBadge = "approved" | "needs_changes" | "auto_approved" | "pending";
+
+export function approvalBadge(
+  item: { approved: boolean; reviewed_at: string | null; scheduled_date: string },
+  today: string
+): ApprovalBadge {
+  if (item.approved) return "approved";
+  if (item.reviewed_at) return "needs_changes";
+  if (item.scheduled_date <= today) return "auto_approved";
+  return "pending";
 }
 
 export type PlanType = "strategia" | "plan";

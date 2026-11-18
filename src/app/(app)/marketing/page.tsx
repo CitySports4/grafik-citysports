@@ -5,6 +5,7 @@ import { ContentCalendarSection } from "./ContentCalendarSection";
 import { PlansSection } from "./PlansSection";
 import { ImportFromFile } from "./ImportFromFile";
 import { ThisWeekWidget } from "./ThisWeekWidget";
+import { PendingApprovalBadge } from "./PendingApprovalBadge";
 import { CreatorView } from "./CreatorView";
 
 const TABS = [
@@ -62,6 +63,7 @@ export default async function MarketingPage({
         </Link>
       </div>
 
+      <PendingApprovalBadge isAdmin={employee.roles.includes("admin")} />
       <ThisWeekWidget />
 
       <div className="flex flex-wrap gap-1 border-b border-zinc-200">
