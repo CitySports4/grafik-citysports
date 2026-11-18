@@ -56,13 +56,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!isTrainerOnly) trailingLinks.push({ href: "/zadania", label: "Sprzątanie" });
   if (zajeciaLinks.length === 1) trailingLinks.push(zajeciaLinks[0]);
   // content_creator (Sprint A) dostaje link do uproszczonego widoku
-  // /marketing — ale NIE do Wydarzeń poniżej, które zostaje gated wyłącznie
-  // przez canAccessMarketing, tak jak strona sama sprawdza.
+  // /marketing. Dawny osobny link "Wydarzenia" (/projekty) zniknął —
+  // Wydarzenia i kampanie to teraz zakładka WEWNĄTRZ Marketingu (migracja
+  // 0075), nie osobna sekcja nawigacji.
   if (canAccessMarketing(employee) || isContentCreator(employee)) trailingLinks.push({ href: "/marketing", label: "Marketing" });
-  // Nazwa linku celowo inna niż URL ("Wydarzenia", nie "Projekty") — appka ma
-  // już "⚙️ Projekty" wewnątrz Marketingu (projekty marketingowe); dwa różne
-  // linki nazwane tak samo byłyby mylące (patrz Sprint D, D2).
-  if (canAccessMarketing(employee)) trailingLinks.push({ href: "/projekty", label: "Wydarzenia" });
   if (canAccessKasa(employee)) trailingLinks.push({ href: "/kasa", label: "Kasa" });
   if (employee.roles.includes("admin")) trailingLinks.push({ href: "/admin", label: "Panel admina" });
 

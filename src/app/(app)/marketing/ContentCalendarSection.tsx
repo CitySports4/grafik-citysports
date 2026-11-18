@@ -9,10 +9,12 @@ import {
   CONTENT_STATUS_LABELS,
   CONTENT_STATUS_ORDER,
   isApprovalPending,
+  PROJECT_TYPE_ICONS,
   type ContentPlatform,
   type ContentStatus,
   type ContentPurpose,
   type ContentFormat,
+  type ProjectType,
 } from "@/lib/marketing";
 import { setContentStatus } from "./actions";
 import { ContentItemChip } from "./ContentItemChip";
@@ -39,6 +41,7 @@ type ContentItem = {
   notes: string;
   assignee_employee_id: string | null;
   project: string;
+  project_id: string | null;
   hook: string;
   content_fb: string;
   content_ig: string;
@@ -50,7 +53,7 @@ type ContentItem = {
 };
 
 type Assignee = { id: string; name: string; color_hex: string };
-type Project = { id: string; name: string; color: string };
+type Project = { id: string; name: string; color: string; type: ProjectType };
 
 const STATUS_DOT: Record<ContentStatus, string> = {
   pomysl: "bg-zinc-400",
@@ -104,7 +107,7 @@ export async function ContentCalendarSection({
     supabase
       .from("marketing_content")
       .select(
-        "id, title, platform, scheduled_date, status, purpose, format, needs_review, approved, review_note, reviewed_at, notes, assignee_employee_id, project, hook, content_fb, content_ig, screen_captions, what_to_record, hashtags, to_confirm, link_utm"
+        "id, title, platform, scheduled_date, status, purpose, format, needs_review, approved, review_note, reviewed_at, notes, assignee_employee_id, project, project_id, hook, content_fb, content_ig, screen_captions, what_to_record, hashtags, to_confirm, link_utm"
       )
       .gte("scheduled_date", dateKeys[0])
       .lte("scheduled_date", dateKeys[dateKeys.length - 1])
@@ -135,11 +138,10 @@ export async function ContentCalendarSection({
       .order("scheduled_date", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    // Projekty zarządzane z /marketing/projekty (patrz migracja 0063) — do
-    // chipów filtra po projekcie, tylko aktywne i tylko type="marketing"
-    // (eventowe, patrz migracja 0065, mają osobną sekcję /projekty i nie
-    // powinny tu się pojawiać).
-    supabase.from("marketing_project").select("id, name, color").eq("is_active", true).eq("type", "marketing").order("name"),
+    // Wszystkie typy projektu naraz (migracja 0075 — jedna lista "Wydarzenia
+    // i kampanie" zamiast dawnego podziału marketingowe/eventowe) — do
+    // chipów filtra po projekcie, tylko aktywne.
+    supabase.from("marketing_project").select("id, name, color, type").eq("is_active", true).order("name"),
   ]);
 
   const allContent = (contentRaw ?? []) as ContentItem[];
@@ -253,7 +255,7 @@ export async function ContentCalendarSection({
               style={{ backgroundColor: active ? p.color : `${p.color}1a`, color: active ? "#fff" : p.color }}
             >
               <ColorDot color={active ? "#fff" : p.color} />
-              {p.name} ({assigneeFiltered.filter((c) => c.project.trim() === p.name).length})
+              {PROJECT_TYPE_ICONS[p.type]} {p.name} ({assigneeFiltered.filter((c) => c.project.trim() === p.name).length})
             </Link>
           );
         })}
