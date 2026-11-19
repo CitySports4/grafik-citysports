@@ -307,6 +307,30 @@ export async function createContent(formData: FormData) {
   revalidateMarketing();
 }
 
+// Pola tekstowe wpisu, które updateContent zapisuje TYLKO gdy są w formularzu.
+// Brak pola = "nie ruszaj" (nie "wyczyść") — formularz wysyła tylko pola
+// zmienione przez użytkownika, a zwinięta/nieobecna sekcja nie może już
+// skasować treści (wpis 368dd994…, 18.11 i 19.11.2026).
+const PARTIAL_TEXT_FIELDS = [
+  "notes",
+  "hook",
+  "content_fb",
+  "content_ig",
+  "screen_captions",
+  "what_to_record",
+  "hashtags",
+  "to_confirm",
+  "link_utm",
+] as const;
+
+function readPresentTextFields(formData: FormData) {
+  const out: Partial<Record<(typeof PARTIAL_TEXT_FIELDS)[number], string>> = {};
+  for (const key of PARTIAL_TEXT_FIELDS) {
+    if (formData.has(key)) out[key] = String(formData.get(key) ?? "").trim();
+  }
+  return out;
+}
+
 export async function updateContent(formData: FormData) {
   const employee = await requireMarketingAccess();
   const id = String(formData.get("id") ?? "");
@@ -317,7 +341,6 @@ export async function updateContent(formData: FormData) {
   const purpose = String(formData.get("purpose") ?? "relacja");
   const format = String(formData.get("format") ?? "post");
   const needs_review = formData.get("needs_review") === "on";
-  const notes = String(formData.get("notes") ?? "").trim();
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
   if (!id || !title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
 
@@ -335,11 +358,10 @@ export async function updateContent(formData: FormData) {
       purpose,
       format,
       needs_review,
-      notes,
       assignee_employee_id,
       updated_at: new Date().toISOString(),
-      ...(await resolveProjectFields(supabase, formData)),
-      ...readContentFields(formData),
+      ...(formData.has("project_id") ? await resolveProjectFields(supabase, formData) : {}),
+      ...readPresentTextFields(formData),
     })
     .eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));

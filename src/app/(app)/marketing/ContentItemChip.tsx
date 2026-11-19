@@ -79,6 +79,19 @@ const BADGE_TEXT: Record<ApprovalBadge, (scheduledDate: string) => string> = {
   pending: (scheduledDate) => `⏳ Czeka na akceptację — automatycznie dopuszczona ${scheduledDate}, jeśli nikt wcześniej nie zareaguje.`,
 };
 
+// Pola tekstowe karty publikacji zapisywane częściowo (tylko zmienione).
+const PARTIAL_CONTENT_KEYS = [
+  "notes",
+  "hook",
+  "content_fb",
+  "content_ig",
+  "screen_captions",
+  "what_to_record",
+  "hashtags",
+  "to_confirm",
+  "link_utm",
+] as const;
+
 // Chip w siatce kalendarza otwiera pełną edycję jako PŁYWAJĄCE OKNO (Modal),
 // zamiast rozwijać się w miejscu — kolumna dnia w siatce jest za wąska, żeby
 // pomieścić cały formularz czytelnie (patrz zgłoszenie usera: pola i tekst
@@ -131,7 +144,16 @@ export function ContentItemChip({
     setBusy(true);
     setError(null);
     try {
-      await updateContent(new FormData(e.currentTarget));
+      // Wysyłamy tylko pola treści, które ktoś faktycznie zmienił — pole bez
+      // zmian nie nadpisuje bazy (patrz updateContent: brak pola = "nie
+      // ruszaj"). Chroni też przed starym oknem nadpisującym treść wpisaną
+      // w międzyczasie bezpośrednio w bazie.
+      const fd = new FormData(e.currentTarget);
+      for (const key of PARTIAL_CONTENT_KEYS) {
+        const sent = fd.get(key);
+        if (sent !== null && String(sent).trim() === (item[key] ?? "").trim()) fd.delete(key);
+      }
+      await updateContent(fd);
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Coś poszło nie tak.");
