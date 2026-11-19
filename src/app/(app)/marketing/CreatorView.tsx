@@ -3,8 +3,20 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { toDateKey, daysInMonth, monthLabel, currentMonth } from "@/lib/schedule-month";
 import { WEEK_DISPLAY_ORDER, weekdayLabel } from "@/lib/weekdays";
 import { Card } from "@/components/Card";
-import { RECORDING_FORMAT_LABELS, RECORDING_FORMAT_ICONS, type RecordingFormat, type MarketingTaskStatus } from "@/lib/marketing";
-import { setTaskStatus } from "./actions";
+import {
+  RECORDING_FORMAT_LABELS,
+  RECORDING_FORMAT_ICONS,
+  CONTENT_FORMAT_ICONS,
+  isApprovalPending,
+  approvalBadge,
+  type RecordingFormat,
+  type MarketingTaskStatus,
+  type ContentFormat,
+  type ContentStatus,
+  type ApprovalBadge,
+} from "@/lib/marketing";
+import { setTaskStatus, setContentStatus } from "./actions";
+import { CopyField } from "./CopyField";
 
 type Task = {
   id: string;
@@ -18,6 +30,7 @@ type Task = {
 
 const TABS = [
   { key: "zadania", label: "Moje zadania" },
+  { key: "tresci", label: "Treści" },
   { key: "kalendarz", label: "Kalendarz" },
 ] as const;
 
@@ -39,7 +52,7 @@ export async function CreatorView({
   yearParam?: string;
   monthParam?: string;
 }) {
-  const activeTab = tab === "kalendarz" ? "kalendarz" : "zadania";
+  const activeTab = tab === "kalendarz" || tab === "tresci" ? tab : "zadania";
 
   return (
     <div className="flex flex-col gap-6">
@@ -62,7 +75,9 @@ export async function CreatorView({
         ))}
       </div>
 
-      {activeTab === "zadania" ? <CreatorTasks employeeId={employeeId} /> : <CreatorCalendar employeeId={employeeId} yearParam={yearParam} monthParam={monthParam} />}
+      {activeTab === "zadania" && <CreatorTasks employeeId={employeeId} />}
+      {activeTab === "tresci" && <CreatorContent employeeId={employeeId} />}
+      {activeTab === "kalendarz" && <CreatorCalendar employeeId={employeeId} yearParam={yearParam} monthParam={monthParam} />}
     </div>
   );
 }
@@ -193,6 +208,175 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
         <details className="rounded-2xl border border-dashed border-zinc-300 p-3">
           <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Opublikowane ({published.length}) ▾</summary>
           <div className="mt-3 flex flex-col gap-3">{published.map(renderTask)}</div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+type ContentItem = {
+  id: string;
+  title: string;
+  format: ContentFormat;
+  scheduled_date: string;
+  status: ContentStatus;
+  needs_review: boolean;
+  approved: boolean;
+  reviewed_at: string | null;
+  review_note: string;
+  hook: string;
+  content_fb: string;
+  content_ig: string;
+  screen_captions: string;
+  what_to_record: string;
+  hashtags: string;
+  to_confirm: string;
+  link_utm: string;
+};
+
+const APPROVAL_BANNER: Record<Exclude<ApprovalBadge, "approved">, (scheduledDate: string) => string> = {
+  needs_changes: () => "✏️ Wymaga poprawki — zobacz uwagę niżej.",
+  auto_approved: () => "🕒 Zatwierdzono automatycznie — minął termin publikacji bez reakcji.",
+  pending: (scheduledDate) => `⏳ Czeka na akceptację Krzysztofa — automatycznie dopuszczona ${scheduledDate}.`,
+};
+const APPROVAL_BANNER_STYLE: Record<Exclude<ApprovalBadge, "approved">, string> = {
+  needs_changes: "bg-red-50 text-red-700",
+  auto_approved: "bg-sky-50 text-sky-700",
+  pending: "bg-amber-50 text-amber-700",
+};
+
+// "Treści" (zgłoszenie 19.11.2026) — od kroku 1 propozycji Marketing->Grafik
+// zadanie NIE powstaje już automatycznie z wpisu kalendarza (patrz usunięte
+// createLinkedTaskIfNeeded), więc content_creator musi widzieć wpisy
+// marketing_content WPROST, nie przez pośredniczące zadanie — inaczej nowa
+// treść przypisana do niej jest niewidoczna nigdzie w jej uproszczonym
+// widoku. Pola gotowej treści (CopyField) są tu tylko do podglądu/kopiowania
+// — edycja treści zostaje w pełnym widoku marketingu (rola marketing/admin),
+// to nie jest formularz zapisu.
+async function CreatorContent({ employeeId }: { employeeId: string }) {
+  const supabase = createServerSupabaseClient();
+  const today = toDateKey(new Date());
+  const { data } = await supabase
+    .from("marketing_content")
+    .select(
+      "id, title, format, scheduled_date, status, needs_review, approved, reviewed_at, review_note, hook, content_fb, content_ig, screen_captions, what_to_record, hashtags, to_confirm, link_utm"
+    )
+    .eq("assignee_employee_id", employeeId)
+    .order("scheduled_date", { ascending: true });
+
+  const items = (data ?? []) as ContentItem[];
+  const active = items.filter((c) => c.status !== "opublikowane");
+  const published = items.filter((c) => c.status === "opublikowane");
+
+  const now = new Date();
+  const todayKey = toDateKey(now);
+  const weekEndKey = endOfWeekKey(now);
+  const monthEndKey = endOfMonthKey(now);
+  function bucketFor(c: ContentItem): TaskBucket {
+    if (c.scheduled_date < todayKey) return "zalegle";
+    if (c.scheduled_date <= weekEndKey) return "tydzien";
+    if (c.scheduled_date <= monthEndKey) return "miesiac";
+    return "pozniej";
+  }
+  const grouped = new Map<TaskBucket, ContentItem[]>();
+  for (const c of active) {
+    const b = bucketFor(c);
+    if (!grouped.has(b)) grouped.set(b, []);
+    grouped.get(b)!.push(c);
+  }
+
+  function renderContent(c: ContentItem) {
+    const isGotowe = c.status === "gotowe";
+    const isPublished = c.status === "opublikowane";
+    const pendingApproval = c.needs_review && isApprovalPending(c, today);
+    const badge: ApprovalBadge | null = c.needs_review ? approvalBadge(c, today) : null;
+
+    return (
+      <div key={c.id} className="flex flex-col gap-2.5 rounded-xl border border-zinc-200 bg-white p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span>{CONTENT_FORMAT_ICONS[c.format]}</span>
+          <p className={`font-semibold ${isPublished ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{c.title}</p>
+          {isGotowe && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">⏳ Czeka na publikację</span>}
+        </div>
+        <p className="text-xs text-zinc-500">
+          publikacja: {new Date(c.scheduled_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "long" })}
+        </p>
+
+        {badge && badge !== "approved" && (
+          <div className={`rounded-lg px-2.5 py-2 text-xs font-semibold ${APPROVAL_BANNER_STYLE[badge]}`}>
+            <p>{APPROVAL_BANNER[badge](c.scheduled_date)}</p>
+            {badge === "needs_changes" && c.review_note && <p className="mt-1 font-normal">💬 {c.review_note}</p>}
+          </div>
+        )}
+
+        {(c.what_to_record || c.screen_captions) && (
+          <div className="flex flex-col gap-1.5 rounded-lg bg-violet-50 p-2.5 text-sm">
+            {c.what_to_record && (
+              <p className="text-zinc-700">
+                <span className="font-semibold text-violet-800">🎥 Co nagrać: </span>
+                {c.what_to_record}
+              </p>
+            )}
+            {c.screen_captions && (
+              <p className="whitespace-pre-wrap text-zinc-700">
+                <span className="font-semibold text-violet-800">Napisy na ekran: </span>
+                {c.screen_captions}
+              </p>
+            )}
+          </div>
+        )}
+
+        {(c.hook || c.content_fb || c.content_ig || c.hashtags || c.link_utm) && (
+          <details className="rounded-lg border border-zinc-200">
+            <summary className="cursor-pointer px-2.5 py-2 text-xs font-semibold text-zinc-600 marker:content-none">📋 Tekst do publikacji ▾</summary>
+            <div className="flex flex-col gap-2.5 border-t border-zinc-200 p-2.5">
+              {c.hook && <CopyField name="hook" label="Haczyk" defaultValue={c.hook} />}
+              {c.content_fb && <CopyField name="content_fb" label="Treść FB" defaultValue={c.content_fb} rows={4} />}
+              {c.content_ig && <CopyField name="content_ig" label="Treść IG" defaultValue={c.content_ig} rows={4} />}
+              {c.hashtags && <CopyField name="hashtags" label="Hashtagi" defaultValue={c.hashtags} rows={1} />}
+              {c.link_utm && <CopyField name="link_utm" label="Link (z UTM)" defaultValue={c.link_utm} rows={1} />}
+            </div>
+          </details>
+        )}
+
+        {c.to_confirm && <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-xs font-semibold text-amber-700">⚠ Do potwierdzenia: {c.to_confirm}</p>}
+
+        {!isPublished &&
+          (pendingApproval ? (
+            <p className="text-xs font-semibold text-amber-600">⏳ Czeka na akceptację — nie można jeszcze oznaczyć jako opublikowane.</p>
+          ) : (
+            <form action={setContentStatus}>
+              <input type="hidden" name="id" value={c.id} />
+              <input type="hidden" name="status" value={isGotowe ? "opublikowane" : "gotowe"} />
+              <button
+                type="submit"
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white transition-colors ${
+                  isGotowe ? "bg-brand-blue hover:bg-blue-700" : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
+              >
+                {isGotowe ? "📤 Opublikowane" : "✅ Gotowe — czeka na publikację"}
+              </button>
+            </form>
+          ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      {items.length === 0 && <Card className="text-center text-sm text-zinc-400">Brak treści przypisanych do Ciebie.</Card>}
+      {BUCKET_ORDER.filter((b) => grouped.has(b)).map((b) => (
+        <div key={b} className="flex flex-col gap-3">
+          <p className={`text-xs font-bold uppercase tracking-wide ${b === "zalegle" ? "text-red-600" : "text-zinc-500"}`}>
+            {BUCKET_LABELS[b]} ({grouped.get(b)!.length})
+          </p>
+          {grouped.get(b)!.map(renderContent)}
+        </div>
+      ))}
+      {published.length > 0 && (
+        <details className="rounded-2xl border border-dashed border-zinc-300 p-3">
+          <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Opublikowane ({published.length}) ▾</summary>
+          <div className="mt-3 flex flex-col gap-3">{published.map(renderContent)}</div>
         </details>
       )}
     </div>

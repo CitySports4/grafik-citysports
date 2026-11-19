@@ -228,13 +228,27 @@ function readContentFields(formData: FormData) {
 
 // Szybkie odznaczenie statusu jednym kliknięciem (patrz checkbox-przycisk w
 // ContentCalendarSection) — bez otwierania pełnego formularza edycji.
+// Dostępne też dla samej roli content_creator (Oliwia) — jej uproszczony
+// widok (CreatorView) pokazuje teraz treści przypisane do niej wprost, nie
+// tylko zadania (patrz CreatorContent), więc musi móc oznaczać JE jako
+// gotowe/opublikowane — ten sam wzorzec ograniczenia "tylko własne", co
+// setTaskStatus.
 export async function setContentStatus(formData: FormData) {
-  const employee = await requireMarketingAccess();
+  const employee = await requireEmployee();
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!id || !status) throw new Error("Brak danych.");
 
   const supabase = createServerSupabaseClient();
+  if (!canAccessMarketing(employee)) {
+    if (!isContentCreator(employee)) {
+      throw new Error("Brak uprawnień — ta sekcja jest dostępna tylko dla roli Marketing.");
+    }
+    const { data: content } = await supabase.from("marketing_content").select("assignee_employee_id").eq("id", id).single();
+    if (!content || content.assignee_employee_id !== employee.id) {
+      throw new Error("Możesz oznaczać jako zrobione tylko własne treści.");
+    }
+  }
   if (status === "opublikowane" && !employee.roles.includes("admin")) {
     await assertCanPublish(supabase, id);
   }
