@@ -37,7 +37,12 @@ export function AccordionSection({
           <span className={`inline-block transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
         </span>
       </button>
-      {open && <div className="flex flex-col gap-3 border-t border-zinc-200 p-3.5">{children}</div>}
+      {/* Zwinięta sekcja tylko UKRYWA pola (hidden), nie odmontowuje ich —
+          inaczej pola ze zwiniętej sekcji znikały z FormData i zapis
+          czyścił je w bazie (wpis 368dd994…, 18.11 i 19.11.2026). */}
+      <div hidden={!open} className="flex flex-col gap-3 border-t border-zinc-200 p-3.5">
+        {children}
+      </div>
     </div>
   );
 }
