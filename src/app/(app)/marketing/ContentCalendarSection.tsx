@@ -125,7 +125,12 @@ export async function ContentCalendarSection({
     // createLinkedTaskIfNeeded w actions.ts) — tylko żeby pokazać małą
     // plakietkę "zadanie dodane", bez tego dodanie zadania byłoby
     // niewidocznym efektem ubocznym.
-    supabase.from("marketing_task").select("content_id").not("content_id", "is", null),
+    // archived=false — zarchiwizowane zadanie (np. relikt dawnej automatyki
+    // "zadanie z wpisu kalendarza", wyłączonej w kroku 1 propozycji
+    // Marketing->Grafik) nie istnieje nigdzie w UI, więc plakietka nie
+    // powinna o nim mówić "ma powiązane zadanie" — to mylące, bo nie da się
+    // go stamtąd kliknąć.
+    supabase.from("marketing_task").select("content_id").not("content_id", "is", null).eq("archived", false),
     // Ostatnia FAKTYCZNIE opublikowana treść — niezależnie od oglądanego
     // miesiąca (stąd osobne zapytanie, nie filtrowanie po dateKeys), żeby
     // przypomnienie o regularności działało nawet gdy ktoś przegląda stary
