@@ -26,6 +26,7 @@ type Task = {
   recording_format: RecordingFormat | null;
   recording_look_for: string;
   recording_mood: string;
+  content_id: string | null;
 };
 
 const TABS = [
@@ -107,7 +108,7 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
   const supabase = createServerSupabaseClient();
   const { data } = await supabase
     .from("marketing_task")
-    .select("id, title, status, due_date, recording_format, recording_look_for, recording_mood")
+    .select("id, title, status, due_date, recording_format, recording_look_for, recording_mood, content_id")
     .eq("assignee_employee_id", employeeId)
     .eq("archived", false)
     .order("due_date", { ascending: true, nullsFirst: false });
@@ -148,6 +149,14 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <p className={`font-semibold ${isPublished ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
           </div>
+          {t.content_id && (
+            <a
+              href={`/marketing?tab=tresci#tresc-${t.content_id}`}
+              className="mt-2 inline-flex min-h-11 items-center rounded-lg bg-zinc-800 px-3 text-xs font-bold text-white hover:bg-zinc-900"
+            >
+              📋 Otwórz treść
+            </a>
+          )}
           {t.due_date && (
             <p className="mt-0.5 text-xs text-zinc-500">termin: {new Date(t.due_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "long" })}</p>
           )}
@@ -252,12 +261,22 @@ const APPROVAL_BANNER_STYLE: Record<Exclude<ApprovalBadge, "approved">, string> 
 async function CreatorContent({ employeeId }: { employeeId: string }) {
   const supabase = createServerSupabaseClient();
   const today = toDateKey(new Date());
+  // Treści przypisane do niej ORAZ treści powiązane z jej zadaniami (przycisk
+  // "Otwórz treść" na karcie zadania), nawet gdy wpis ma innego przypisanego.
+  const { data: linkedTasks } = await supabase
+    .from("marketing_task")
+    .select("content_id")
+    .eq("assignee_employee_id", employeeId)
+    .not("content_id", "is", null);
+  const orParts = [`assignee_employee_id.eq.${employeeId}`];
+  const linkedIds = (linkedTasks ?? []).map((r) => r.content_id as string);
+  if (linkedIds.length > 0) orParts.push(`id.in.(${linkedIds.join(",")})`);
   const { data } = await supabase
     .from("marketing_content")
     .select(
       "id, title, format, scheduled_date, status, needs_review, approved, reviewed_at, review_note, hook, content_fb, content_ig, screen_captions, what_to_record, hashtags, to_confirm, link_utm"
     )
-    .eq("assignee_employee_id", employeeId)
+    .or(orParts.join(","))
     .order("scheduled_date", { ascending: true });
 
   const items = (data ?? []) as ContentItem[];
@@ -288,7 +307,7 @@ async function CreatorContent({ employeeId }: { employeeId: string }) {
     const badge: ApprovalBadge | null = c.needs_review ? approvalBadge(c, today) : null;
 
     return (
-      <div key={c.id} className="flex flex-col gap-2.5 rounded-xl border border-zinc-200 bg-white p-3">
+      <div key={c.id} id={`tresc-${c.id}`} className="scroll-mt-4 flex flex-col gap-2.5 rounded-xl border border-zinc-200 bg-white p-3">
         <div className="flex flex-wrap items-center gap-2">
           <span>{CONTENT_FORMAT_ICONS[c.format]}</span>
           <p className={`font-semibold ${isPublished ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{c.title}</p>
@@ -393,7 +412,7 @@ async function CreatorCalendar({ employeeId, yearParam, monthParam }: { employee
   const supabase = createServerSupabaseClient();
   const { data } = await supabase
     .from("marketing_task")
-    .select("id, title, status, due_date, recording_format, recording_look_for, recording_mood")
+    .select("id, title, status, due_date, recording_format, recording_look_for, recording_mood, content_id")
     .eq("assignee_employee_id", employeeId)
     .eq("archived", false)
     .gte("due_date", dateKeys[0])
