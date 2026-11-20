@@ -153,7 +153,7 @@ export async function PlansSection() {
           {activeStrategie.length > 0 && (
             <Card>
               <h2 className="mb-3 font-semibold text-zinc-900">
-                Strategie <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{activeStrategie.length}</span>
+                Strategie <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">{activeStrategie.length}</span>
               </h2>
               <div className="flex flex-col gap-2">{activeStrategie.map(renderPlan)}</div>
             </Card>
@@ -161,7 +161,7 @@ export async function PlansSection() {
           {activePlany.length > 0 && (
             <Card>
               <h2 className="mb-3 font-semibold text-zinc-900">
-                Plany <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{activePlany.length}</span>
+                Plany <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-600">{activePlany.length}</span>
               </h2>
               <div className="flex flex-col gap-2">{activePlany.map(renderPlan)}</div>
             </Card>
