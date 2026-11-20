@@ -147,10 +147,10 @@ export async function CashDayScreen({
 
       <Card>
         <h2 className="mb-1 font-semibold text-zinc-900">
-          KW / KP dziś <span className="font-normal text-zinc-400">({docLinks.length})</span>
+          KW / KP dziś <span className="font-normal text-zinc-500">({docLinks.length})</span>
         </h2>
         {docLinks.length === 0 ? (
-          <p className="text-sm text-zinc-400">Brak KW/KP dzisiaj.</p>
+          <p className="text-sm text-zinc-500">Brak KW/KP dzisiaj.</p>
         ) : (
           <form action={bulkSetDocType} className="mt-2 flex flex-col gap-3">
             <div className="flex flex-col divide-y divide-zinc-100">
@@ -161,7 +161,7 @@ export async function CashDayScreen({
                     name="link_id"
                     value={d.id}
                     aria-label={`Zaznacz dokument ${d.full_number}`}
-                    className="h-5 w-5 shrink-0 accent-brand-blue"
+                    className="h-6 w-6 shrink-0 accent-brand-blue"
                   />
                   <Link href={`${basePath === "/recepcja/kasa" ? "/recepcja/kasa" : "/kasa"}/dokument/${d.id}`} className="flex min-w-0 flex-1 items-center gap-3 hover:bg-zinc-50">
                     <span className="text-lg" aria-hidden>
@@ -214,7 +214,7 @@ export async function CashDayScreen({
           </SubmitButton>
         </form>
       ) : (
-        <p className="text-center text-sm text-zinc-400">Zapisz liczenie na zamknięcie, żeby móc zamknąć dzień.</p>
+        <p className="text-center text-sm text-zinc-500">Zapisz liczenie na zamknięcie, żeby móc zamknąć dzień.</p>
       )}
     </div>
   );
@@ -290,14 +290,14 @@ function CountCard({
         <input type="hidden" name="slot" value={slot} />
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-zinc-700">Gotówka w szufladzie</label>
-          <p className="text-xs text-zinc-400">Policz fizycznie banknoty i monety w kasie, i wpisz ile faktycznie naliczyłaś/eś.</p>
+          <p className="text-xs text-zinc-500">Policz fizycznie banknoty i monety w kasie, i wpisz ile faktycznie naliczyłaś/eś.</p>
           <input type="number" step="0.01" name="counted" required inputMode="decimal" className={INPUT} />
         </div>
         {slot === "close" && (
           <>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-zinc-700">Suma z wydruku terminala</label>
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-zinc-500">
                 Kwota &quot;SUMA&quot; z raportu dobowego terminala płatniczego (wszystkie płatności kartą dziś, łącznie z kaucjami za butelki płaconymi
                 kartą).
               </p>
@@ -305,14 +305,14 @@ function CountCard({
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-zinc-700">Suma z raportu fiskalnego dobowego (opcjonalnie)</label>
-              <p className="text-xs text-zinc-400">Kwota sprzedaży z wydruku dobowego z kasy fiskalnej (FAWAG BOX) — do porównania z systemem.</p>
+              <p className="text-xs text-zinc-500">Kwota sprzedaży z wydruku dobowego z kasy fiskalnej (FAWAG BOX) — do porównania z systemem.</p>
               <input type="number" step="0.01" name="fiscal_daily_total" inputMode="decimal" className={INPUT} />
             </div>
           </>
         )}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-zinc-700">Wyjaśnienie</label>
-          <p className="text-xs text-zinc-400">Tylko jeśli policzona kwota nie zgadza się z oczekiwaną — inaczej zostaw puste.</p>
+          <p className="text-xs text-zinc-500">Tylko jeśli policzona kwota nie zgadza się z oczekiwaną — inaczej zostaw puste.</p>
           <input type="text" name="explanation" placeholder="np. KW czeka na wpis w eFitness" className={INPUT} />
         </div>
         {!employee && <EmployeePicker shiftEmployees={shiftEmployees} />}
