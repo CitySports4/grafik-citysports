@@ -87,6 +87,7 @@ export default async function MarketingPage({
           showAll={params.zakres === "wszystkie"}
           view={params.widok}
           overdueOnly={params.filtr === "po_terminie"}
+          isAdmin={employee.roles.includes("admin")}
         />
       )}
       {tab === "kalendarz" && (

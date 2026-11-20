@@ -172,13 +172,11 @@ export async function setTaskStatus(formData: FormData) {
   if (isPublishTask && task.content_id) {
     const { data: content } = await supabase.from("marketing_content").select("status").eq("id", task.content_id).single();
     if (status === "done") {
-      if (!employee.roles.includes("admin")) {
-        const reason = await publishBlockReason(supabase, task.content_id);
-        if (reason) {
-          await setFlash("warn", reason);
-          revalidateMarketing();
-          return;
-        }
+      const warn = await checkPublish(supabase, employee, task.content_id, formData.get("force") === "1");
+      if (warn) {
+        await setFlash("warn", warn);
+        revalidateMarketing();
+        return;
       }
       const { data: contentFull } = await supabase.from("marketing_content").select("title, status").eq("id", task.content_id).single();
       const { data: others } = await supabase
@@ -286,10 +284,10 @@ export async function setContentStatus(formData: FormData) {
       throw new Error("Możesz oznaczać jako zrobione tylko własne treści.");
     }
   }
-  if (status === "opublikowane" && !employee.roles.includes("admin")) {
-    const reason = await publishBlockReason(supabase, id);
-    if (reason) {
-      await setFlash("warn", reason);
+  if (status === "opublikowane") {
+    const warn = await checkPublish(supabase, employee, id, formData.get("force") === "1");
+    if (warn) {
+      await setFlash("warn", warn);
       revalidateMarketing();
       return;
     }
@@ -319,28 +317,45 @@ export async function setContentStatus(formData: FormData) {
 // cała reguła, w tym automatyczne zwolnienie w dniu scheduled_date, żeby
 // zwłoka admina nie blokowała pracy w nieskończoność). Admin może opublikować
 // zawsze — on sam jest osobą akceptującą.
-// Powód blokady publikacji (null = można publikować). Ta sama reguła dla
-// wpisu i dla zadania publikacji; administrator pomija blokadę (jak dotąd).
-async function publishBlockReason(supabase: ReturnType<typeof createServerSupabaseClient>, contentId: string): Promise<string | null> {
+// Blokada publikacji. "Wymaga poprawki" blokuje wszystkich, także administratora.
+// "Czeka na akceptację" (dziś przed datą publikacji) blokuje, ale administrator
+// może to obejść po potwierdzeniu w oknie (force). Dziś >= data publikacji = bez blokady.
+async function publishBlock(supabase: ReturnType<typeof createServerSupabaseClient>, contentId: string): Promise<{ text: string; overridable: boolean } | null> {
   const { data: current } = await supabase
     .from("marketing_content")
     .select("needs_review, approved, reviewed_at, scheduled_date")
     .eq("id", contentId)
     .single();
-  if (!current) return "Treść już nie istnieje — odśwież stronę.";
+  if (!current) return { text: "Treść już nie istnieje — odśwież stronę.", overridable: false };
   const today = toDateKey(new Date());
   if (current.needs_review && !current.approved && current.reviewed_at) {
-    return "Treść wymaga poprawki";
+    return { text: "Treść wymaga poprawki", overridable: false };
   }
   if (isApprovalPending(current, today)) {
-    return "Treść czeka na akceptację Krzysztofa";
+    return { text: "Treść czeka na akceptację Krzysztofa", overridable: true };
   }
   return null;
 }
 
-async function assertCanPublish(supabase: ReturnType<typeof createServerSupabaseClient>, contentId: string) {
-  const reason = await publishBlockReason(supabase, contentId);
-  if (reason) throw new Error(reason);
+// Zwraca tekst ostrzeżenia (null = można publikować). Przy obejściu przez
+// administratora dopisuje notatkę do review_note.
+async function checkPublish(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  employee: { name: string; roles: string[] },
+  contentId: string,
+  force: boolean
+): Promise<string | null> {
+  const block = await publishBlock(supabase, contentId);
+  if (!block) return null;
+  if (block.overridable && employee.roles.includes("admin") && force) {
+    const { data: c } = await supabase.from("marketing_content").select("review_note").eq("id", contentId).single();
+    const today = toDateKey(new Date());
+    const note = `opublikowano przed akceptacją — ${employee.name}, ${today}`;
+    const merged = [c?.review_note?.trim(), note].filter(Boolean).join("\n");
+    await supabase.from("marketing_content").update({ review_note: merged }).eq("id", contentId);
+    return null;
+  }
+  return block.text;
 }
 
 // Krótki komunikat po akcji (zielony / żółty), czytany przez baner na stronie.
@@ -416,7 +431,7 @@ function readPresentTextFields(formData: FormData) {
   return out;
 }
 
-export async function updateContent(formData: FormData) {
+export async function updateContent(formData: FormData): Promise<{ warning: string } | undefined> {
   const employee = await requireMarketingAccess();
   const id = String(formData.get("id") ?? "");
   const title = String(formData.get("title") ?? "").trim();
@@ -430,8 +445,9 @@ export async function updateContent(formData: FormData) {
   if (!id || !title || !scheduled_date) throw new Error("Podaj tytuł i datę publikacji.");
 
   const supabase = createServerSupabaseClient();
-  if (status === "opublikowane" && !employee.roles.includes("admin")) {
-    await assertCanPublish(supabase, id);
+  if (status === "opublikowane") {
+    const warn = await checkPublish(supabase, employee, id, formData.get("force") === "1");
+    if (warn) return { warning: warn };
   }
   const { data: prevContent } = await supabase.from("marketing_content").select("status").eq("id", id).single();
   if (prevContent && prevContent.status !== status) {

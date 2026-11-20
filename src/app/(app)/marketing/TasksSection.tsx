@@ -20,6 +20,7 @@ import {
   isApprovalPending,
 } from "@/lib/marketing";
 import { updateTask, setTaskStatus, deleteTask, setTaskArchived } from "./actions";
+import { PublishConfirm } from "./PublishConfirm";
 import { AddTaskForm } from "./AddTaskForm";
 import { ASSIGNEE_ALL as ALL, ASSIGNEE_UNASSIGNED as UNASSIGNED } from "@/lib/task-calendar";
 
@@ -33,6 +34,7 @@ type Task = {
   priority: MarketingTaskPriority;
   due_date: string | null;
   due_kind: "do" | "w_dniu";
+  kind: string | null;
   assignee_employee_id: string | null;
   archived: boolean;
   content_id: string | null;
@@ -147,6 +149,7 @@ export async function TasksSection({
   showAll,
   view,
   overdueOnly,
+  isAdmin = false,
 }: {
   currentEmployeeId: string;
   assigneeFilter?: string;
@@ -157,6 +160,7 @@ export async function TasksSection({
   // ?widok=tydzien z zakładek sprzed audytu UX) pokazuje się "Mój tydzień".
   view?: string;
   overdueOnly?: boolean;
+  isAdmin?: boolean;
 }) {
   const supabase = createServerSupabaseClient();
   const todayDate = new Date();
@@ -170,7 +174,7 @@ export async function TasksSection({
     supabase
       .from("marketing_task")
       .select(
-        "id, title, description, status, priority, due_date, due_kind, assignee_employee_id, archived, content_id, project, project_id, recording_format, recording_look_for, recording_mood"
+        "id, title, description, status, priority, due_date, due_kind, kind, assignee_employee_id, archived, content_id, project, project_id, recording_format, recording_look_for, recording_mood"
       )
       .order("due_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false }),
@@ -209,6 +213,19 @@ export async function TasksSection({
   const weekContent = (weekContentRaw ?? []) as { id: string; format: string; platform: string; status: string; needs_review: boolean; approved: boolean; scheduled_date: string }[];
   const hasWeekFormat = (...formats: string[]) => weekContent.some((c) => formats.includes(c.format) && c.status !== "pomysl");
   const weekAwaiting = weekContent.filter((c) => isApprovalPending(c, today)).length;
+  // Wpisy z zadaniem publikacji, które czekają na akceptację (do potwierdzenia przez administratora).
+  const publishContentIds = Array.from(new Set(allTasksRaw.filter((t) => t.content_id && (t.kind === "opublikowac" || t.kind === "nagrac_opublikowac")).map((t) => t.content_id as string)));
+  const pendingPublishIds = new Set<string>();
+  if (isAdmin && publishContentIds.length > 0) {
+    const { data: pubContent } = await supabase
+      .from("marketing_content")
+      .select("id, needs_review, approved, reviewed_at, scheduled_date")
+      .in("id", publishContentIds);
+    for (const c of pubContent ?? []) {
+      const needsChanges = c.needs_review && !c.approved && !!c.reviewed_at;
+      if (!needsChanges && isApprovalPending(c, today)) pendingPublishIds.add(c.id as string);
+    }
+  }
   // Dopasowanie po imieniu, nie na sztywno wpisany UUID (patrz Sprint D, D1)
   // — jeśli nikt o tym dokładnie imieniu nie ma roli marketing, pola
   // nagraniowe po prostu zostają dostępne tylko przez ręczny toggle.
@@ -265,6 +282,9 @@ export async function TasksSection({
     const assignee = t.assignee_employee_id ? assigneeById.get(t.assignee_employee_id) : null;
     const published = t.status === "done";
     const overdue = !published && t.due_date !== null && t.due_date < today;
+    const confirmMsg = isAdmin && t.content_id && pendingPublishIds.has(t.content_id) && (t.kind === "opublikowac" || t.kind === "nagrac_opublikowac")
+      ? "Krzysztof jeszcze nie zatwierdził. Opublikować mimo to?"
+      : null;
 
     return (
       <div key={t.id} className={`rounded-xl border p-3 ${overdue ? "border-red-200 bg-red-50" : "border-zinc-200 bg-white"}`}>
@@ -275,7 +295,7 @@ export async function TasksSection({
               Kto chce zaznaczyć pośredni etap ("Gotowe, czeka na
               publikację") bez razu przechodzić do opublikowane, używa
               przycisków niżej. */}
-          <form action={setTaskStatus} className="pt-0.5">
+          <PublishConfirm action={setTaskStatus} confirmMessage={confirmMsg} className="pt-0.5">
             <input type="hidden" name="id" value={t.id} />
             <input type="hidden" name="status" value={published ? "todo" : "done"} />
             <button
@@ -287,7 +307,7 @@ export async function TasksSection({
             >
               {published && "✓"}
             </button>
-          </form>
+          </PublishConfirm>
 
           <div className="min-w-0 flex-1">
             <p className={`font-semibold ${published ? "text-zinc-500 line-through" : "text-zinc-900"}`}>{t.title}</p>
@@ -356,13 +376,13 @@ export async function TasksSection({
                       ↺ Cofnij
                     </button>
                   </form>
-                  <form action={setTaskStatus}>
+                  <PublishConfirm action={setTaskStatus} confirmMessage={confirmMsg}>
                     <input type="hidden" name="id" value={t.id} />
                     <input type="hidden" name="status" value="done" />
                     <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                       ✅ Zrobione
                     </button>
-                  </form>
+                  </PublishConfirm>
                 </>
               )}
               {published && (

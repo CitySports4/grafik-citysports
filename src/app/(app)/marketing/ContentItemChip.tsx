@@ -121,6 +121,7 @@ export function ContentItemChip({
   const [error, setError] = useState<string | null>(null);
   const [reviewNoteDraft, setReviewNoteDraft] = useState(item.review_note);
   const [addingTasks, setAddingTasks] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
   const [taskKind, setTaskKind] = useState<"film" | "animacja" | "foto">("film");
   const { projects } = useMarketingProjects();
   const assignee = item.assignee_employee_id ? assignees.find((a) => a.id === item.assignee_employee_id) : null;
@@ -159,6 +160,7 @@ export function ContentItemChip({
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setWarning(null);
     try {
       // Wysyłamy tylko pola treści, które ktoś faktycznie zmienił — pole bez
       // zmian nie nadpisuje bazy (patrz updateContent: brak pola = "nie
@@ -169,7 +171,16 @@ export function ContentItemChip({
         const sent = fd.get(key);
         if (sent !== null && String(sent).trim() === (item[key] ?? "").trim()) fd.delete(key);
       }
-      await updateContent(fd);
+      // Administrator publikuje treść przed akceptacją Krzysztofa — tylko po potwierdzeniu.
+      if (fd.get("status") === "opublikowane" && isAdmin && isApprovalPending(item, today) && item.status !== "opublikowane") {
+        if (!window.confirm("Krzysztof jeszcze nie zatwierdził. Opublikować mimo to?")) return;
+        fd.set("force", "1");
+      }
+      const res = await updateContent(fd);
+      if (res && "warning" in res) {
+        setWarning(res.warning);
+        return;
+      }
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Coś poszło nie tak.");
@@ -294,6 +305,11 @@ export function ContentItemChip({
 
             {error && <Banner variant="error">{error}</Banner>}
 
+            {warning && (
+              <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+                ⏳ {warning}
+              </p>
+            )}
             <form onSubmit={handleSave} className="flex flex-col gap-3">
               <input type="hidden" name="id" value={item.id} />
               <div className="flex flex-col gap-1.5">
