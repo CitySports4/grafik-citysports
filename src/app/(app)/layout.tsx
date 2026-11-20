@@ -83,7 +83,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <form action={logout}>
             <button
               type="submit"
-              className="rounded-lg px-3 py-1.5 text-sm font-medium text-white/70 hover:bg-white/10 hover:text-brand-orange-ink"
+              className="inline-flex min-h-11 items-center rounded-lg px-3 py-1.5 text-sm font-medium text-white/70 hover:bg-white/10 hover:text-brand-orange-ink"
             >
               Wyloguj
             </button>

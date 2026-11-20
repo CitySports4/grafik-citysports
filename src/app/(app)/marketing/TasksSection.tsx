@@ -284,7 +284,7 @@ export async function TasksSection({
                     <input type="hidden" name="id" value={t.id} />
                     <input type="hidden" name="current_due_date" value={t.due_date} />
                     <input type="hidden" name="unit" value="week" />
-                    <button type="submit" className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-200">
+                    <button type="submit" className="inline-flex min-h-11 items-center rounded-full bg-zinc-100 px-2.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-200">
                       ↻ tydzień
                     </button>
                   </form>
@@ -292,7 +292,7 @@ export async function TasksSection({
                     <input type="hidden" name="id" value={t.id} />
                     <input type="hidden" name="current_due_date" value={t.due_date} />
                     <input type="hidden" name="unit" value="month" />
-                    <button type="submit" className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-200">
+                    <button type="submit" className="inline-flex min-h-11 items-center rounded-full bg-zinc-100 px-2.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-200">
                       ↻ miesiąc
                     </button>
                   </form>

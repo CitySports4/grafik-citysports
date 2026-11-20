@@ -142,7 +142,7 @@ export default async function PersonalTrainingPage({
             {isAdmin && (
               <>
                 {" "}
-                <Link href="/admin/treningi-personalne" className="font-semibold text-brand-orange-ink hover:underline">
+                <Link href="/admin/treningi-personalne" className="inline-flex min-h-11 items-center font-semibold text-brand-orange-ink hover:underline">
                   Ustawienia →
                 </Link>
               </>
@@ -150,17 +150,17 @@ export default async function PersonalTrainingPage({
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <Link href="/treningi-personalne/historia" className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+          <Link href="/treningi-personalne/historia" className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             Historia
           </Link>
-          <Link href={`/treningi-personalne/rozliczenia`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+          <Link href={`/treningi-personalne/rozliczenia`} className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             Rozliczenia
           </Link>
-          <Link href={`?monday=${prevMonday}`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
-            ← poprzedni tydzień
+          <Link href={`?monday=${prevMonday}`} className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+            <span className="sm:hidden">←</span><span className="hidden sm:inline">← poprzedni tydzień</span>
           </Link>
-          <Link href={`?monday=${nextMonday}`} className="rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
-            następny tydzień →
+          <Link href={`?monday=${nextMonday}`} className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+            <span className="sm:hidden">→</span><span className="hidden sm:inline">następny tydzień →</span>
           </Link>
         </div>
       </div>
@@ -287,7 +287,7 @@ export default async function PersonalTrainingPage({
 
               {(canManage || canPreview) && (
                 <details className="group mt-2 border-t border-zinc-200 pt-2">
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange-ink marker:content-none">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange-ink marker:content-none">
                     <span>+ Nowy trening</span>
                     <span className="font-normal text-zinc-400 group-open:hidden">▸</span>
                     <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
@@ -329,7 +329,7 @@ export default async function PersonalTrainingPage({
 
               {(isAdmin || canPreview) && (
                 <details className="group mt-2 border-t border-zinc-200 pt-2">
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-600 marker:content-none">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-600 marker:content-none">
                     <span>🔒 Zablokuj salę</span>
                     <span className="font-normal text-zinc-400 group-open:hidden">▸</span>
                     <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>

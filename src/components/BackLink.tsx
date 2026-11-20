@@ -5,7 +5,7 @@ import Link from "next/link";
 // powrotu bywał przycisk "wstecz" przeglądarki.
 export function BackLink({ href, label }: { href: string; label: string }) {
   return (
-    <Link href={href} className="text-sm font-semibold text-zinc-500 hover:text-zinc-800">
+    <Link href={href} className="inline-flex min-h-11 items-center text-sm font-semibold text-zinc-500 hover:text-zinc-800">
       ← {label}
     </Link>
   );
