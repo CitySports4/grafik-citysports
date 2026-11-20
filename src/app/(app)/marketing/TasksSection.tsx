@@ -18,7 +18,7 @@ import {
   type RecordingFormat,
   type ProjectType,
 } from "@/lib/marketing";
-import { updateTask, setTaskStatus, deleteTask, postponeTask, setTaskArchived } from "./actions";
+import { updateTask, setTaskStatus, deleteTask, setTaskArchived } from "./actions";
 import { AddTaskForm } from "./AddTaskForm";
 import { ASSIGNEE_ALL as ALL, ASSIGNEE_UNASSIGNED as UNASSIGNED } from "@/lib/task-calendar";
 
@@ -317,30 +317,6 @@ export async function TasksSection({
                   </span>
                 );
               })()}
-              {/* Szybkie przesunięcie terminu (patrz kwestionariusz Saszy,
-                  październik 2026: system ma pomagać przesuwać zadania, nie
-                  je ignorować) — zamiast grzebania w "Edytuj" za każdym
-                  razem, gdy coś się po prostu nie zdąży na czas. */}
-              {t.due_date && !published && (
-                <span className="flex items-center gap-1">
-                  <form action={postponeTask}>
-                    <input type="hidden" name="id" value={t.id} />
-                    <input type="hidden" name="current_due_date" value={t.due_date} />
-                    <input type="hidden" name="unit" value="week" />
-                    <button type="submit" className="inline-flex min-h-11 items-center rounded-full bg-zinc-100 px-2.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-200">
-                      ↻ tydzień
-                    </button>
-                  </form>
-                  <form action={postponeTask}>
-                    <input type="hidden" name="id" value={t.id} />
-                    <input type="hidden" name="current_due_date" value={t.due_date} />
-                    <input type="hidden" name="unit" value="month" />
-                    <button type="submit" className="inline-flex min-h-11 items-center rounded-full bg-zinc-100 px-2.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-200">
-                      ↻ miesiąc
-                    </button>
-                  </form>
-                </span>
-              )}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {t.status === "todo" && (

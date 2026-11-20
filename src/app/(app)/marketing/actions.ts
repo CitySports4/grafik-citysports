@@ -167,37 +167,6 @@ export async function deleteTask(formData: FormData) {
   revalidateMarketing();
 }
 
-// Szybkie przesunięcie terminu (patrz kwestionariusz Saszy, październik
-// 2026: "system żeby pomagał przesuwać zadania, nie ignorować") — zamiast
-// ręcznej edycji daty, jeden klik dokłada tydzień/miesiąc do ISTNIEJĄCEGO
-// terminu (nie do dzisiejszej daty — przesuwa zaległość do przodu, nie
-// resetuje jej licząc od teraz).
-export async function postponeTask(formData: FormData) {
-  await requireMarketingAccess();
-  const id = String(formData.get("id") ?? "");
-  const currentDueDate = String(formData.get("current_due_date") ?? "");
-  const unit = String(formData.get("unit") ?? "");
-  if (!id || !currentDueDate) throw new Error("Brak danych.");
-
-  // Odłożenie liczy się od DZIŚ (strefa PL), a nie od starego terminu: zaległe
-  // zadanie przesunięte o tydzień od dawnego terminu dalej jest zaległe i wraca
-  // na listę codziennie, dopóki ktoś go nie zrobi.
-  const todayKey = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Warsaw" });
-  const base = new Date(todayKey + "T00:00:00");
-  const next = new Date(base);
-  if (unit === "week") next.setDate(next.getDate() + 7);
-  else if (unit === "month") next.setMonth(next.getMonth() + 1);
-  else throw new Error("Nieznana jednostka przesunięcia.");
-
-  const supabase = createServerSupabaseClient();
-  const { error } = await supabase
-    .from("marketing_task")
-    .update({ due_date: toDateKey(next), updated_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw new Error(dbErrorMessage(error));
-  revalidateMarketing();
-}
-
 // Chowa zadanie z bieżącego widoku i z licznika zaległych bez usuwania — np.
 // stare, historyczne zadania z importu, które nie mają już znaczenia, ale
 // szkoda kasować (patrz feedback z użycia: zaległe zadania z przesz łych dat
