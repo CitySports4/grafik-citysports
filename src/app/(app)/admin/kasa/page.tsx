@@ -50,6 +50,9 @@ export default async function KasaImportPage() {
   return (
     <div className="flex flex-col gap-6">
       <BackLink href="/admin" label="Panel admina" />
+      <a href="/admin/kasa/miesiac" className="self-start text-sm font-semibold text-brand-blue hover:underline">
+        Miesiąc (RK i paczka ZIP) →
+      </a>
 
       <div>
         <h1 className="text-lg font-bold text-zinc-900">Kasa — import z eFitness</h1>
