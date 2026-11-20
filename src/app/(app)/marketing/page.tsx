@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireEmployee, canAccessMarketing, isContentCreator } from "@/lib/session";
 import { TasksSection } from "./TasksSection";
 import { archiveOldDoneTasks } from "./actions";
+import { MarketingFlash } from "./FlashServer";
 import { ContentCalendarSection } from "./ContentCalendarSection";
 import { PlansSection } from "./PlansSection";
 import { ImportFromFile } from "./ImportFromFile";
@@ -78,6 +79,7 @@ export default async function MarketingPage({
         ))}
       </div>
 
+      <MarketingFlash />
       {tab === "zadania" && (
         <TasksSection
           currentEmployeeId={employee.id}

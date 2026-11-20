@@ -1,7 +1,7 @@
 # Marketing — kroki 4–7 (specyfikacja robocza)
 
 Źródło: wiadomość z 20.11.2026 (sesja Claude Code), doprecyzowana w tej samej rozmowie.
-Kroki 4 (TV w klubie) i 7 (wyniki przy wpisie) wymagają pełnej treści — do uzupełnienia.
+Kroki 4 (TV w klubie) i 7 (wyniki przy wpisie) — pełna treść poniżej (od 20.11.2026, NIE wdrażane).
 
 ## Synchronizacja statusu: wpis ↔ zadania
 
@@ -37,3 +37,45 @@ Dane:
 
 Do zrobienia (ustalone, ale jeszcze nie w pełni w UI):
 - komunikat „Zaznaczono też: …” po zmianie statusu.
+
+## Krok 4 — platforma „TV w klubie”
+
+Baza: platform CHECK + `tv_klub`; format CHECK + `plansza_tv` (JPG/PNG), `animacja_tv` (MP4 bez dźwięku).
+Nowe kolumny `marketing_content`: `end_date date null` (CHECK end_date is null or end_date >= scheduled_date) — „zdjąć z ekranu”;
+`file_url text not null default ''` — link do pliku (Canva/Drive).
+
+UI: po wyborze „TV w klubie” formaty tylko `plansza_tv` / `animacja_tv`. Pola: Na ekranie od (scheduled_date),
+Zdjąć z ekranu (end_date, wymagane), Plik (file_url + „Otwórz”), Treść planszy (screen_captions + „Kopiuj”), notatki.
+Ukryte: Treść FB/IG, Hashtagi, Link z UTM, Co nagrać.
+Podpowiedź: „Nagłówek maks. ~6 słów + 1 linijka szczegółu + co dalej (np. Zapisz się w recepcji)”.
+
+Kalendarz: pasek od scheduled_date do end_date (albo kropka w dniu startu), osobny kolor.
+Pasek nad kanbanem: „Teraz na TV: N”, „Do zdjęcia z TV: N” (end_date dziś lub w ostatnich 7 dniach).
+Akceptacja jak przy innych wpisach (Krzysztof). Wpisy TV nie liczą się do rytmu tygodnia.
+
+## Krok 7 — link do posta i wyniki przy wpisie
+
+Baza: `marketing_content.post_url text not null default ''`; `meta_media_id text null`;
+`meta_source text null` CHECK in (`ig_media`, `ig_story`, `fb_post`).
+Jeśli wpis ma mieć IG i FB jednocześnie — osobne pola (`meta_ig_id`, `meta_fb_id`) zamiast jednego.
+
+Dane (tylko po stronie serwera):
+- `meta_ig_media`: reach, views, likes, comments, saved, shares, media_product_type (REELS / FEED), permalink, created_at;
+  dla rolek: skip_rate, avg_watch_time_ms, total_watch_time_ms,
+- `meta_ig_stories`: views, reach, replies, shares, taps_forward, taps_back, exits, swipes_forward, created_at,
+- `meta_fb_posts`: reach, reactions, comments, shares, clicks, permalink, created_at.
+Każda tabela ma `synced_at`.
+
+Powiązanie:
+1. Ręcznie przez „Link do posta” — dopasowanie po permalink (bez `?…` i końcowego `/`).
+2. Podpowiedź, gdy wpis jest „opublikowane” i brak powiązania: kandydaci z created_at (Europe/Warsaw)
+   = scheduled_date ±1 dzień wg formatu (rolka → REELS, post/karuzela → FEED, story → stories, plus meta_fb_posts),
+   z miniopisem i przyciskiem „To ten”. Nigdy automatycznie.
+
+Wyniki (sekcja „Wyniki” po powiązaniu):
+- rolka: wyświetlenia, zasięg, przewinięcia w 3 s (%), średni czas oglądania (s), zapisy, udostępnienia;
+- post/karuzela IG: zasięg, zapisy, polubienia, komentarze;
+- story: wyświetlenia, zasięg, odpowiedzi, wyjścia, przejścia dalej;
+- FB: zasięg, reakcje, komentarze, udostępnienia, kliknięcia.
+Przy każdej liczbie „powyżej / poniżej mediany” tego samego formatu z 90 dni + „dane z …” (synced_at).
+Na karcie wpisu w kalendarzu jedna główna liczba: rolka — wyświetlenia, post — zasięg, story — wyświetlenia.
