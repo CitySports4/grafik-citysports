@@ -205,7 +205,7 @@ export default async function PersonalTrainingBillingPage({
       {isAdmin && (
         <p className="text-xs text-zinc-400">
           Cykl rozliczeń każdego trenera (tydzień/miesiąc) ustawiasz w{" "}
-          <Link href="/admin/pracownicy" className="font-semibold text-brand-orange hover:underline">
+          <Link href="/admin/pracownicy" className="font-semibold text-brand-orange-ink hover:underline">
             Pracownicy
           </Link>
           , rolę {ROLE_LABELS.trener_personalny} tam samo.

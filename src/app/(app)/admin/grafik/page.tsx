@@ -213,7 +213,7 @@ export default async function ScheduleBuilderPage({
             <input type="hidden" name="schedule_month_id" value={scheduleMonth.id} />
             <input type="hidden" name="year" value={year} />
             <input type="hidden" name="month" value={month} />
-            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Generuj strukturę miesiąca
             </SubmitButton>
           </form>

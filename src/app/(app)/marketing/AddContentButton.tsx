@@ -43,7 +43,7 @@ export function AddContentButton({ date, dateLabel, assignees }: { date: string;
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="mt-auto text-left text-[11px] font-semibold text-brand-orange">
+      <button type="button" onClick={() => setOpen(true)} className="mt-auto text-left text-[11px] font-semibold text-brand-orange-ink">
         + Dodaj
       </button>
 

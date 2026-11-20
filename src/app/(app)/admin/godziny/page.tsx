@@ -92,7 +92,7 @@ export default async function AdminGodzinyPage({
           <p className="text-sm text-zinc-500">
             Edycja godzin dowolnego pracownika, dla dowolnego dnia — bez limitu 7 dni obowiązującego
             pracownika. Wpisy starsze niż 3 miesiące trafiają do{" "}
-            <Link href="/admin/godziny/archiwum" className="font-semibold text-brand-orange hover:underline">
+            <Link href="/admin/godziny/archiwum" className="font-semibold text-brand-orange-ink hover:underline">
               archiwum
             </Link>
             .
@@ -142,7 +142,7 @@ export default async function AdminGodzinyPage({
           {totalCost !== null ? (
             <span className="text-lg font-bold text-zinc-900">
               {totalHours}h × {selectedEmployee.hourly_rate} PLN/h ={" "}
-              <span className="text-brand-orange">{totalCost.toFixed(2)} PLN</span>
+              <span className="text-brand-orange-ink">{totalCost.toFixed(2)} PLN</span>
             </span>
           ) : (
             <span className="text-lg font-bold text-zinc-900">{totalHours}h</span>

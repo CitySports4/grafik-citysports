@@ -50,7 +50,7 @@ export default async function PersonalTrainingSettingsPage() {
             <p className="text-xs text-zinc-500">Płaci trener klubowi za każdą osobę na treningu.</p>
           </div>
           <div className="sm:col-span-2">
-            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Zapisz
             </SubmitButton>
           </div>
@@ -95,7 +95,7 @@ export default async function PersonalTrainingSettingsPage() {
                     <label className="text-xs font-semibold text-zinc-600">Do</label>
                     <input type="time" name="end_time" required className={`${INPUT} w-[110px] !py-1.5`} />
                   </div>
-                  <SubmitButton className="rounded-lg bg-brand-orange px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+                  <SubmitButton className="rounded-lg bg-brand-orange-cta px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
                     Dodaj okno
                   </SubmitButton>
                 </form>

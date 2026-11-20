@@ -213,7 +213,7 @@ export async function ContentCalendarSection({
       <div className="flex flex-wrap items-center gap-1.5">
         <Link
           href={`?tab=kalendarz&year=${year}&month=${month}&osoba=${MINE}${projektSuffix}`}
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === employee.id ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === employee.id ? "bg-brand-orange-cta text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Moje ({allContent.filter((c) => c.assignee_employee_id === employee.id).length})
         </Link>

@@ -183,7 +183,7 @@ export function DayTimeEntryEditor({
                 type="button"
                 disabled={pending === row.id}
                 onClick={() => handleSave(row)}
-                className="rounded-lg bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+                className="rounded-lg bg-brand-orange-cta px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
               >
                 {pending === row.id ? "Zapisywanie…" : "Zapisz"}
               </button>
@@ -214,7 +214,7 @@ export function DayTimeEntryEditor({
       <button
         type="button"
         onClick={addBlankRow}
-        className="self-start rounded-lg border-[1.5px] border-dashed border-brand-orange/50 px-3 py-1.5 text-xs font-bold text-brand-orange hover:border-brand-orange hover:bg-brand-orange/5"
+        className="self-start rounded-lg border-[1.5px] border-dashed border-brand-orange/50 px-3 py-1.5 text-xs font-bold text-brand-orange-ink hover:border-brand-orange hover:bg-brand-orange/5"
       >
         + Dodaj zmianę{rows.length > 0 ? " (np. po przerwie)" : ""}
       </button>

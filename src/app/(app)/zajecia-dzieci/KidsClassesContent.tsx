@@ -197,7 +197,7 @@ export async function KidsClassesContent({
             </Link>
           )}
           {unpaidCount > 0 && (
-            <Link href={`${basePath}?tab=platnosci`} className="rounded-full bg-brand-orange px-3 py-1.5 text-white hover:bg-brand-orange-dark">
+            <Link href={`${basePath}?tab=platnosci`} className="rounded-full bg-brand-orange-cta px-3 py-1.5 text-white hover:bg-brand-orange-dark">
               ⚠ {unpaidCount} bez opłaty za {SEASON_MONTHS[currentMonthIdx!]}
             </Link>
           )}
@@ -209,7 +209,7 @@ export async function KidsClassesContent({
           {activeGroups.map((g) => {
             const occ = occupancy.get(g.id) ?? 0;
             return (
-              <span key={g.id} className={`rounded-full px-3 py-1.5 ${occ >= g.capacity ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-700"}`}>
+              <span key={g.id} className={`rounded-full px-3 py-1.5 ${occ >= g.capacity ? "bg-brand-orange-cta text-white" : "bg-zinc-100 text-zinc-700"}`}>
                 {groupLabel(g)}: {occ}/{g.capacity}
               </span>
             );
@@ -631,7 +631,7 @@ export async function KidsClassesContent({
                 <label className="text-[10px] font-semibold text-zinc-500">Pojemność</label>
                 <input type="number" name="capacity" min={1} defaultValue={8} className={`${INPUT_SM} w-16`} />
               </div>
-              <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+              <SubmitButton className="rounded-xl bg-brand-orange-cta px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
                 Dodaj grupę
               </SubmitButton>
             </form>

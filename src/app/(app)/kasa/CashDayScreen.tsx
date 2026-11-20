@@ -209,7 +209,7 @@ export async function CashDayScreen({
         <form action={closeCashDay}>
           <input type="hidden" name="date" value={date} />
           {!employee && <EmployeePicker shiftEmployees={shiftEmployees} />}
-          <SubmitButton className="w-full rounded-xl bg-brand-orange px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+          <SubmitButton className="w-full rounded-xl bg-brand-orange-cta px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
             Zamknij dzień
           </SubmitButton>
         </form>

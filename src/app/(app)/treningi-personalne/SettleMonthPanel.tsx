@@ -87,7 +87,7 @@ export function SettleMonthPanel({
   return (
     <div className="mt-2 border-t border-zinc-100 pt-2">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => setOpen((v) => !v)} className="text-xs font-semibold text-brand-orange hover:underline">
+        <button type="button" onClick={() => setOpen((v) => !v)} className="text-xs font-semibold text-brand-orange-ink hover:underline">
           {open ? "Ukryj treningi ▾" : "Pokaż treningi i oznacz płatność ▸"}
         </button>
         {unsettled.length > 0 && (
@@ -131,7 +131,7 @@ export function SettleMonthPanel({
                 type="button"
                 disabled={pending !== null}
                 onClick={handleSettleSelected}
-                className="rounded-lg bg-brand-orange px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+                className="rounded-lg bg-brand-orange-cta px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
               >
                 {pending === "selected"
                   ? "Zapisywanie…"

@@ -49,7 +49,7 @@ export default async function KioskSettingsPage() {
             <input type="text" name="pin_confirm" required minLength={4} className={INPUT} />
           </div>
           <div className="sm:col-span-2">
-            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               {hasPin ? "Zmień PIN" : "Ustaw PIN"}
             </SubmitButton>
           </div>

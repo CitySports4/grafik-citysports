@@ -97,7 +97,7 @@ export async function PlansSection() {
     <div className="flex flex-col gap-4">
       <Card>
         <details>
-          <summary className="cursor-pointer text-sm font-semibold text-brand-orange marker:content-none">+ Nowy dokument</summary>
+          <summary className="cursor-pointer text-sm font-semibold text-brand-orange-ink marker:content-none">+ Nowy dokument</summary>
           <form action={createPlan} className="mt-3 flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <label className={LABEL}>Tytuł</label>

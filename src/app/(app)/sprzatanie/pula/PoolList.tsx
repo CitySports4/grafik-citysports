@@ -79,7 +79,7 @@ export function PoolList({ items, today, freqLabels }: { items: PoolItem[]; toda
                     type="button"
                     disabled={isDone || pendingId === item.id}
                     onClick={() => handleDo(item.id)}
-                    className="shrink-0 rounded-lg bg-brand-orange px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+                    className="shrink-0 rounded-lg bg-brand-orange-cta px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
                   >
                     {isDone ? "✓ Zrobione dziś" : pendingId === item.id ? "Zapisywanie…" : "Zrób teraz"}
                   </button>

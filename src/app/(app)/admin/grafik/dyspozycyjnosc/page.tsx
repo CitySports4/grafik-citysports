@@ -208,7 +208,7 @@ export default async function AdminAvailabilityOverviewPage({
           <p className="text-sm text-zinc-500">
             Kto i kiedy jest niedostępny — łączy zajęcia/reguły cykliczne, zgłoszoną dyspozycyjność i zaplanowane urlopy. Przydatne do
             sprawdzenia obsady zanim zaczniesz układać{" "}
-            <Link href={`/admin/grafik?year=${year}&month=${month}`} className="font-semibold text-brand-orange hover:underline">
+            <Link href={`/admin/grafik?year=${year}&month=${month}`} className="font-semibold text-brand-orange-ink hover:underline">
               Grafik
             </Link>
             .

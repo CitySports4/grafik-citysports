@@ -13,7 +13,7 @@ type Step = "phone" | "set_password" | "login";
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-base outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const PRIMARY_BTN =
-  "mt-1.5 rounded-xl bg-brand-orange px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
+  "mt-1.5 rounded-xl bg-brand-orange-cta px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
 
 export function LoginForm() {
   const [step, setStep] = useState<Step>("phone");
@@ -115,7 +115,7 @@ export function LoginForm() {
             <button
               type="button"
               onClick={() => setStep("phone")}
-              className="self-start py-1.5 text-sm text-zinc-500 hover:text-brand-orange hover:underline"
+              className="self-start py-1.5 text-sm text-zinc-500 hover:text-brand-orange-ink hover:underline"
             >
               ← wróć
             </button>
@@ -135,7 +135,7 @@ export function LoginForm() {
             <button
               type="button"
               onClick={() => setStep("phone")}
-              className="self-start py-1.5 text-sm text-zinc-500 hover:text-brand-orange hover:underline"
+              className="self-start py-1.5 text-sm text-zinc-500 hover:text-brand-orange-ink hover:underline"
             >
               ← wróć
             </button>

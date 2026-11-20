@@ -525,7 +525,7 @@ export async function TasksSection({
         <div className="flex flex-wrap items-center gap-1.5">
           <Link
             href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}`}
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === currentEmployeeId ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === currentEmployeeId ? "bg-brand-orange-cta text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
           >
             Moje zadania
           </Link>
@@ -592,7 +592,7 @@ export async function TasksSection({
           return (
             <Link
               href={`/marketing?tab=zadania&widok=${FULL_VIEW}${showAll ? "&zakres=wszystkie" : ""}`}
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!isWeekView && effectiveFilter === currentEmployeeId ? "bg-brand-orange text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!isWeekView && effectiveFilter === currentEmployeeId ? "bg-brand-orange-cta text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
             >
               Moje zadania ({myCount})
             </Link>

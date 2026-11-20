@@ -201,7 +201,7 @@ export default async function EmployeeDetailPage({
             </select>
           </div>
           <div className="sm:col-span-2">
-            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Zapisz zmiany
             </SubmitButton>
           </div>
@@ -277,7 +277,7 @@ export default async function EmployeeDetailPage({
               <label className={LABEL}>Notatka (opcjonalnie)</label>
               <input name="note" className={INPUT} />
             </div>
-            <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Dodaj
             </SubmitButton>
           </form>
@@ -348,7 +348,7 @@ export default async function EmployeeDetailPage({
             <label className={LABEL}>Notatka (opcjonalnie)</label>
             <input name="note" className={INPUT} />
           </div>
-          <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+          <SubmitButton className="rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
             Dodaj regułę
           </SubmitButton>
         </form>

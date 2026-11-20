@@ -5,12 +5,17 @@
   --foreground: #1a1a1a;
 
   /* Paleta City Sports (z citysports.com.pl / logo). */
-  /* Pomarańcz przyciemniony z #f06037 (biały tekst 3,26:1 nie spełniał 4,5:1),
-     teraz 4,83:1 — WCAG 1.4.3. Hover ciemniejszy od bazowego. */
-  --brand-orange: #c44a22;
+  /* Zgodne z design systemem „City Sports” (tokens.json).
+     --brand-orange: marka (kafelki, paski, duże akcenty) — NIE pod biały tekst (3,26:1).
+     --brand-orange-cta: tło przycisków z białym tekstem (4,55:1, WCAG AA).
+     --brand-orange-ink: mały pomarańczowy tekst na jasnym tle (4,6:1+).
+     --brand-orange-dark: hover przycisków (ciemniejszy od cta). */
+  --brand-orange: #f06037;
+  --brand-orange-cta: #c94f1d;
+  --brand-orange-ink: #c2410c;
   --brand-orange-dark: #a83f1d;
   --brand-navy: #0c2e64;
-  --brand-blue: #234e93;
+  --brand-blue: #4671b6;
   --brand-blue-light: #4671b6;
 }
 
@@ -18,6 +23,8 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-cta: var(--brand-orange-cta);
+  --color-brand-orange-ink: var(--brand-orange-ink);
   --color-brand-orange-dark: var(--brand-orange-dark);
   --color-brand-navy: var(--brand-navy);
   --color-brand-blue: var(--brand-blue);

@@ -70,7 +70,7 @@ export default async function MyGrafikPage({
       </h1>
       <div className="flex items-center gap-2 text-sm">
         {tracksHours && (
-          <Link href="/godziny" className="rounded-lg bg-brand-orange px-3 py-1.5 font-semibold text-white hover:bg-brand-orange-dark">
+          <Link href="/godziny" className="rounded-lg bg-brand-orange-cta px-3 py-1.5 font-semibold text-white hover:bg-brand-orange-dark">
             Godziny pracy
           </Link>
         )}
@@ -390,7 +390,7 @@ export default async function MyGrafikPage({
             const label = dayEntries.length > 0 ? `Godziny: ${entriesLabel}` : isMyDay ? "Wpisz godziny" : "Wpisz godziny (zdalnie)";
             return (
               <details className="group mt-2 border-t border-zinc-200 pt-2">
-                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange marker:content-none">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange-ink marker:content-none">
                   <span>{label}</span>
                   <span className="font-normal text-zinc-500 group-open:hidden">{dayEntries.length > 0 ? "— edytuj ▸" : "▸"}</span>
                   <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
@@ -433,7 +433,7 @@ export default async function MyGrafikPage({
       {tracksHours && visibleDays.length === 0 && (
         <p className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
           Dni z tego miesiąca są już starsze niż {EDIT_WINDOW_DAYS} dni — nic tu nie zmienisz. Pełną historię widać w{" "}
-          <Link href="/godziny" className="font-semibold text-brand-orange hover:underline">
+          <Link href="/godziny" className="font-semibold text-brand-orange-ink hover:underline">
             Godzinach pracy
           </Link>
           .

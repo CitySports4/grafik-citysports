@@ -29,7 +29,7 @@ export function ProjectTimeline({ steps, matched }: { steps: TimelineStep[]; mat
               <span className="text-xs text-zinc-500">{new Date(s.date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}</span>
             </span>
             {!done && (
-              <Link href={`/marketing?tab=kalendarz&year=${year}&month=${month}`} className="text-xs font-semibold text-brand-orange hover:underline">
+              <Link href={`/marketing?tab=kalendarz&year=${year}&month=${month}`} className="text-xs font-semibold text-brand-orange-ink hover:underline">
                 Brakuje — dodaj wpis →
               </Link>
             )}

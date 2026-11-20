@@ -6,7 +6,7 @@ const BASE =
   "inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 
 // Główna akcja na widoku (max jedna naraz) — marka City Sports.
-export const BTN_PRIMARY = `${BASE} bg-brand-orange text-white hover:bg-brand-orange-dark`;
+export const BTN_PRIMARY = `${BASE} bg-brand-orange-cta text-white hover:bg-brand-orange-dark`;
 // Domyślny przycisk — dla wszystkiego, co nie jest główną akcją.
 export const BTN_SECONDARY = `${BASE} border-[1.5px] border-zinc-300 bg-white text-brand-navy hover:border-brand-blue-light hover:bg-zinc-50`;
 // Destrukcyjne akcje (usuń, cofnij) — wyraźnie odróżnione od reszty.

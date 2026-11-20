@@ -142,7 +142,7 @@ export default async function PersonalTrainingPage({
             {isAdmin && (
               <>
                 {" "}
-                <Link href="/admin/treningi-personalne" className="font-semibold text-brand-orange hover:underline">
+                <Link href="/admin/treningi-personalne" className="font-semibold text-brand-orange-ink hover:underline">
                   Ustawienia →
                 </Link>
               </>
@@ -287,7 +287,7 @@ export default async function PersonalTrainingPage({
 
               {(canManage || canPreview) && (
                 <details className="group mt-2 border-t border-zinc-200 pt-2">
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange marker:content-none">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange-ink marker:content-none">
                     <span>+ Nowy trening</span>
                     <span className="font-normal text-zinc-400 group-open:hidden">▸</span>
                     <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
