@@ -50,7 +50,7 @@ type Project = { id: string; name: string; color: string; type: ProjectType };
 const PRIORITY_BADGE: Record<MarketingTaskPriority, string> = {
   low: "bg-zinc-100 text-zinc-500",
   normal: "bg-blue-50 text-brand-navy",
-  high: "bg-red-50 text-red-600",
+  high: "bg-red-50 text-red-700",
 };
 
 // Kolejność priorytetów w obrębie jednej kolumny statusu — bez tego 21
@@ -252,7 +252,7 @@ export async function TasksSection({
               {t.project && (
                 <span
                   className="rounded-full px-2 py-0.5 font-bold"
-                  style={{ backgroundColor: `${projectColorByName.get(t.project) ?? "#7c3aed"}1a`, color: projectColorByName.get(t.project) ?? "#7c3aed" }}
+                  style={{ backgroundColor: `${projectColorByName.get(t.project) ?? "#7c3aed"}1a`, color: `color-mix(in srgb, ${projectColorByName.get(t.project) ?? "#7c3aed"} 75%, #000)` }}
                 >
                   {t.project}
                 </span>
@@ -284,7 +284,7 @@ export async function TasksSection({
                     <input type="hidden" name="id" value={t.id} />
                     <input type="hidden" name="current_due_date" value={t.due_date} />
                     <input type="hidden" name="unit" value="week" />
-                    <button type="submit" className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-200">
+                    <button type="submit" className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-200">
                       ↻ tydzień
                     </button>
                   </form>
@@ -292,7 +292,7 @@ export async function TasksSection({
                     <input type="hidden" name="id" value={t.id} />
                     <input type="hidden" name="current_due_date" value={t.due_date} />
                     <input type="hidden" name="unit" value="month" />
-                    <button type="submit" className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-200">
+                    <button type="submit" className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-200">
                       ↻ miesiąc
                     </button>
                   </form>

@@ -392,7 +392,7 @@ export default async function MyGrafikPage({
               <details className="group mt-2 border-t border-zinc-200 pt-2">
                 <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange marker:content-none">
                   <span>{label}</span>
-                  <span className="font-normal text-zinc-400 group-open:hidden">{dayEntries.length > 0 ? "— edytuj ▸" : "▸"}</span>
+                  <span className="font-normal text-zinc-500 group-open:hidden">{dayEntries.length > 0 ? "— edytuj ▸" : "▸"}</span>
                   <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
                 </summary>
                 <div className="mt-2">
@@ -421,7 +421,7 @@ export default async function MyGrafikPage({
         <span className="text-sm text-zinc-600">Twoje godziny w tym miesiącu</span>
         {tracksHours ? (
           <span className="text-lg font-bold text-zinc-900">
-            {myLoggedHours}h <span className="text-sm font-normal text-zinc-400">wpisanych</span>
+            {myLoggedHours}h <span className="text-sm font-normal text-zinc-500">wpisanych</span>
             {" / "}
             {myHours}h <span className="text-sm font-normal text-zinc-400">zaplanowanych</span>
           </span>
