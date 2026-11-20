@@ -533,7 +533,7 @@ export function ScheduleTable({
                             <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-2.5">
                               <p className="text-xs font-bold text-zinc-500">Zmiany</p>
                               <div className="flex flex-col gap-1.5">
-                                {day.shifts.length === 0 && <span className="text-zinc-300">Brak zmian tego dnia.</span>}
+                                {day.shifts.length === 0 && <span className="text-zinc-500">Brak zmian tego dnia.</span>}
                                 {day.shifts.map((shift) => (
                                   <div key={shift.id} className="flex items-center gap-2">
                                     <span className="text-zinc-500">
@@ -555,7 +555,7 @@ export function ScheduleTable({
                             <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-2.5">
                               <p className="text-xs font-bold text-zinc-500">Wydarzenia</p>
                               <div className="flex flex-col gap-2">
-                                {day.events.length === 0 && <span className="text-zinc-300">Brak wydarzeń tego dnia.</span>}
+                                {day.events.length === 0 && <span className="text-zinc-500">Brak wydarzeń tego dnia.</span>}
                                 {day.events.map((ev) => {
                                   const candidateEmployees =
                                     ev.type === "sprzatanie" ? employees.filter((e) => e.can_clean) : employees;
