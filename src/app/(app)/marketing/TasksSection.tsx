@@ -57,6 +57,65 @@ const PRIORITY_BADGE: Record<MarketingTaskPriority, string> = {
 // już zrobione w bazie, tu tylko przestawiamy priorytet NA WIERZCH, zachowując
 // względną kolejność dat w obrębie tego samego priorytetu — Array.sort jest
 // stabilny).
+// Termin zadania: duża data + względny opis + ton kolorystyczny (patrz kanban).
+const WEEKDAYS_PL = ["niedz.", "pon.", "wt.", "śr.", "czw.", "pt.", "sob."];
+type DueTone = "overdue" | "today" | "soon" | "week" | "later";
+const DUE_TONE_CLASS: Record<DueTone, string> = {
+  overdue: "bg-red-50 text-red-700",
+  today: "bg-orange-50 text-orange-700",
+  soon: "bg-amber-50 text-amber-700",
+  week: "bg-yellow-50 text-yellow-800",
+  later: "bg-zinc-100 text-zinc-600",
+};
+function dayDiff(dueKey: string, todayKey: string): number {
+  return Math.round((new Date(dueKey + "T00:00:00").getTime() - new Date(todayKey + "T00:00:00").getTime()) / 86400000);
+}
+function describeDue(dueKey: string, todayKey: string, weekSundayKey: string) {
+  const d = new Date(dueKey + "T00:00:00");
+  const big = `${WEEKDAYS_PL[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const diff = dayDiff(dueKey, todayKey);
+  let rel: string;
+  let tone: DueTone;
+  if (diff < 0) {
+    rel = `spóźnione ${-diff} ${-diff === 1 ? "dzień" : "dni"}`;
+    tone = "overdue";
+  } else if (diff === 0) {
+    rel = "dziś";
+    tone = "today";
+  } else if (diff === 1) {
+    rel = "jutro";
+    tone = "soon";
+  } else {
+    rel = `za ${diff} dni`;
+    tone = dueKey <= weekSundayKey ? "week" : "later";
+  }
+  return { big, rel, tone };
+}
+
+// Sekcje w kolumnie: po terminie, dziś, jutro, ten tydzień, przyszły tydzień,
+// później (zwinięte), bez terminu.
+type WhenBucket = "overdue" | "today" | "tomorrow" | "thisWeek" | "nextWeek" | "later" | "noDue";
+const WHEN_LABEL: Record<WhenBucket, string> = {
+  overdue: "Po terminie",
+  today: "Dziś",
+  tomorrow: "Jutro",
+  thisWeek: "Ten tydzień",
+  nextWeek: "Przyszły tydzień",
+  later: "Później",
+  noDue: "Bez terminu",
+};
+const WHEN_ORDER: WhenBucket[] = ["overdue", "today", "tomorrow", "thisWeek", "nextWeek", "later", "noDue"];
+function whenBucket(dueKey: string | null, todayKey: string, weekSundayKey: string, nextSundayKey: string): WhenBucket {
+  if (!dueKey) return "noDue";
+  const diff = dayDiff(dueKey, todayKey);
+  if (diff < 0) return "overdue";
+  if (diff === 0) return "today";
+  if (diff === 1) return "tomorrow";
+  if (dueKey <= weekSundayKey) return "thisWeek";
+  if (dueKey <= nextSundayKey) return "nextWeek";
+  return "later";
+}
+
 const PRIORITY_RANK: Record<MarketingTaskPriority, number> = { high: 0, normal: 1, low: 2 };
 
 // Sentinele ASSIGNEE_ALL/ASSIGNEE_UNASSIGNED (importowane jako ALL/UNASSIGNED
@@ -249,12 +308,15 @@ export async function TasksSection({
                   {assignee.name}
                 </span>
               )}
-              {t.due_date && (
-                <span className={overdue ? "font-semibold text-red-600" : "text-zinc-500"}>
-                  {overdue ? "⚠ termin: " : "termin: "}
-                  {new Date(t.due_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}
-                </span>
-              )}
+              {t.due_date && (() => {
+                const due = describeDue(t.due_date, today, weekSunday);
+                return (
+                  <span className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-bold ${DUE_TONE_CLASS[due.tone]}`}>
+                    📅 {due.big}
+                    <span className="text-xs font-semibold">· {due.rel}</span>
+                  </span>
+                );
+              })()}
               {/* Szybkie przesunięcie terminu (patrz kwestionariusz Saszy,
                   październik 2026: system ma pomagać przesuwać zadania, nie
                   je ignorować) — zamiast grzebania w "Edytuj" za każdym
@@ -421,6 +483,38 @@ export async function TasksSection({
   // groupByProject w lib/marketing.ts) — bez nagłówka grupy, gdy wszystko i
   // tak ląduje w jednej grupie (np. nikt jeszcze nie przypisał projektów),
   // żeby nie pokazywać pustego "Bez projektu" nad każdą listą.
+  function renderByWhen(list: Task[]) {
+    const nextSunday = toDateKey(new Date(new Date(weekSunday + "T00:00:00").getTime() + 7 * 86400000));
+    const buckets: Record<WhenBucket, Task[]> = { overdue: [], today: [], tomorrow: [], thisWeek: [], nextWeek: [], later: [], noDue: [] };
+    for (const t of list) buckets[whenBucket(t.due_date, today, weekSunday, nextSunday)].push(t);
+    return (
+      <div className="flex flex-col gap-4">
+        {WHEN_ORDER.map((b) => {
+          const items = buckets[b];
+          if (items.length === 0) return null;
+          if (b === "later") {
+            return (
+              <details key={b}>
+                <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide text-zinc-500 marker:content-none">
+                  {WHEN_LABEL[b]} ({items.length}) ▾
+                </summary>
+                <div className="mt-2">{renderTaskList(items)}</div>
+              </details>
+            );
+          }
+          return (
+            <div key={b}>
+              <p className={`mb-1.5 text-xs font-bold uppercase tracking-wide ${b === "overdue" ? "text-red-600" : "text-zinc-500"}`}>
+                {WHEN_LABEL[b]} ({items.length})
+              </p>
+              {renderTaskList(items)}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   function renderTaskList(list: Task[]) {
     const groups = groupByProject(list, (t) => t.project);
     if (groups.length <= 1) {
@@ -580,31 +674,28 @@ export async function TasksSection({
             </Link>
           )}
 
-          {TASK_STATUS_ORDER.map((status) => {
+          {TASK_STATUS_ORDER.filter((status) => status !== "done").map((status) => {
             const list = byStatus[status];
-            // "Zrobione" zwinięte domyślnie, gdy jest ich sporo — to już
-            // zakończona praca, nie potrzeba jej mieć stale rozwiniętej przed
-            // oczami, ten sam wzorzec co zarchiwizowane plany w PlansSection.
-            const collapsible = status === "done" && list.length > 5;
             return (
               <Card key={status}>
                 <h2 className="mb-3 flex items-center gap-2 font-semibold text-zinc-900">
                   {TASK_STATUS_LABELS[status]}
                   <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{list.length}</span>
                 </h2>
-                {list.length === 0 ? (
-                  <p className="text-sm text-zinc-500">Brak zadań.</p>
-                ) : collapsible ? (
-                  <details>
-                    <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Pokaż ({list.length}) ▾</summary>
-                    <div className="mt-2">{renderTaskList(list)}</div>
-                  </details>
-                ) : (
-                  renderTaskList(list)
-                )}
+                {list.length === 0 ? <p className="text-sm text-zinc-500">Brak zadań.</p> : renderByWhen(list)}
               </Card>
             );
           })}
+
+          {/* Zrobione: zwinięta lista "Wykonane" — nie zaśmieca kanbanu. */}
+          <details className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-zinc-700 marker:content-none">
+              ✅ Wykonane ({byStatus.done.length}) ▾
+            </summary>
+            <div className="mt-3">
+              {byStatus.done.length === 0 ? <p className="text-sm text-zinc-500">Brak wykonanych zadań.</p> : renderTaskList(byStatus.done)}
+            </div>
+          </details>
 
           {archivedTasks.length > 0 && (
             <details className="rounded-2xl border border-dashed border-zinc-300 p-3">
