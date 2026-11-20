@@ -64,7 +64,7 @@ export function PreferredDaysOff({
               onChange={() => toggle(weekday)}
               className="peer sr-only"
             />
-            <span className="cursor-pointer rounded-full border-[1.5px] border-zinc-300 px-3 py-1.5 text-sm font-medium capitalize text-zinc-600 transition-colors peer-checked:border-brand-orange peer-checked:bg-brand-orange peer-checked:text-white">
+            <span className="cursor-pointer rounded-full border-[1.5px] border-zinc-300 px-3 py-1.5 text-sm font-medium capitalize text-zinc-600 transition-colors peer-checked:border-brand-orange peer-checked:bg-brand-orange-cta peer-checked:text-white">
               {weekdayLabel(weekday)}
             </span>
           </label>
@@ -82,7 +82,7 @@ export function PreferredDaysOff({
         <button
           type="submit"
           disabled={pending}
-          className="rounded-xl bg-brand-orange px-4 py-2 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+          className="rounded-xl bg-brand-orange-cta px-4 py-2 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
         >
           {pending ? "Zapisywanie…" : "Zapisz preferencje"}
         </button>

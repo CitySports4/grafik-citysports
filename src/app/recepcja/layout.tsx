@@ -33,7 +33,7 @@ export default async function RecepcjaLayout({ children }: { children: React.Rea
             <span className="font-semibold text-white">Recepcja</span>
           </div>
           <form action={kioskLogout}>
-            <button type="submit" className="rounded-lg px-3 py-1.5 text-sm font-medium text-white/70 hover:bg-white/10 hover:text-brand-orange">
+            <button type="submit" className="rounded-lg px-3 py-1.5 text-sm font-medium text-white/70 hover:bg-white/10 hover:text-brand-orange-ink">
               Wyloguj to stanowisko
             </button>
           </form>

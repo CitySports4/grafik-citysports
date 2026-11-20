@@ -92,7 +92,7 @@ export default async function ShiftTemplatePage() {
                   <label className="text-xs font-semibold text-zinc-600">Etykieta (opcjonalnie)</label>
                   <input name="label" className={INPUT} />
                 </div>
-                <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+                <SubmitButton className="rounded-xl bg-brand-orange-cta px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
                   Dodaj
                 </SubmitButton>
               </form>

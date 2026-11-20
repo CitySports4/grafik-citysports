@@ -242,7 +242,7 @@ export function NewPersonalTrainingForm({
                                 onClick={() => setStartTime(slot.time)}
                                 className={`rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
                                   isSelected
-                                    ? "bg-brand-orange text-white"
+                                    ? "bg-brand-orange-cta text-white"
                                     : slot.ownConflict
                                       ? "cursor-not-allowed bg-rose-100 text-rose-500 line-through"
                                       : isFull
@@ -360,7 +360,7 @@ export function NewPersonalTrainingForm({
           type="button"
           disabled={pending}
           onClick={handleSubmit}
-          className="rounded-lg bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+          className="rounded-lg bg-brand-orange-cta px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
         >
           {pending ? "Zapisywanie…" : "Dodaj trening"}
         </button>

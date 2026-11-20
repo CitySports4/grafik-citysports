@@ -64,7 +64,7 @@ export async function PlannedAbsencesSection({ employeeId }: { employeeId: strin
             <label className={LABEL}>Notatka (opcjonalnie)</label>
             <input name="note" placeholder="np. urlop, wyjazd" className={INPUT} />
           </div>
-          <SubmitButton className="rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+          <SubmitButton className="rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
             Dodaj
           </SubmitButton>
         </form>

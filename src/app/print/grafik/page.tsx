@@ -34,7 +34,7 @@ const UNASSIGNED_COLOR = "#a1a1aa";
 // Tylko fallback, gdy wydarzenie nie ma uczestników (kolor pigułki normalnie
 // bierze się z koloru osoby/osób, które je mają — patrz Pill niżej).
 const EVENT_FALLBACK_COLORS: Record<string, string> = {
-  liga_open: "#dc2626",
+  liga_open: "#b91c1c",
   liga_deblowa: "#b91c1c",
   sprzatanie: "#7c3aed",
   warsztaty: "#0891b2",

@@ -198,7 +198,7 @@ export function EditableSessionRow({
             <button
               type="button"
               onClick={() => setShowExtend(true)}
-              className="mt-1.5 rounded-lg bg-brand-orange px-2.5 py-1 text-xs font-bold text-white hover:bg-brand-orange-dark"
+              className="mt-1.5 rounded-lg bg-brand-orange-cta px-2.5 py-1 text-xs font-bold text-white hover:bg-brand-orange-dark"
             >
               Przedłuż serię
             </button>
@@ -233,7 +233,7 @@ export function EditableSessionRow({
                   type="button"
                   disabled={pending !== null}
                   onClick={handleExtend}
-                  className="rounded-lg bg-brand-orange px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+                  className="rounded-lg bg-brand-orange-cta px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
                 >
                   {pending === "extend" ? "Przedłużanie…" : "Zastosuj"}
                 </button>
@@ -277,7 +277,7 @@ export function EditableSessionRow({
               type="button"
               disabled={pending !== null}
               onClick={handleMove}
-              className="rounded-lg bg-brand-orange px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+              className="rounded-lg bg-brand-orange-cta px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
             >
               {pending === "move" ? "Przenoszenie…" : "Zastosuj"}
             </button>

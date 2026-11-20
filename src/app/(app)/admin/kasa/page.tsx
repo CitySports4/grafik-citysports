@@ -80,7 +80,7 @@ export default async function KasaImportPage() {
         <p className="mb-3 text-sm text-zinc-500">Upsert po numerze dokumentu + dacie + kwocie — ponowny import tego samego pliku jest bezpieczny.</p>
         <form action={importKasaExcel} className="flex flex-wrap items-center gap-2">
           <input type="file" name="file" accept=".xlsx,.xls" required className="flex-1 text-sm" />
-          <SubmitButton className="shrink-0 rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+          <SubmitButton className="shrink-0 rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
             Importuj
           </SubmitButton>
         </form>

@@ -172,7 +172,7 @@ export default async function ProjectWorkspacePage({ params }: { params: Promise
             <label className="text-xs font-semibold text-zinc-700">Termin</label>
             <input type="date" name="due_date" className={INPUT} />
           </div>
-          <SubmitButton className="shrink-0 rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+          <SubmitButton className="shrink-0 rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
             Dodaj
           </SubmitButton>
         </form>

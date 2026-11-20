@@ -19,7 +19,7 @@ const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-base outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const LABEL = "text-sm font-semibold text-zinc-900";
 const PRIMARY_BTN =
-  "mt-1.5 rounded-xl bg-brand-orange px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
+  "mt-1.5 rounded-xl bg-brand-orange-cta px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50";
 
 type GroupOption = { group: KidsClassGroup; freeSpots: number; trialDates: string[]; thisMonthExhausted: boolean };
 type FormState = Omit<SignupInput, "groupIds" | "trialDates" | "resolutionOverrides">;
@@ -253,7 +253,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                       {m.groups.map((g) => `${g.label} — ${STATUS_LABELS[g.status]}`).join(", ")}
                     </span>
                   )}
-                  <span className="text-[11px] font-semibold text-brand-orange">
+                  <span className="text-[11px] font-semibold text-brand-orange-ink">
                     {returningId === m.id ? "✓ wybrano, uzupełnij dane poniżej" : "To moje dziecko, chcę wrócić →"}
                   </span>
                 </button>
@@ -337,7 +337,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                     <span className="flex items-center gap-2.5">
                       <span
                         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${
-                          selected ? "border-brand-orange bg-brand-orange text-white" : "border-zinc-300"
+                          selected ? "border-brand-orange bg-brand-orange-cta text-white" : "border-zinc-300"
                         }`}
                       >
                         {selected ? "✓" : ""}
@@ -378,7 +378,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                               key={date}
                               onClick={() => setTrialDate(group.id, date)}
                               className={`rounded-lg border-2 px-3 py-2.5 text-xs font-semibold transition-colors ${
-                                dateChosen ? "border-brand-orange bg-white text-brand-orange" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                                dateChosen ? "border-brand-orange bg-white text-brand-orange-ink" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
                               }`}
                             >
                               {formatTrialDate(date)}
@@ -420,7 +420,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                                   key={date}
                                   onClick={() => setTrialDate(group.id, date)}
                                   className={`rounded-lg border-2 px-3 py-2.5 text-xs font-semibold transition-colors ${
-                                    dateChosen ? "border-brand-orange bg-white text-brand-orange" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                                    dateChosen ? "border-brand-orange bg-white text-brand-orange-ink" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
                                   }`}
                                 >
                                   {formatTrialDate(date)}
@@ -459,7 +459,7 @@ export function SignupForm({ groups, priceTiers }: { groups: GroupOption[]; pric
                                           key={date}
                                           onClick={() => setElsewhere(group.id, og.group.id, date)}
                                           className={`rounded-lg border-2 px-3 py-2.5 text-xs font-semibold transition-colors ${
-                                            chosen ? "border-brand-orange bg-white text-brand-orange" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                                            chosen ? "border-brand-orange bg-white text-brand-orange-ink" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
                                           }`}
                                         >
                                           {formatTrialDate(date)}

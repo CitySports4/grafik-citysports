@@ -154,7 +154,7 @@ export async function DocLinkDetail({ id, backHref }: { id: string; backHref: st
               </select>
             </div>
           )}
-          <SubmitButton className="self-start rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+          <SubmitButton className="self-start rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
             Zapisz
           </SubmitButton>
         </form>

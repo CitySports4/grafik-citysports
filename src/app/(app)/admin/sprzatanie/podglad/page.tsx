@@ -46,7 +46,7 @@ export default async function CleaningMonthPreviewPage({
           <h1 className="text-lg font-bold text-zinc-900">Podgląd sprzątania — {monthLabel(month)} {year}</h1>
           <p className="text-sm text-zinc-500">
             Kto sprząta co, którego dnia — liczone z aktualnego draftu grafiku w{" "}
-            <Link href={`/admin/grafik?year=${year}&month=${month}`} className="font-semibold text-brand-orange hover:underline">
+            <Link href={`/admin/grafik?year=${year}&month=${month}`} className="font-semibold text-brand-orange-ink hover:underline">
               Grafik
             </Link>
             , przed publikacją. Zmiana obsady w grafiku od razu zmienia ten podgląd.
@@ -69,7 +69,7 @@ export default async function CleaningMonthPreviewPage({
         <Card>
           <p className="text-sm text-zinc-400">
             Grafik na {monthLabel(month)} {year} nie został jeszcze utworzony — zacznij w{" "}
-            <Link href={`/admin/grafik?year=${year}&month=${month}`} className="font-semibold text-brand-orange hover:underline">
+            <Link href={`/admin/grafik?year=${year}&month=${month}`} className="font-semibold text-brand-orange-ink hover:underline">
               Grafiku
             </Link>
             .

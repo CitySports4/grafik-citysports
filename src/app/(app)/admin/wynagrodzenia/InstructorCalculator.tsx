@@ -521,7 +521,7 @@ export function InstructorCalculator() {
           <p className="py-8 text-center text-sm text-zinc-400">Załaduj raport frekwencji, żeby zobaczyć wyniki.</p>
         ) : (
           <>
-            <button type="button" onClick={exportExcel} className="mb-3 rounded-xl bg-brand-orange px-4 py-2 text-sm font-bold text-white hover:bg-brand-orange-dark">
+            <button type="button" onClick={exportExcel} className="mb-3 rounded-xl bg-brand-orange-cta px-4 py-2 text-sm font-bold text-white hover:bg-brand-orange-dark">
               Pobierz Excel (wszyscy)
             </button>
             <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">

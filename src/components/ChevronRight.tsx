@@ -13,7 +13,7 @@ export function ChevronRight() {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="inline-block shrink-0 text-zinc-300 transition-colors group-hover:text-brand-orange"
+      className="inline-block shrink-0 text-zinc-300 transition-colors group-hover:text-brand-orange-ink"
       aria-hidden="true"
     >
       <path d="M9 6l6 6-6 6" />

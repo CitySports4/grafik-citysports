@@ -93,7 +93,7 @@ export default async function RecepcjaTreningiPage({
           Treningi personalne <span className="text-sm font-normal text-zinc-400">— limit sali: {roomCapacity} osób naraz</span>
         </h1>
         <div className="flex items-center gap-2 text-sm">
-          <Link href="/recepcja/treningi/rozliczenia" className="rounded-lg bg-brand-orange px-3 py-1.5 font-semibold text-white hover:bg-brand-orange-dark">
+          <Link href="/recepcja/treningi/rozliczenia" className="rounded-lg bg-brand-orange-cta px-3 py-1.5 font-semibold text-white hover:bg-brand-orange-dark">
             Rozliczenia
           </Link>
           <Link href={`?monday=${prevMonday}`} className="rounded-lg px-3 py-2 font-semibold text-zinc-500 hover:bg-zinc-100">
@@ -195,7 +195,7 @@ export default async function RecepcjaTreningiPage({
               </div>
 
               <details className="group mt-2 border-t border-zinc-200 pt-2">
-                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange marker:content-none">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange-ink marker:content-none">
                   <span>+ Nowy trening</span>
                   <span className="font-normal text-zinc-400 group-open:hidden">▸</span>
                   <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>

@@ -50,7 +50,7 @@ export function KioskPinForm({ action }: { action: (formData: FormData) => Promi
       <button
         type="submit"
         disabled={pending || !pin}
-        className="w-full rounded-xl bg-brand-orange px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
+        className="w-full rounded-xl bg-brand-orange-cta px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50"
       >
         {pending ? "Sprawdzanie…" : "Wejdź"}
       </button>

@@ -474,7 +474,7 @@ export default async function CleaningConfigPage({
                             <input type="checkbox" name="optional" className="h-3.5 w-3.5" />
                             Do wyboru (nieobowiązkowe)
                           </label>
-                          <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+                          <SubmitButton className="rounded-xl bg-brand-orange-cta px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
                             Dodaj zadanie
                           </SubmitButton>
                         </form>
@@ -727,7 +727,7 @@ export default async function CleaningConfigPage({
           </p>
           <form action={setCycleStart} className="flex items-end gap-2">
             <input type="date" name="cycle_start" required defaultValue={settings?.cycle_start ?? ""} className={`${INPUT} max-w-[200px]`} />
-            <SubmitButton className="rounded-xl bg-brand-orange px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
+            <SubmitButton className="rounded-xl bg-brand-orange-cta px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-orange-dark disabled:opacity-50">
               Ustaw
             </SubmitButton>
           </form>
