@@ -17,6 +17,7 @@ import {
   type MarketingTaskPriority,
   type RecordingFormat,
   type ProjectType,
+  isApprovalPending,
 } from "@/lib/marketing";
 import { updateTask, setTaskStatus, deleteTask, setTaskArchived } from "./actions";
 import { AddTaskForm } from "./AddTaskForm";
@@ -31,6 +32,7 @@ type Task = {
   status: MarketingTaskStatus;
   priority: MarketingTaskPriority;
   due_date: string | null;
+  due_kind: "do" | "w_dniu";
   assignee_employee_id: string | null;
   archived: boolean;
   content_id: string | null;
@@ -58,7 +60,7 @@ const PRIORITY_BADGE: Record<MarketingTaskPriority, string> = {
 // względną kolejność dat w obrębie tego samego priorytetu — Array.sort jest
 // stabilny).
 // Termin zadania: duża data + względny opis + ton kolorystyczny (patrz kanban).
-const WEEKDAYS_PL = ["niedz.", "pon.", "wt.", "śr.", "czw.", "pt.", "sob."];
+const WEEKDAYS_PL = ["niedz", "pon", "wt", "śr", "czw", "pt", "sob"];
 type DueTone = "overdue" | "today" | "soon" | "week" | "later";
 const DUE_TONE_CLASS: Record<DueTone, string> = {
   overdue: "bg-red-50 text-red-700",
@@ -144,6 +146,7 @@ export async function TasksSection({
   assigneeFilter,
   showAll,
   view,
+  overdueOnly,
 }: {
   currentEmployeeId: string;
   assigneeFilter?: string;
@@ -153,6 +156,7 @@ export async function TasksSection({
   // ?widok=pelny — patrz FULL_VIEW. Domyślnie (brak parametru, albo stare
   // ?widok=tydzien z zakładek sprzed audytu UX) pokazuje się "Mój tydzień".
   view?: string;
+  overdueOnly?: boolean;
 }) {
   const supabase = createServerSupabaseClient();
   const todayDate = new Date();
@@ -166,7 +170,7 @@ export async function TasksSection({
     supabase
       .from("marketing_task")
       .select(
-        "id, title, description, status, priority, due_date, assignee_employee_id, archived, content_id, project, project_id, recording_format, recording_look_for, recording_mood"
+        "id, title, description, status, priority, due_date, due_kind, assignee_employee_id, archived, content_id, project, project_id, recording_format, recording_look_for, recording_mood"
       )
       .order("due_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false }),
@@ -193,6 +197,18 @@ export async function TasksSection({
   const allTasksRaw = (tasksRaw ?? []) as Task[];
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const assigneeById = new Map(assignees.map((a) => [a.id, a]));
+
+  // Pasek rytmu tygodnia (pn–nd): czy są wpisy rolka / post / story, ile czeka
+  // na akceptację, ile zadań jest po terminie.
+  const { data: weekContentRaw } = await supabase
+    .from("marketing_content")
+    .select("id, format, platform, status, needs_review, approved, scheduled_date")
+    .eq("platform", "facebook_instagram")
+    .gte("scheduled_date", weekMonday)
+    .lte("scheduled_date", weekSunday);
+  const weekContent = (weekContentRaw ?? []) as { id: string; format: string; platform: string; status: string; needs_review: boolean; approved: boolean; scheduled_date: string }[];
+  const hasWeekFormat = (...formats: string[]) => weekContent.some((c) => formats.includes(c.format) && c.status !== "pomysl");
+  const weekAwaiting = weekContent.filter((c) => isApprovalPending(c, today)).length;
   // Dopasowanie po imieniu, nie na sztywno wpisany UUID (patrz Sprint D, D1)
   // — jeśli nikt o tym dokładnie imieniu nie ma roli marketing, pola
   // nagraniowe po prostu zostają dostępne tylko przez ręczny toggle.
@@ -213,7 +229,9 @@ export async function TasksSection({
         : allTasks.filter((t) => t.assignee_employee_id === effectiveFilter);
 
   const inScope = (t: Task) => !t.due_date || t.due_date <= horizon;
-  const tasks = showAll ? byAssignee : byAssignee.filter(inScope);
+  const tasks = overdueOnly
+    ? byAssignee.filter((t) => t.status !== "done" && t.due_date !== null && t.due_date < today)
+    : showAll ? byAssignee : byAssignee.filter(inScope);
   const hiddenByScopeCount = showAll ? 0 : byAssignee.filter((t) => !inScope(t)).length;
 
   const byStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], done: [] };
@@ -222,6 +240,7 @@ export async function TasksSection({
     byStatus[status].sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
   }
 
+  const overdueCountAll = allTasks.filter((t) => t.status !== "done" && t.due_date !== null && t.due_date < today).length;
   const overdueCount = byAssignee.filter((t) => t.status !== "done" && t.due_date !== null && t.due_date < today).length;
 
   // "Mój tydzień" — zadania przypisane do mnie z terminem w bieżącym
@@ -239,7 +258,7 @@ export async function TasksSection({
   // domyślił kliknąć "Moje zadania". Licznik + link w widoku tygodnia temu
   // zapobiega.
   const myNoDueDateCount = allTasks.filter((t) => t.assignee_employee_id === currentEmployeeId && t.due_date === null).length;
-  const isWeekView = view !== FULL_VIEW;
+  const isWeekView = view === "moj-tydzien";
 
 
   function renderTask(t: Task) {
@@ -312,7 +331,7 @@ export async function TasksSection({
                 const due = describeDue(t.due_date, today, weekSunday);
                 return (
                   <span className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-bold ${DUE_TONE_CLASS[due.tone]}`}>
-                    📅 {due.big}
+                    {t.due_kind === "w_dniu" ? "📅 w " : "⏳ do "}{due.big}
                     <span className="text-xs font-semibold">· {due.rel}</span>
                   </span>
                 );
@@ -378,6 +397,10 @@ export async function TasksSection({
                       ))}
                     </select>
                     <input type="date" name="due_date" defaultValue={t.due_date ?? ""} className={INPUT_SM} />
+                    <select name="due_kind" defaultValue={t.due_kind} className={INPUT_SM}>
+                      <option value="do">do dnia</option>
+                      <option value="w_dniu">w dniu</option>
+                    </select>
                     <select name="project_id" defaultValue={t.project_id ?? ""} className={INPUT_SM}>
                       <option value="">— bez projektu —</option>
                       {/* Projekt zadania mógł zostać zarchiwizowany od ostatniej
@@ -519,6 +542,24 @@ export async function TasksSection({
             razu w rozwiniętych "Więcej opcji" poniżej. */}
         <AddTaskForm currentEmployeeId={currentEmployeeId} assignees={assignees} activeProjects={activeProjects} recordingAssigneeId={recordingAssigneeId} />
       </Card>
+
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {isWeekView ? (
+          <Link href="/marketing?tab=zadania" className="font-semibold text-brand-blue hover:underline">← Wszystkie zadania (kanban)</Link>
+        ) : (
+          <Link href="/marketing?tab=zadania&widok=moj-tydzien" className="font-semibold text-brand-blue hover:underline">Tylko moje, ten tydzień →</Link>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600">
+        <span>Rolka {hasWeekFormat("rolka") ? "✓" : "–"}</span>
+        <span>Post {hasWeekFormat("post", "karuzela") ? "✓" : "–"}</span>
+        <span>Story {hasWeekFormat("story") ? "✓" : "–"}</span>
+        <Link href="/marketing?tab=kalendarz" className="hover:underline">czeka na akceptację: {weekAwaiting}</Link>
+        <Link href="/marketing?tab=zadania&filtr=po_terminie" className={`hover:underline ${overdueCountAll > 0 ? "text-red-600" : ""}`}>
+          po terminie: {overdueCountAll}
+        </Link>
+      </div>
 
       <>
           {/* Filtr po osobie — domyślnie (bez parametru w URL) zawężony do

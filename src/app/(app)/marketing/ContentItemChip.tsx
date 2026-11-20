@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { contentTaskPlan, addDaysKey } from "@/lib/marketing";
 import { Modal } from "@/components/Modal";
 import { Banner } from "@/components/Banner";
 import { ColorDot } from "@/components/ColorDot";
@@ -126,6 +127,16 @@ export function ContentItemChip({
   const published = item.status === "opublikowane";
   const pendingApproval = isApprovalPending(item, today);
   const badge = approvalBadge(item, today);
+  // Kropka stanu zadań: zielona = wszystkie zrobione, czerwona = coś po terminie,
+  // pomarańczowa = coś otwarte, brak = brak zadań.
+  const taskDot =
+    linkedTasks.length === 0
+      ? null
+      : linkedTasks.every((t) => t.status === "done")
+        ? "bg-emerald-500"
+        : linkedTasks.some((t) => t.status !== "done" && t.due_date !== null && t.due_date < today)
+          ? "bg-red-500"
+          : "bg-orange-500";
 
   // Karta publikacji w 3 rozwijanych sekcjach (zgłoszenie 18.11.2026,
   // doprecyzowane po przeglądzie) — wypełniona sekcja startuje otwarta,
@@ -219,7 +230,7 @@ export function ContentItemChip({
         className={`w-full truncate rounded px-1.5 py-1 text-left text-[11px] font-medium ${STATUS_PILL[item.status]} ${published ? "line-through opacity-70" : ""} ${pendingApproval ? "ring-1 ring-inset ring-amber-400" : ""}`}
       >
         {CONTENT_FORMAT_ICONS[item.format]} {item.title}
-        {hasLinkedTask && <span title="Ma powiązane zadanie w Zadaniach"> 📋</span>}
+        {hasLinkedTask && taskDot && <span title="Zadania do tej publikacji" className={`ml-1 inline-block h-2 w-2 rounded-full ${taskDot}`} />}
       </button>
 
       {open && (
@@ -435,51 +446,38 @@ export function ContentItemChip({
                       <option value="animacja">Animacja</option>
                       <option value="foto">Zdjęcie lub grafika</option>
                     </select>
-                    {taskKind === "film" && (
-                      <>
-                        <label className="text-xs font-semibold text-zinc-700">Nagrywa</label>
-                    <select name="recorder_id" required defaultValue="" className={INPUT}>
-                        <option value="" disabled>
-                          Wybierz…
-                        </option>
-                        {assignees.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
-                      </>
-                    )}
-                    {taskKind === "film" && item.format === "rolka" && (
-                      <>
-                        <label className="text-xs font-semibold text-zinc-700">Publikuje</label>
-                    <select name="publisher_id" required defaultValue="" className={INPUT}>
-                        <option value="" disabled>
-                          Wybierz…
-                        </option>
-                        {assignees.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
-                      </>
-                    )}
-                    {taskKind !== "film" && (
-                      <>
-                        <label className="text-xs font-semibold text-zinc-700">Robi i publikuje</label>
-                    <select name="maker_id" required defaultValue="" className={INPUT}>
-                        <option value="" disabled>
-                          Wybierz…
-                        </option>
-                        {assignees.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
-                      </>
-                    )}
+                    {(() => {
+                      const plan = contentTaskPlan(taskKind, item.format);
+                      const whoLabel: Record<string, string> = { recorder: "Nagrywa", publisher: "Publikuje", maker: "Robi" };
+                      const whos = Array.from(new Set(plan.map((d) => d.who)));
+                      return (
+                        <>
+                          {whos.map((who) => (
+                            <div key={who} className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold text-zinc-700">{whoLabel[who]}</label>
+                              <select name={who === "recorder" ? "recorder_id" : who === "publisher" ? "publisher_id" : "maker_id"} required defaultValue="" className={INPUT}>
+                                <option value="" disabled>
+                                  Wybierz…
+                                </option>
+                                {assignees.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                          {plan.map((d) => (
+                            <div key={d.key} className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold text-zinc-700">
+                                {d.title} — termin {d.dueKind === "w_dniu" ? "w dniu" : "do dnia"}
+                              </label>
+                              <input type="date" name={`due_${d.key}`} required defaultValue={addDaysKey(item.scheduled_date, d.offset)} className={INPUT} />
+                            </div>
+                          ))}
+                        </>
+                      );
+                    })()}
                     <div className="flex gap-2">
                       <button type="submit" className={BTN_PRIMARY}>
                         Dodaj zadania

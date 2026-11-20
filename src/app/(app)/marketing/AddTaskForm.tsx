@@ -74,6 +74,10 @@ export function AddTaskForm({
             ))}
           </select>
           <input type="date" name="due_date" className={INPUT} />
+          <select name="due_kind" defaultValue="do" className={INPUT}>
+            <option value="do">do dnia (termin graniczny)</option>
+            <option value="w_dniu">w dniu (konkretny dzień)</option>
+          </select>
           <select name="project_id" defaultValue="" className={INPUT}>
             <option value="">— bez projektu —</option>
             {activeProjects.map((p) => (

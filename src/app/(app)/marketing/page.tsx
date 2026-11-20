@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireEmployee, canAccessMarketing, isContentCreator } from "@/lib/session";
 import { TasksSection } from "./TasksSection";
+import { archiveOldDoneTasks } from "./actions";
 import { ContentCalendarSection } from "./ContentCalendarSection";
 import { PlansSection } from "./PlansSection";
 import { ImportFromFile } from "./ImportFromFile";
@@ -27,6 +28,7 @@ export default async function MarketingPage({
     osoba?: string;
     zakres?: string;
     widok?: string;
+    filtr?: string;
     projekt?: string;
   }>;
 }) {
@@ -50,6 +52,7 @@ export default async function MarketingPage({
 
   const params = await searchParams;
   const tab: TabKey = (TABS.find((t) => t.key === params.tab)?.key ?? "zadania") as TabKey;
+  if (tab === "zadania") await archiveOldDoneTasks();
 
   return (
     <div className="flex flex-col gap-6">
@@ -81,6 +84,7 @@ export default async function MarketingPage({
           assigneeFilter={params.osoba}
           showAll={params.zakres === "wszystkie"}
           view={params.widok}
+          overdueOnly={params.filtr === "po_terminie"}
         />
       )}
       {tab === "kalendarz" && (
