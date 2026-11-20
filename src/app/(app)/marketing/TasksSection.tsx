@@ -20,9 +20,6 @@ import {
 } from "@/lib/marketing";
 import { updateTask, setTaskStatus, deleteTask, postponeTask, setTaskArchived } from "./actions";
 import { AddTaskForm } from "./AddTaskForm";
-import { TaskDayView } from "./TaskDayView";
-import { TaskWeekView } from "./TaskWeekView";
-import { TaskMonthView } from "./TaskMonthView";
 import { ASSIGNEE_ALL as ALL, ASSIGNEE_UNASSIGNED as UNASSIGNED } from "@/lib/task-calendar";
 
 const INPUT_SM = "rounded-lg border-[1.5px] border-zinc-300 px-2 py-1 text-xs";
@@ -88,8 +85,6 @@ export async function TasksSection({
   assigneeFilter,
   showAll,
   view,
-  calendarView,
-  calendarDate,
 }: {
   currentEmployeeId: string;
   assigneeFilter?: string;
@@ -99,14 +94,6 @@ export async function TasksSection({
   // ?widok=pelny — patrz FULL_VIEW. Domyślnie (brak parametru, albo stare
   // ?widok=tydzien z zakładek sprzed audytu UX) pokazuje się "Mój tydzień".
   view?: string;
-  // ?widokZadan=dzien|tydzien|miesiac — przełącznik Kanban/Dzień/Tydzień/
-  // Miesiąc (patrz sprint "Widoki kalendarza zadań"), NIEZALEŻNY od ?widok
-  // powyżej (ten dotyczy tylko Kanbanu). Brak parametru = Kanban, bez zmian
-  // w zachowaniu sprzed tego sprintu.
-  calendarView?: string;
-  // ?data=YYYY-MM-DD — dzień oglądany w widoku Dzień/Tydzień/Miesiąc,
-  // domyślnie dziś.
-  calendarDate?: string;
 }) {
   const supabase = createServerSupabaseClient();
   const todayDate = new Date();
@@ -170,13 +157,13 @@ export async function TasksSection({
   const tasks = showAll ? byAssignee : byAssignee.filter(inScope);
   const hiddenByScopeCount = showAll ? 0 : byAssignee.filter((t) => !inScope(t)).length;
 
-  const byStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], gotowe: [], opublikowane: [] };
+  const byStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], done: [] };
   for (const t of tasks) byStatus[t.status].push(t);
   for (const status of TASK_STATUS_ORDER) {
     byStatus[status].sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
   }
 
-  const overdueCount = byAssignee.filter((t) => t.status !== "opublikowane" && t.due_date !== null && t.due_date < today).length;
+  const overdueCount = byAssignee.filter((t) => t.status !== "done" && t.due_date !== null && t.due_date < today).length;
 
   // "Mój tydzień" — zadania przypisane do mnie z terminem w bieżącym
   // tygodniu (poniedziałek–niedziela), NIEZALEŻNIE od projektu i statusu —
@@ -195,16 +182,10 @@ export async function TasksSection({
   const myNoDueDateCount = allTasks.filter((t) => t.assignee_employee_id === currentEmployeeId && t.due_date === null).length;
   const isWeekView = view !== FULL_VIEW;
 
-  // Przełącznik Kanban/Dzień/Tydzień/Miesiąc (patrz sprint "Widoki
-  // kalendarza zadań") — osobny od isWeekView/FULL_VIEW powyżej (to inny
-  // wymiar: który z 4 TRYBÓW wyświetlania, nie filtr w obrębie Kanbanu).
-  const CALENDAR_VIEWS = ["dzien", "tydzien", "miesiac"] as const;
-  const activeCalendarView = (CALENDAR_VIEWS as readonly string[]).includes(calendarView ?? "") ? (calendarView as (typeof CALENDAR_VIEWS)[number]) : null;
-  const calDate = calendarDate && /^\d{4}-\d{2}-\d{2}$/.test(calendarDate) ? calendarDate : today;
 
   function renderTask(t: Task) {
     const assignee = t.assignee_employee_id ? assigneeById.get(t.assignee_employee_id) : null;
-    const published = t.status === "opublikowane";
+    const published = t.status === "done";
     const overdue = !published && t.due_date !== null && t.due_date < today;
 
     return (
@@ -218,10 +199,10 @@ export async function TasksSection({
               przycisków niżej. */}
           <form action={setTaskStatus} className="pt-0.5">
             <input type="hidden" name="id" value={t.id} />
-            <input type="hidden" name="status" value={published ? "todo" : "opublikowane"} />
+            <input type="hidden" name="status" value={published ? "todo" : "done"} />
             <button
               type="submit"
-              aria-label={published ? "Cofnij na Do zrobienia" : "Oznacz jako opublikowane"}
+              aria-label={published ? "Cofnij na Do zrobienia" : "Oznacz jako zrobione"}
               className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
                 published ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
               }`}
@@ -320,27 +301,9 @@ export async function TasksSection({
                   </form>
                   <form action={setTaskStatus}>
                     <input type="hidden" name="id" value={t.id} />
-                    <input type="hidden" name="status" value="gotowe" />
+                    <input type="hidden" name="status" value="done" />
                     <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
-                      ✅ Gotowe
-                    </button>
-                  </form>
-                </>
-              )}
-              {t.status === "gotowe" && (
-                <>
-                  <form action={setTaskStatus}>
-                    <input type="hidden" name="id" value={t.id} />
-                    <input type="hidden" name="status" value="in_progress" />
-                    <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
-                      ↺ Cofnij
-                    </button>
-                  </form>
-                  <form action={setTaskStatus}>
-                    <input type="hidden" name="id" value={t.id} />
-                    <input type="hidden" name="status" value="opublikowane" />
-                    <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
-                      📤 Opublikowane
+                      ✅ Zrobione
                     </button>
                   </form>
                 </>
@@ -348,7 +311,7 @@ export async function TasksSection({
               {published && (
                 <form action={setTaskStatus}>
                   <input type="hidden" name="id" value={t.id} />
-                  <input type="hidden" name="status" value="gotowe" />
+                  <input type="hidden" name="status" value="in_progress" />
                   <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                     ↺ Cofnij
                   </button>
@@ -487,85 +450,7 @@ export async function TasksSection({
         <AddTaskForm currentEmployeeId={currentEmployeeId} assignees={assignees} activeProjects={activeProjects} recordingAssigneeId={recordingAssigneeId} />
       </Card>
 
-      {/* Przełącznik widoku — jak w Google Calendar. Kanban to wszystko
-          poniżej (Mój tydzień/filtry/kolumny statusu), bez zmian; pozostałe
-          trzy renderują się zamiast tego całego bloku, patrz warunek niżej. */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Link
-          href="/marketing?tab=zadania"
-          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${!activeCalendarView ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
-        >
-          📋 Kanban
-        </Link>
-        <Link
-          href={`/marketing?tab=zadania&widokZadan=dzien&data=${calDate}`}
-          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${activeCalendarView === "dzien" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
-        >
-          Dzień
-        </Link>
-        <Link
-          href={`/marketing?tab=zadania&widokZadan=tydzien&data=${calDate}`}
-          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${activeCalendarView === "tydzien" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
-        >
-          Tydzień
-        </Link>
-        <Link
-          href={`/marketing?tab=zadania&widokZadan=miesiac&data=${calDate}`}
-          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${activeCalendarView === "miesiac" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
-        >
-          Miesiąc
-        </Link>
-      </div>
-
-      {/* Filtr po osobie dla Dzień/Tydzień/Miesiąc — osobny od chipów
-          Kanbanu poniżej (te mają "Mój tydzień" i ?widok=pelny, co tutaj nie
-          ma sensu), ale ta sama zasada: domyślnie (bez ?osoba) zawężone do
-          zalogowanej osoby. */}
-      {activeCalendarView && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Link
-            href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}`}
-            className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${effectiveFilter === currentEmployeeId ? "bg-brand-orange-cta text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
-          >
-            Moje zadania
-          </Link>
-          <Link
-            href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}&osoba=${ALL}`}
-            className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${effectiveFilter === ALL ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
-          >
-            Wszyscy
-          </Link>
-          {assignees
-            .filter((a) => a.id !== currentEmployeeId)
-            .map((a) => (
-              <Link
-                key={a.id}
-                href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}&osoba=${a.id}`}
-                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                  effectiveFilter === a.id ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                }`}
-              >
-                <ColorDot color={a.color_hex} />
-                {a.name}
-              </Link>
-            ))}
-          <Link
-            href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}&osoba=${UNASSIGNED}`}
-            className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${
-              effectiveFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-            }`}
-          >
-            Nieprzypisane
-          </Link>
-        </div>
-      )}
-
-      {activeCalendarView === "dzien" && <TaskDayView date={calDate} assigneeFilter={effectiveFilter} />}
-      {activeCalendarView === "tydzien" && <TaskWeekView date={calDate} assigneeFilter={effectiveFilter} />}
-      {activeCalendarView === "miesiac" && <TaskMonthView date={calDate} assigneeFilter={effectiveFilter} />}
-
-      {!activeCalendarView && (
-        <>
+      <>
           {/* Filtr po osobie — domyślnie (bez parametru w URL) zawężony do
           zalogowanej osoby: "jak Oliwia się loguje, widzi najpierw swoje
           zadania, nie przeszkadzają jej cudze" — patrz ALL/effectiveFilter
@@ -700,7 +585,7 @@ export async function TasksSection({
             // "Zrobione" zwinięte domyślnie, gdy jest ich sporo — to już
             // zakończona praca, nie potrzeba jej mieć stale rozwiniętej przed
             // oczami, ten sam wzorzec co zarchiwizowane plany w PlansSection.
-            const collapsible = status === "opublikowane" && list.length > 5;
+            const collapsible = status === "done" && list.length > 5;
             return (
               <Card key={status}>
                 <h2 className="mb-3 flex items-center gap-2 font-semibold text-zinc-900">
@@ -731,8 +616,7 @@ export async function TasksSection({
           )}
         </>
       )}
-        </>
-      )}
+      </>
     </div>
   );
 }

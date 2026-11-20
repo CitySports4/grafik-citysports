@@ -123,7 +123,7 @@ export default async function ProjectWorkspacePage({ params }: { params: Promise
   const matched: Record<string, boolean> = {};
   for (const step of timelineSteps) matched[step.key] = matchTimelineStep(step, content);
 
-  const tasksByStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], gotowe: [], opublikowane: [] };
+  const tasksByStatus: Record<MarketingTaskStatus, Task[]> = { todo: [], in_progress: [], done: [] };
   for (const t of tasks) tasksByStatus[t.status].push(t);
 
   return (
@@ -197,7 +197,7 @@ export default async function ProjectWorkspacePage({ params }: { params: Promise
                   <div className="flex flex-col gap-2">
                     {list.map((t) => {
                       const assignee = t.assignee_employee_id ? employeeById.get(t.assignee_employee_id) : null;
-                      const published = t.status === "opublikowane";
+                      const published = t.status === "done";
                       const overdue = !published && t.due_date !== null && t.due_date < today;
                       return (
                         <div
@@ -206,10 +206,10 @@ export default async function ProjectWorkspacePage({ params }: { params: Promise
                         >
                           <form action={setTaskStatus} className="pt-0.5">
                             <input type="hidden" name="id" value={t.id} />
-                            <input type="hidden" name="status" value={published ? "todo" : "opublikowane"} />
+                            <input type="hidden" name="status" value={published ? "todo" : "done"} />
                             <button
                               type="submit"
-                              aria-label={published ? "Cofnij na Do zrobienia" : "Oznacz jako opublikowane"}
+                              aria-label={published ? "Cofnij na Do zrobienia" : "Oznacz jako zrobione"}
                               className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[10px] transition-colors ${
                                 published ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-300 hover:border-emerald-500"
                               }`}
