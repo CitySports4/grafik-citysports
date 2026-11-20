@@ -65,7 +65,7 @@ export default async function KasaMiesiacPage() {
                 <SubmitButton disabled={!allClosed} className="rounded-xl bg-zinc-800 px-4 py-2 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-40">
                   Zamknij miesiąc (nadaj numer RK)
                 </SubmitButton>
-                {!allClosed && <p className="mt-1 text-xs text-zinc-400">Najpierw zamknij wszystkie dni tego miesiąca.</p>}
+                {!allClosed && <p className="mt-1 text-xs text-zinc-500">Najpierw zamknij wszystkie dni tego miesiąca.</p>}
               </form>
             )}
           </Card>
