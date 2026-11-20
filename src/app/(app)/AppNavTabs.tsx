@@ -17,7 +17,7 @@ export function AppNavTabs({
 }) {
   const pathname = usePathname();
   return (
-    <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4">
+    <nav className="mx-auto flex max-w-5xl flex-wrap gap-1 px-4">
       {navGroups.map((group) => (
         <NavDropdown key={group.label} label={group.label} links={group.links} />
       ))}
@@ -27,7 +27,7 @@ export function AppNavTabs({
           <Link
             key={link.href}
             href={link.href}
-            className={`shrink-0 whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
+            className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
               active ? "bg-zinc-50 text-brand-navy" : "text-white/70 hover:bg-white/10 hover:text-white"
             }`}
           >

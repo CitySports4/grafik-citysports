@@ -70,14 +70,14 @@ export default async function MyGrafikPage({
       </h1>
       <div className="flex items-center gap-2 text-sm">
         {tracksHours && (
-          <Link href="/godziny" className="rounded-lg bg-brand-orange-cta px-3 py-1.5 font-semibold text-white hover:bg-brand-orange-dark">
+          <Link href="/godziny" className="inline-flex min-h-11 items-center rounded-lg bg-brand-orange-cta px-3 py-1.5 font-semibold text-white hover:bg-brand-orange-dark">
             Godziny pracy
           </Link>
         )}
-        <Link href={`/grafik${prevLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+        <Link href={`/grafik${prevLink}`} className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 hover:bg-zinc-100">
           ← poprzedni
         </Link>
-        <Link href={`/grafik${nextLink}`} className="rounded-lg px-2 py-1 hover:bg-zinc-100">
+        <Link href={`/grafik${nextLink}`} className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 hover:bg-zinc-100">
           następny →
         </Link>
       </div>
@@ -390,7 +390,7 @@ export default async function MyGrafikPage({
             const label = dayEntries.length > 0 ? `Godziny: ${entriesLabel}` : isMyDay ? "Wpisz godziny" : "Wpisz godziny (zdalnie)";
             return (
               <details className="group mt-2 border-t border-zinc-200 pt-2">
-                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange-ink marker:content-none">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange-ink marker:content-none">
                   <span>{label}</span>
                   <span className="font-normal text-zinc-500 group-open:hidden">{dayEntries.length > 0 ? "— edytuj ▸" : "▸"}</span>
                   <span className="hidden font-normal text-zinc-500 group-open:inline">— zwiń ▾</span>
@@ -442,7 +442,7 @@ export default async function MyGrafikPage({
       <div className="flex flex-col gap-3">
         {pastDays.length > 0 && (
           <details className="group rounded-2xl border border-dashed border-zinc-300 p-3">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-500 marker:content-none">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-zinc-500 marker:content-none">
               <span>Pokaż ostatnie 7 dni</span>
               <span className="group-open:hidden">▸</span>
               <span className="hidden group-open:inline">— zwiń ▾</span>
