@@ -231,8 +231,8 @@ export async function TasksSection({
           </form>
 
           <div className="min-w-0 flex-1">
-            <p className={`font-semibold ${published ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
-            {t.description && <p className={`mt-0.5 whitespace-pre-wrap text-sm ${published ? "text-zinc-400" : "text-zinc-600"}`}>{t.description}</p>}
+            <p className={`font-semibold ${published ? "text-zinc-500 line-through" : "text-zinc-900"}`}>{t.title}</p>
+            {t.description && <p className={`mt-0.5 whitespace-pre-wrap text-sm ${published ? "text-zinc-500" : "text-zinc-600"}`}>{t.description}</p>}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
               {/* To zadanie nie jest osobnym bytem — powstało automatycznie z
                   wpisu w kalendarzu treści (patrz createLinkedTaskIfNeeded w
@@ -467,7 +467,7 @@ export async function TasksSection({
       <div className="flex flex-col gap-3">
         {groups.map((g) => (
           <div key={g.project}>
-            <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-zinc-400">
+            <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-zinc-500">
               {g.label} <span className="normal-case">({g.items.length})</span>
             </p>
             <div className="flex flex-col gap-2">{g.items.map(renderTask)}</div>
@@ -648,7 +648,7 @@ export async function TasksSection({
             niezależnie od projektu.
           </p>
           {myWeekTasks.length === 0 ? (
-            <p className="text-sm text-zinc-400">Brak Twoich zadań z terminem w tym tygodniu.</p>
+            <p className="text-sm text-zinc-500">Brak Twoich zadań z terminem w tym tygodniu.</p>
           ) : (
             <div className="flex flex-col gap-2">{myWeekTasks.map(renderTask)}</div>
           )}
@@ -708,7 +708,7 @@ export async function TasksSection({
                   <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-bold text-zinc-500">{list.length}</span>
                 </h2>
                 {list.length === 0 ? (
-                  <p className="text-sm text-zinc-400">Brak zadań.</p>
+                  <p className="text-sm text-zinc-500">Brak zadań.</p>
                 ) : collapsible ? (
                   <details>
                     <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">Pokaż ({list.length}) ▾</summary>
