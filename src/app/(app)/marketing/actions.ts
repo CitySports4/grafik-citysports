@@ -564,3 +564,63 @@ export async function importMarketingFile(formData: FormData): Promise<ImportRes
   revalidateMarketing();
   return { tasksCount, contentCount, contentSkipped, plansCount, unmatchedNames: Array.from(unmatchedNames) };
 }
+
+// Zadania przy wpisie kalendarza — tylko na wyraźne kliknięcie, nic nie
+// powstaje samo. Rolka: "Nagrać" (4 dni przed publikacją, nagrywający) i
+// "Opublikować" (w dniu publikacji, publikujący — zwykle Sasza). Relacja (cel):
+// jedno zadanie "Nagrać i opublikować" dla nagrywającego, w dniu publikacji.
+function addDaysKey(key: string, n: number): string {
+  const d = new Date(key + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return toDateKey(d);
+}
+
+export async function addContentTasks(formData: FormData) {
+  await requireMarketingAccess();
+  const employee = await requireEmployee();
+  const contentId = String(formData.get("content_id") ?? "");
+  const recorderId = String(formData.get("recorder_id") ?? "");
+  const publisherId = String(formData.get("publisher_id") ?? "");
+  if (!contentId) throw new Error("Brak wpisu kalendarza.");
+  if (!recorderId) throw new Error("Wybierz osobę, która nagrywa.");
+
+  const supabase = createServerSupabaseClient();
+  const { data: content } = await supabase
+    .from("marketing_content")
+    .select("id, title, format, purpose, scheduled_date, project_id")
+    .eq("id", contentId)
+    .single();
+  if (!content) throw new Error("Nie znaleziono wpisu kalendarza.");
+
+  const { count } = await supabase
+    .from("marketing_task")
+    .select("id", { count: "exact", head: true })
+    .eq("content_id", contentId)
+    .eq("archived", false);
+  if (count && count > 0) throw new Error("Do tej publikacji są już zadania.");
+
+  const base = {
+    description: "",
+    priority: "normal",
+    content_id: contentId,
+    project_id: content.project_id ?? null,
+    created_by_employee_id: employee.id,
+  };
+
+  let rows;
+  if (content.format === "rolka") {
+    if (!publisherId) throw new Error("Wybierz osobę, która publikuje.");
+    rows = [
+      { ...base, title: `Nagrać — ${content.title}`, assignee_employee_id: recorderId, due_date: addDaysKey(content.scheduled_date, -4) },
+      { ...base, title: `Opublikować — ${content.title}`, assignee_employee_id: publisherId, due_date: content.scheduled_date },
+    ];
+  } else if (content.purpose === "relacja") {
+    rows = [{ ...base, title: `Nagrać i opublikować — ${content.title}`, assignee_employee_id: recorderId, due_date: content.scheduled_date }];
+  } else {
+    throw new Error("Dla tego formatu dodaj zadania ręcznie w Zadaniach.");
+  }
+
+  const { error } = await supabase.from("marketing_task").insert(rows);
+  if (error) throw new Error(dbErrorMessage(error));
+  revalidateMarketing();
+}
