@@ -2,15 +2,21 @@ import Link from "next/link";
 import { Card } from "@/components/Card";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { SessionEmployee } from "@/lib/session";
-import { CASH_COUNT_SLOT_LABELS, CASH_COUNT_SLOT_ORDER, DOC_STATUS_ICONS, DOC_STATUS_LABELS, expectedCashBalance, type CashCountSlot } from "@/lib/kasa";
+import { CASH_COUNT_SLOT_LABELS, CASH_COUNT_SLOT_ORDER, DOC_STATUS_ICONS, DOC_STATUS_LABELS, DOC_TYPE_LABELS, expectedCashBalance, type CashCountSlot, type DocType } from "@/lib/kasa";
 import { getCashDay, getDayTransactions, computeDayTotals, getDayCounts, getDayDocLinks, getEmployeesOnShift, resolveOpeningBalance, type CashCount } from "./data";
-import { saveCashCount, closeCashDay } from "./actions";
+import { saveCashCount, closeCashDay, bulkSetDocType } from "./actions";
 import { autoRefreshKasaFromDataLake } from "@/app/(app)/admin/kasa/actions";
 import { RefreshOnMount } from "./RefreshOnMount";
 
 const INPUT =
   "w-full rounded-xl border-[1.5px] border-zinc-300 px-3.5 py-2.5 text-base outline-none transition-colors focus:border-brand-blue focus:shadow-[0_0_0_3px_rgba(35,78,147,0.15)]";
 const LABEL = "text-sm font-semibold text-zinc-900";
+
+// Typy, które można ustawić hurtowo: paragon i faktura spoza KSeF wymagają
+// skanu, a ten zawsze dodaje się pojedynczo w karcie dokumentu.
+const BULK_DOC_TYPES: { value: DocType; label: string }[] = (
+  ["ksef_invoice", "awaiting_invoice", "client_correction", "wallet_operation", "other"] as DocType[]
+).map((value) => ({ value, label: DOC_TYPE_LABELS[value] }));
 
 function money(n: number): string {
   return n.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
@@ -146,23 +152,52 @@ export async function CashDayScreen({
         {docLinks.length === 0 ? (
           <p className="text-sm text-zinc-400">Brak KW/KP dzisiaj.</p>
         ) : (
-          <div className="mt-2 flex flex-col divide-y divide-zinc-100">
-            {docLinks.map((d) => (
-              <Link key={d.id} href={`${basePath === "/recepcja/kasa" ? "/recepcja/kasa" : "/kasa"}/dokument/${d.id}`} className="flex items-center gap-3 py-2.5 hover:bg-zinc-50">
-                <span className="text-lg" aria-hidden>
-                  {DOC_STATUS_ICONS[d.status]}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-zinc-900">{d.contractor || d.full_number}</p>
-                  <p className="truncate text-xs text-zinc-500">
-                    {d.full_number}
-                    {d.description ? ` · ${d.description}` : ""} · {DOC_STATUS_LABELS[d.status]}
-                  </p>
+          <form action={bulkSetDocType} className="mt-2 flex flex-col gap-3">
+            <div className="flex flex-col divide-y divide-zinc-100">
+              {docLinks.map((d) => (
+                <div key={d.id} className="flex items-center gap-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    name="link_id"
+                    value={d.id}
+                    aria-label={`Zaznacz dokument ${d.full_number}`}
+                    className="h-5 w-5 shrink-0 accent-brand-blue"
+                  />
+                  <Link href={`${basePath === "/recepcja/kasa" ? "/recepcja/kasa" : "/kasa"}/dokument/${d.id}`} className="flex min-w-0 flex-1 items-center gap-3 hover:bg-zinc-50">
+                    <span className="text-lg" aria-hidden>
+                      {DOC_STATUS_ICONS[d.status]}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-zinc-900">{d.contractor || d.full_number}</p>
+                      <p className="truncate text-xs text-zinc-500">
+                        {d.full_number}
+                        {d.description ? ` · ${d.description}` : ""} · {DOC_STATUS_LABELS[d.status]}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 text-sm font-bold ${d.value < 0 ? "text-red-600" : "text-zinc-900"}`}>{money(Math.abs(d.value))}</span>
+                  </Link>
                 </div>
-                <span className={`shrink-0 text-sm font-bold ${d.value < 0 ? "text-red-600" : "text-zinc-900"}`}>{money(Math.abs(d.value))}</span>
-              </Link>
-            ))}
-          </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-zinc-50 p-3">
+              <p className="w-full text-xs text-zinc-500">
+                Zaznacz dokumenty i ustaw im wspólny typ. Notatka, numer faktury i skan ustawiasz pojedynczo, w karcie dokumentu. Paragon i faktura spoza KSeF wymagają skanu, więc ich nie ustawisz hurtowo.
+              </p>
+              <select name="doc_type" required defaultValue="" className={`${INPUT} !w-auto flex-1`}>
+                <option value="" disabled>
+                  Wybierz typ…
+                </option>
+                {BULK_DOC_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <SubmitButton className="rounded-xl bg-zinc-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-50">
+                Ustaw dla zaznaczonych
+              </SubmitButton>
+            </div>
+          </form>
         )}
       </Card>
 

@@ -129,6 +129,32 @@ export async function closeCashDay(formData: FormData) {
   revalidate(date);
 }
 
+// Hurtowe ustawienie typu dla zaznaczonych dokumentów KW/KP z jednego dnia
+// (lista na ekranie dnia). Tylko typy bez wymogu skanu — paragon i faktura
+// spoza KSeF odrzucamy w całości, żeby nie zapisać części zaznaczenia.
+// Notatka, numer faktury i skany zostają per dokument (karta dokumentu).
+export async function bulkSetDocType(formData: FormData) {
+  const employee = await getSessionEmployee();
+  const docType = String(formData.get("doc_type") ?? "") as DocType;
+  const ids = formData.getAll("link_id").map(String).filter(Boolean);
+  if (ids.length === 0) throw new Error("Zaznacz przynajmniej jeden dokument.");
+
+  const bulkAllowed: DocType[] = ["ksef_invoice", "awaiting_invoice", "client_correction", "wallet_operation", "other"];
+  if (!bulkAllowed.includes(docType)) {
+    throw new Error(`„${DOC_TYPE_LABELS[docType] ?? docType}” wymaga skanu — ustaw ten typ pojedynczo w karcie dokumentu.`);
+  }
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("cash_doc_links")
+    .update({ doc_type: docType, status: docStatusForType(docType), updated_by_employee_id: employee?.id ?? null, updated_at: new Date().toISOString() })
+    .in("id", ids);
+  if (error) throw new Error(dbErrorMessage(error));
+
+  revalidatePath("/kasa");
+  revalidatePath("/recepcja/kasa");
+}
+
 // Uzupełnienie jednego dokumentu KW/KP (pkt 4) — pojedyncze, bez presji
 // czasowej: typ dokumentu, notatka/nr faktury i (dla typów, które tego
 // wymagają — patrz DOC_TYPE_REQUIRES_ATTACHMENT) skan/zdjęcie paragonu,
