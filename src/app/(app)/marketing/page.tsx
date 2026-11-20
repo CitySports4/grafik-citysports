@@ -28,8 +28,6 @@ export default async function MarketingPage({
     zakres?: string;
     widok?: string;
     projekt?: string;
-    widokZadan?: string;
-    data?: string;
   }>;
 }) {
   const employee = await requireEmployee();
@@ -83,8 +81,6 @@ export default async function MarketingPage({
           assigneeFilter={params.osoba}
           showAll={params.zakres === "wszystkie"}
           view={params.widok}
-          calendarView={params.widokZadan}
-          calendarDate={params.data}
         />
       )}
       {tab === "kalendarz" && (

@@ -113,8 +113,8 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
     .order("due_date", { ascending: true, nullsFirst: false });
 
   const tasks = (data ?? []) as Task[];
-  const active = tasks.filter((t) => t.status !== "opublikowane");
-  const published = tasks.filter((t) => t.status === "opublikowane");
+  const active = tasks.filter((t) => t.status !== "done");
+  const published = tasks.filter((t) => t.status === "done");
 
   // Zadania "w ogóle razem, bez info czy to na ten tydzień czy za miesiąc"
   // był konkretny feedback (Oliwia) — grupujemy wg terminu, żeby priorytet
@@ -141,14 +141,12 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
   // to, o co poprosiła Sasza (migracja 0067): materiał najpierw "gotowy, czeka
   // na publikację", osobno i później faktycznie "opublikowane".
   function renderTask(t: Task) {
-    const isGotowe = t.status === "gotowe";
-    const isPublished = t.status === "opublikowane";
+    const isPublished = t.status === "done";
     return (
       <div key={t.id} className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className={`font-semibold ${isPublished ? "text-zinc-400 line-through" : "text-zinc-900"}`}>{t.title}</p>
-            {isGotowe && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">⏳ Czeka na publikację</span>}
           </div>
           {t.due_date && (
             <p className="mt-0.5 text-xs text-zinc-500">termin: {new Date(t.due_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "long" })}</p>
@@ -177,14 +175,12 @@ async function CreatorTasks({ employeeId }: { employeeId: string }) {
           {!isPublished && (
             <form action={setTaskStatus} className="mt-2">
               <input type="hidden" name="id" value={t.id} />
-              <input type="hidden" name="status" value={isGotowe ? "opublikowane" : "gotowe"} />
+              <input type="hidden" name="status" value="done" />
               <button
                 type="submit"
-                className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white transition-colors ${
-                  isGotowe ? "bg-brand-blue hover:bg-blue-700" : "bg-emerald-600 hover:bg-emerald-700"
-                }`}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700"
               >
-                {isGotowe ? "📤 Opublikowane" : "✅ Gotowe — czeka na publikację"}
+                ✅ Zrobione
               </button>
             </form>
           )}
@@ -461,7 +457,7 @@ async function CreatorCalendar({ employeeId, yearParam, monthParam }: { employee
                 {items.map((t) => (
                   <span
                     key={t.id}
-                    className={`truncate rounded px-1.5 py-1 text-[11px] font-medium ${t.status === "opublikowane" ? "bg-emerald-50 text-emerald-700 line-through" : "bg-violet-50 text-violet-700"}`}
+                    className={`truncate rounded px-1.5 py-1 text-[11px] font-medium ${t.status === "done" ? "bg-emerald-50 text-emerald-700 line-through" : "bg-violet-50 text-violet-700"}`}
                   >
                     {t.recording_format ? RECORDING_FORMAT_ICONS[t.recording_format] : "📋"} {t.title}
                   </span>

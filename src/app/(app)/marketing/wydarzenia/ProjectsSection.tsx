@@ -44,7 +44,7 @@ export async function ProjectsSection() {
     if (!t.project_id) continue;
     const c = countsByProject.get(t.project_id) ?? { tasks: 0, tasksDone: 0, content: 0 };
     c.tasks += 1;
-    if (t.status === "opublikowane") c.tasksDone += 1;
+    if (t.status === "done") c.tasksDone += 1;
     countsByProject.set(t.project_id, c);
   }
   for (const item of (contentRaw ?? []) as { project_id: string | null }[]) {
