@@ -112,7 +112,13 @@ function NumInput({
   onCommit: (val: number) => void;
 }) {
   const [local, setLocal] = useState(String(value));
-  useEffect(() => setLocal(String(value)), [value]);
+  // Synchronizacja z propem bez efektu: zmiana `value` z zewnątrz przepisuje
+  // lokalny tekst w trakcie renderu (wzorzec z dokumentacji React).
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setLocal(String(value));
+  }
   return (
     <input
       type="number"
@@ -252,6 +258,9 @@ export function InstructorCalculator() {
   const deletedRef = useRef<string[]>([]);
 
   useEffect(() => {
+    // Jednorazowy odczyt z localStorage po montowaniu (klient-only) — setState
+    // w efekcie jest tu celowe.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setThresholds(lsGet(THRESH_KEY, {}));
     const del = lsGet<string[]>(DELETED_KEY, []);
     setDeletedArr(del);

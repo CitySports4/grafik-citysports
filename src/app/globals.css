@@ -2,7 +2,8 @@
 
 :root {
   --background: #f7f8fa;
-  --foreground: #1a1a1a;
+  /* Tekst główny w kolorze marki navy (design system: „navy — główny tekst”, 11,7:1+). */
+  --foreground: #0c2e64;
 
   /* Paleta City Sports (z citysports.com.pl / logo). */
   /* Zgodne z design systemem „City Sports” (tokens.json).
