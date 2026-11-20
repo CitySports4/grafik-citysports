@@ -278,10 +278,10 @@ function CountCard({
       <p className={`${LABEL} mb-2`}>{CASH_COUNT_SLOT_LABELS[slot]}</p>
       {expected !== null && (
         <div className="mb-2.5 rounded-xl bg-blue-50 px-3.5 py-2.5 text-center">
-          <p className="text-xs font-semibold text-brand-blue">Powinno być teraz w kasetce</p>
+          <p className="text-xs font-semibold text-brand-navy">Powinno być teraz w kasetce</p>
           <p className="text-xl font-black text-brand-navy">{money(expected)}</p>
           {slot === "close" && (
-            <p className="mt-1 text-[11px] text-brand-blue/70">Orientacyjnie — dokładną kwotę z kaucjami zobaczysz po wpisaniu sumy z terminala niżej.</p>
+            <p className="mt-1 text-[11px] text-brand-navy">Orientacyjnie — dokładną kwotę z kaucjami zobaczysz po wpisaniu sumy z terminala niżej.</p>
           )}
         </div>
       )}
