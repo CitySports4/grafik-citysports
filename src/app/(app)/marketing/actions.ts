@@ -141,6 +141,10 @@ export async function updateTask(formData: FormData) {
 // content_creator (Sprint A) — i tylko dla WŁASNEGO zadania, stąd osobna
 // (nie requireMarketingAccess) bramka tutaj. Pełny zespół (marketing/admin)
 // ma bez zmian dostęp do każdego zadania, jak dotąd.
+// Zadania publikacji (rodzaj opublikowac / nagrac_opublikowac) synchronizują
+// status wpisu kalendarza. Zmiana idzie jedną funkcją w bazie (jedna transakcja).
+const PUBLISH_TASK_KINDS = ["opublikowac", "nagrac_opublikowac"];
+
 export async function setTaskStatus(formData: FormData) {
   const employee = await requireEmployee();
   const id = String(formData.get("id") ?? "");
@@ -148,15 +152,50 @@ export async function setTaskStatus(formData: FormData) {
   if (!id || !status) throw new Error("Brak danych.");
 
   const supabase = createServerSupabaseClient();
+  const { data: task } = await supabase
+    .from("marketing_task")
+    .select("assignee_employee_id, status, kind, content_id")
+    .eq("id", id)
+    .single();
+  if (!task) throw new Error("Nie znaleziono zadania.");
   if (!canAccessMarketing(employee)) {
     if (!isContentCreator(employee)) {
       throw new Error("Brak uprawnień — ta sekcja jest dostępna tylko dla roli Marketing.");
     }
-    const { data: task } = await supabase.from("marketing_task").select("assignee_employee_id").eq("id", id).single();
-    if (!task || task.assignee_employee_id !== employee.id) {
+    if (task.assignee_employee_id !== employee.id) {
       throw new Error("Możesz oznaczać jako zrobione tylko własne zadania.");
     }
   }
+
+  const isPublishTask = !!task.content_id && PUBLISH_TASK_KINDS.includes(task.kind ?? "");
+  if (isPublishTask && task.content_id) {
+    const { data: content } = await supabase.from("marketing_content").select("status").eq("id", task.content_id).single();
+    if (status === "done") {
+      if (!employee.roles.includes("admin")) await assertCanPublish(supabase, task.content_id);
+      const { error } = await supabase.rpc("marketing_set_content_status_sync", {
+        p_content_id: task.content_id,
+        p_status: "opublikowane",
+        p_task_id: id,
+        p_task_status: "done",
+      });
+      if (error) throw new Error(dbErrorMessage(error));
+      revalidateMarketing();
+      return;
+    }
+    if (task.status === "done" && content?.status === "opublikowane") {
+      // Cofnięcie zadania publikacji: wpis zawsze wraca do "gotowe".
+      const { error } = await supabase.rpc("marketing_set_content_status_sync", {
+        p_content_id: task.content_id,
+        p_status: "gotowe",
+        p_task_id: id,
+        p_task_status: status,
+      });
+      if (error) throw new Error(dbErrorMessage(error));
+      revalidateMarketing();
+      return;
+    }
+  }
+
   const { error } = await supabase.from("marketing_task").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
@@ -229,7 +268,12 @@ export async function setContentStatus(formData: FormData) {
   if (status === "opublikowane" && !employee.roles.includes("admin")) {
     await assertCanPublish(supabase, id);
   }
-  const { error } = await supabase.from("marketing_content").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+  const { error } = await supabase.rpc("marketing_set_content_status_sync", {
+    p_content_id: id,
+    p_status: status,
+    p_task_id: null,
+    p_task_status: null,
+  });
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
 }
@@ -242,13 +286,18 @@ export async function setContentStatus(formData: FormData) {
 async function assertCanPublish(supabase: ReturnType<typeof createServerSupabaseClient>, contentId: string) {
   const { data: current } = await supabase
     .from("marketing_content")
-    .select("needs_review, approved, scheduled_date")
+    .select("needs_review, approved, reviewed_at, scheduled_date")
     .eq("id", contentId)
     .single();
   if (!current) throw new Error("Treść już nie istnieje — odśwież stronę.");
   const today = toDateKey(new Date());
+  // Krzysztof zostawił uwagę do poprawki — publikacja wstrzymana do czasu poprawy.
+  if (current.needs_review && !current.approved && current.reviewed_at) {
+    throw new Error("Treść wymaga poprawki — nie można jej oznaczyć jako opublikowanej, dopóki nie zostanie zaakceptowana.");
+  }
+  // Brak reakcji do dnia publikacji = zatwierdzone automatycznie (jak dotąd).
   if (isApprovalPending(current, today)) {
-    throw new Error(`Czeka jeszcze na akceptację — zostanie dopuszczona automatycznie ${current.scheduled_date}, jeśli nikt wcześniej nie zareaguje.`);
+    throw new Error(`Treść czeka na akceptację Krzysztofa — zostanie dopuszczona automatycznie ${current.scheduled_date}, jeśli nikt wcześniej nie zareaguje.`);
   }
 }
 
@@ -324,6 +373,16 @@ export async function updateContent(formData: FormData) {
   const supabase = createServerSupabaseClient();
   if (status === "opublikowane" && !employee.roles.includes("admin")) {
     await assertCanPublish(supabase, id);
+  }
+  const { data: prevContent } = await supabase.from("marketing_content").select("status").eq("id", id).single();
+  if (prevContent && prevContent.status !== status) {
+    const { error: syncError } = await supabase.rpc("marketing_set_content_status_sync", {
+      p_content_id: id,
+      p_status: status,
+      p_task_id: null,
+      p_task_status: null,
+    });
+    if (syncError) throw new Error(dbErrorMessage(syncError));
   }
   const { error } = await supabase
     .from("marketing_content")
@@ -598,6 +657,14 @@ export async function addContentTasks(formData: FormData) {
   if (count && count > 0) throw new Error("Do tej publikacji są już zadania.");
 
   const plan = contentTaskPlan(kind, content.format);
+  const KIND_OF: Record<string, string> = {
+    nagrac: "nagrac",
+    zmontowac: "zmontowac",
+    opublikowac: "opublikowac",
+    nagrac_opublikowac: "nagrac_opublikowac",
+    przygotowac: "przygotowac",
+    animacja: "przygotowac",
+  };
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   const rows = plan.map((def) => {
     const field = def.who === "recorder" ? "recorder_id" : def.who === "publisher" ? "publisher_id" : "maker_id";
@@ -615,6 +682,7 @@ export async function addContentTasks(formData: FormData) {
       content_id: contentId,
       project_id: content.project_id ?? null,
       created_by_employee_id: employee.id,
+      kind: KIND_OF[def.key] ?? null,
     };
   });
 
