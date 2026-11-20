@@ -393,7 +393,7 @@ export default async function MyGrafikPage({
                 <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-brand-orange-ink marker:content-none">
                   <span>{label}</span>
                   <span className="font-normal text-zinc-500 group-open:hidden">{dayEntries.length > 0 ? "— edytuj ▸" : "▸"}</span>
-                  <span className="hidden font-normal text-zinc-400 group-open:inline">— zwiń ▾</span>
+                  <span className="hidden font-normal text-zinc-500 group-open:inline">— zwiń ▾</span>
                 </summary>
                 <div className="mt-2">
                   <DayTimeEntryEditor
@@ -423,7 +423,7 @@ export default async function MyGrafikPage({
           <span className="text-lg font-bold text-zinc-900">
             {myLoggedHours}h <span className="text-sm font-normal text-zinc-500">wpisanych</span>
             {" / "}
-            {myHours}h <span className="text-sm font-normal text-zinc-400">zaplanowanych</span>
+            {myHours}h <span className="text-sm font-normal text-zinc-500">zaplanowanych</span>
           </span>
         ) : (
           <span className="text-lg font-bold text-zinc-900">{myHours}h</span>
