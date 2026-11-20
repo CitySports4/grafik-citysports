@@ -579,15 +579,17 @@ export async function addContentTasks(formData: FormData) {
   await requireMarketingAccess();
   const employee = await requireEmployee();
   const contentId = String(formData.get("content_id") ?? "");
+  const kind = String(formData.get("kind") ?? "");
   const recorderId = String(formData.get("recorder_id") ?? "");
   const publisherId = String(formData.get("publisher_id") ?? "");
+  const makerId = String(formData.get("maker_id") ?? "");
   if (!contentId) throw new Error("Brak wpisu kalendarza.");
-  if (!recorderId) throw new Error("Wybierz osobę, która nagrywa.");
+  if (kind !== "film" && kind !== "animacja" && kind !== "foto") throw new Error("Wybierz rodzaj materiału.");
 
   const supabase = createServerSupabaseClient();
   const { data: content } = await supabase
     .from("marketing_content")
-    .select("id, title, format, purpose, scheduled_date, project_id")
+    .select("id, title, format, scheduled_date, project_id")
     .eq("id", contentId)
     .single();
   if (!content) throw new Error("Nie znaleziono wpisu kalendarza.");
@@ -608,16 +610,22 @@ export async function addContentTasks(formData: FormData) {
   };
 
   let rows;
-  if (content.format === "rolka") {
+  if (kind === "film" && content.format === "rolka") {
+    // Rolka filmowa: Oliwia nagrywa (4 dni przed), Sasza publikuje (w dniu).
+    if (!recorderId) throw new Error("Wybierz osobę, która nagrywa.");
     if (!publisherId) throw new Error("Wybierz osobę, która publikuje.");
     rows = [
       { ...base, title: `Nagrać — ${content.title}`, assignee_employee_id: recorderId, due_date: addDaysKey(content.scheduled_date, -4) },
       { ...base, title: `Opublikować — ${content.title}`, assignee_employee_id: publisherId, due_date: content.scheduled_date },
     ];
-  } else if (content.purpose === "relacja") {
+  } else if (kind === "film") {
+    // Film, który nie jest rolką: nagrywający nagrywa i publikuje w dniu publikacji.
+    if (!recorderId) throw new Error("Wybierz osobę, która nagrywa.");
     rows = [{ ...base, title: `Nagrać i opublikować — ${content.title}`, assignee_employee_id: recorderId, due_date: content.scheduled_date }];
   } else {
-    throw new Error("Dla tego formatu dodaj zadania ręcznie w Zadaniach.");
+    // Zdjęcie/grafika albo animacja: jedna osoba robi i publikuje.
+    if (!makerId) throw new Error("Wybierz osobę, która to robi.");
+    rows = [{ ...base, title: `Zrobić i opublikować — ${content.title}`, assignee_employee_id: makerId, due_date: content.scheduled_date }];
   }
 
   const { error } = await supabase.from("marketing_task").insert(rows);

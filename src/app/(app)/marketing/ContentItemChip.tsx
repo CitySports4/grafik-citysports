@@ -120,7 +120,7 @@ export function ContentItemChip({
   const [error, setError] = useState<string | null>(null);
   const [reviewNoteDraft, setReviewNoteDraft] = useState(item.review_note);
   const [addingTasks, setAddingTasks] = useState(false);
-  const suggestsTasks = item.format === "rolka" || item.purpose === "relacja";
+  const [taskKind, setTaskKind] = useState<"film" | "animacja" | "foto">("film");
   const { projects } = useMarketingProjects();
   const assignee = item.assignee_employee_id ? assignees.find((a) => a.id === item.assignee_employee_id) : null;
   const published = item.status === "opublikowane";
@@ -425,34 +425,59 @@ export function ContentItemChip({
                   })}
                 </ul>
               )}
-              {suggestsTasks && linkedTasks.length === 0 && (
+              {linkedTasks.length === 0 && (
                 addingTasks ? (
                   <form action={addContentTasks} className="flex flex-col gap-2">
                     <input type="hidden" name="content_id" value={item.id} />
-                    <label className="text-xs font-semibold text-zinc-700">Nagrywa</label>
-                    <select name="recorder_id" required defaultValue="" className={INPUT}>
-                      <option value="" disabled>
-                        Wybierz…
-                      </option>
-                      {assignees.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
-                      ))}
+                    <label className="text-xs font-semibold text-zinc-700">Rodzaj materiału</label>
+                    <select name="kind" value={taskKind} onChange={(e) => setTaskKind(e.target.value as "film" | "animacja" | "foto")} className={INPUT}>
+                      <option value="film">Film (nagranie)</option>
+                      <option value="animacja">Animacja</option>
+                      <option value="foto">Zdjęcie lub grafika</option>
                     </select>
-                    {item.format === "rolka" && (
+                    {taskKind === "film" && (
+                      <>
+                        <label className="text-xs font-semibold text-zinc-700">Nagrywa</label>
+                    <select name="recorder_id" required defaultValue="" className={INPUT}>
+                        <option value="" disabled>
+                          Wybierz…
+                        </option>
+                        {assignees.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                      </>
+                    )}
+                    {taskKind === "film" && item.format === "rolka" && (
                       <>
                         <label className="text-xs font-semibold text-zinc-700">Publikuje</label>
-                        <select name="publisher_id" required defaultValue="" className={INPUT}>
-                          <option value="" disabled>
-                            Wybierz…
+                    <select name="publisher_id" required defaultValue="" className={INPUT}>
+                        <option value="" disabled>
+                          Wybierz…
+                        </option>
+                        {assignees.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
                           </option>
-                          {assignees.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.name}
-                            </option>
-                          ))}
-                        </select>
+                        ))}
+                      </select>
+                      </>
+                    )}
+                    {taskKind !== "film" && (
+                      <>
+                        <label className="text-xs font-semibold text-zinc-700">Robi i publikuje</label>
+                    <select name="maker_id" required defaultValue="" className={INPUT}>
+                        <option value="" disabled>
+                          Wybierz…
+                        </option>
+                        {assignees.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
                       </>
                     )}
                     <div className="flex gap-2">
@@ -469,9 +494,6 @@ export function ContentItemChip({
                     ➕ Dodaj zadania
                   </button>
                 )
-              )}
-              {!suggestsTasks && linkedTasks.length === 0 && (
-                <p className="text-xs text-zinc-500">Dla tego formatu zadania dodajesz ręcznie w Zadaniach.</p>
               )}
             </div>
           </div>
