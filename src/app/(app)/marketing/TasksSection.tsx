@@ -368,7 +368,7 @@ export async function TasksSection({
               {published && (
                 <form action={setTaskStatus}>
                   <input type="hidden" name="id" value={t.id} />
-                  <input type="hidden" name="status" value="in_progress" />
+                  <input type="hidden" name="status" value="todo" />
                   <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                     ↺ Cofnij
                   </button>
