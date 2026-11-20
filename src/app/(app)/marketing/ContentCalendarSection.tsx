@@ -130,7 +130,7 @@ export async function ContentCalendarSection({
     // Marketing->Grafik) nie istnieje nigdzie w UI, więc plakietka nie
     // powinna o nim mówić "ma powiązane zadanie" — to mylące, bo nie da się
     // go stamtąd kliknąć.
-    supabase.from("marketing_task").select("content_id").not("content_id", "is", null).eq("archived", false),
+    supabase.from("marketing_task").select("id, title, status, due_date, assignee_employee_id, content_id").not("content_id", "is", null).eq("archived", false),
     // Ostatnia FAKTYCZNIE opublikowana treść — niezależnie od oglądanego
     // miesiąca (stąd osobne zapytanie, nie filtrowanie po dateKeys), żeby
     // przypomnienie o regularności działało nawet gdy ktoś przegląda stary
@@ -152,7 +152,13 @@ export async function ContentCalendarSection({
   const allContent = (contentRaw ?? []) as ContentItem[];
   const assignees = (assigneesRaw ?? []) as Assignee[];
   const activeProjects = (projectsRaw ?? []) as Project[];
-  const contentIdsWithTask = new Set((linkedTasksRaw ?? []).map((t) => t.content_id as string));
+  const linkedTasksByContent = new Map<string, { id: string; title: string; status: string; due_date: string | null; assignee_employee_id: string | null }[]>();
+  for (const t of linkedTasksRaw ?? []) {
+    const key = t.content_id as string;
+    const list = linkedTasksByContent.get(key) ?? [];
+    list.push({ id: t.id as string, title: t.title as string, status: t.status as string, due_date: (t.due_date as string | null) ?? null, assignee_employee_id: (t.assignee_employee_id as string | null) ?? null });
+    linkedTasksByContent.set(key, list);
+  }
 
   const effectiveFilter = assigneeFilter === MINE ? employee.id : assigneeFilter;
   const assigneeFiltered = !effectiveFilter ? allContent : allContent.filter((c) => c.assignee_employee_id === effectiveFilter);
@@ -363,7 +369,7 @@ export async function ContentCalendarSection({
                           zamiast rozwijać się w tej ciasnej komórce siatki —
                           patrz ContentItemChip. */}
                       <div className="min-w-0 flex-1">
-                        <ContentItemChip item={item} assignees={assignees} hasLinkedTask={contentIdsWithTask.has(item.id)} isAdmin={isAdmin} today={today} />
+                        <ContentItemChip item={item} assignees={assignees} hasLinkedTask={(linkedTasksByContent.get(item.id) ?? []).length > 0} linkedTasks={linkedTasksByContent.get(item.id) ?? []} isAdmin={isAdmin} today={today} />
                       </div>
                     </div>
                   );

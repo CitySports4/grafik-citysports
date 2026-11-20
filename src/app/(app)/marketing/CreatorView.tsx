@@ -224,6 +224,7 @@ type ContentItem = {
   title: string;
   format: ContentFormat;
   scheduled_date: string;
+  assignee_employee_id: string | null;
   status: ContentStatus;
   needs_review: boolean;
   approved: boolean;
@@ -258,6 +259,38 @@ const APPROVAL_BANNER_STYLE: Record<Exclude<ApprovalBadge, "approved">, string> 
 // widoku. Pola gotowej treści (CopyField) są tu tylko do podglądu/kopiowania
 // — edycja treści zostaje w pełnym widoku marketingu (rola marketing/admin),
 // to nie jest formularz zapisu.
+// Wpis, który nagrywa Oliwia, a pisze/publikuje ktoś inny (np. rolka Saszy):
+// tylko to, co potrzebne do nagrania — bez gotowego tekstu i bez przycisków statusu.
+function renderRecordingOnly(c: ContentItem) {
+  return (
+    <div key={c.id} id={`tresc-${c.id}`} className="scroll-mt-4 flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-3">
+      <p className="font-semibold text-zinc-900">
+        {CONTENT_FORMAT_ICONS[c.format]} {c.title}
+      </p>
+      <p className="text-xs text-zinc-500">publikacja: {new Date(c.scheduled_date + "T00:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "long" })}</p>
+      {c.hook && (
+        <p className="text-sm text-zinc-700">
+          <span className="font-semibold">Haczyk: </span>
+          {c.hook}
+        </p>
+      )}
+      {c.what_to_record && (
+        <p className="text-sm text-zinc-700">
+          <span className="font-semibold">Co nagrać: </span>
+          {c.what_to_record}
+        </p>
+      )}
+      {c.screen_captions && (
+        <p className="text-sm text-zinc-700">
+          <span className="font-semibold">Napisy na ekran: </span>
+          {c.screen_captions}
+        </p>
+      )}
+      <p className="text-xs text-zinc-500">Tekst i publikację prowadzi osoba przypisana do treści.</p>
+    </div>
+  );
+}
+
 async function CreatorContent({ employeeId }: { employeeId: string }) {
   const supabase = createServerSupabaseClient();
   const today = toDateKey(new Date());
@@ -274,7 +307,7 @@ async function CreatorContent({ employeeId }: { employeeId: string }) {
   const { data } = await supabase
     .from("marketing_content")
     .select(
-      "id, title, format, scheduled_date, status, needs_review, approved, reviewed_at, review_note, hook, content_fb, content_ig, screen_captions, what_to_record, hashtags, to_confirm, link_utm"
+      "id, title, format, scheduled_date, assignee_employee_id, status, needs_review, approved, reviewed_at, review_note, hook, content_fb, content_ig, screen_captions, what_to_record, hashtags, to_confirm, link_utm"
     )
     .or(orParts.join(","))
     .order("scheduled_date", { ascending: true });
@@ -301,6 +334,7 @@ async function CreatorContent({ employeeId }: { employeeId: string }) {
   }
 
   function renderContent(c: ContentItem) {
+    if (c.assignee_employee_id !== employeeId) return renderRecordingOnly(c);
     const isGotowe = c.status === "gotowe";
     const isPublished = c.status === "opublikowane";
     const pendingApproval = c.needs_review && isApprovalPending(c, today);

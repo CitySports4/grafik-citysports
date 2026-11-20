@@ -21,7 +21,7 @@ import {
   type ContentFormat,
   type ApprovalBadge,
 } from "@/lib/marketing";
-import { updateContent, deleteContent, reviewContent } from "./actions";
+import { updateContent, deleteContent, reviewContent, addContentTasks } from "./actions";
 import { useMarketingProjects } from "./useMarketingProjects";
 import { CopyField } from "./CopyField";
 import { AccordionSection } from "./AccordionSection";
@@ -55,6 +55,7 @@ type ContentItem = {
   link_utm: string;
 };
 type Assignee = { id: string; name: string; color_hex: string };
+type LinkedTask = { id: string; title: string; status: string; due_date: string | null; assignee_employee_id: string | null };
 
 const STATUS_PILL: Record<ContentStatus, string> = {
   pomysl: "bg-zinc-100 text-zinc-600",
@@ -100,12 +101,14 @@ export function ContentItemChip({
   item,
   assignees,
   hasLinkedTask,
+  linkedTasks,
   isAdmin,
   today,
 }: {
   item: ContentItem;
   assignees: Assignee[];
   hasLinkedTask: boolean;
+  linkedTasks: LinkedTask[];
   isAdmin: boolean;
   // Dzisiejsza data (z serwera, nie z zegara przeglądarki) — potrzebna do
   // isApprovalPending, żeby pokazać dokładnie to samo, co i tak wymusza
@@ -116,6 +119,8 @@ export function ContentItemChip({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewNoteDraft, setReviewNoteDraft] = useState(item.review_note);
+  const [addingTasks, setAddingTasks] = useState(false);
+  const suggestsTasks = item.format === "rolka" || item.purpose === "relacja";
   const { projects } = useMarketingProjects();
   const assignee = item.assignee_employee_id ? assignees.find((a) => a.id === item.assignee_employee_id) : null;
   const published = item.status === "opublikowane";
@@ -396,6 +401,79 @@ export function ContentItemChip({
                 </button>
               </div>
             </form>
+
+            <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+              <p className="text-sm font-semibold text-zinc-900">Zadania do tej publikacji ({linkedTasks.length})</p>
+              {linkedTasks.length === 0 ? (
+                <p className="text-xs text-zinc-500">Brak zadań.</p>
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {linkedTasks.map((t) => {
+                    const who = t.assignee_employee_id ? assignees.find((a) => a.id === t.assignee_employee_id)?.name : null;
+                    const late = t.due_date !== null && t.due_date > item.scheduled_date;
+                    return (
+                      <li key={t.id} className="text-sm">
+                        <span className="font-semibold text-zinc-900">
+                          {t.status === "done" ? "✓" : t.status === "in_progress" ? "▶" : "○"} {t.title}
+                        </span>{" "}
+                        <span className="text-zinc-500">
+                          · {who ?? "bez osoby"} · termin {t.due_date ?? "—"}
+                        </span>
+                        {late && <span className="ml-1 rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-700">⚠ po dacie publikacji</span>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {suggestsTasks && linkedTasks.length === 0 && (
+                addingTasks ? (
+                  <form action={addContentTasks} className="flex flex-col gap-2">
+                    <input type="hidden" name="content_id" value={item.id} />
+                    <label className="text-xs font-semibold text-zinc-700">Nagrywa</label>
+                    <select name="recorder_id" required defaultValue="" className={INPUT}>
+                      <option value="" disabled>
+                        Wybierz…
+                      </option>
+                      {assignees.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                    {item.format === "rolka" && (
+                      <>
+                        <label className="text-xs font-semibold text-zinc-700">Publikuje</label>
+                        <select name="publisher_id" required defaultValue="" className={INPUT}>
+                          <option value="" disabled>
+                            Wybierz…
+                          </option>
+                          {assignees.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.name}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+                    <div className="flex gap-2">
+                      <button type="submit" className={BTN_PRIMARY}>
+                        Dodaj zadania
+                      </button>
+                      <button type="button" onClick={() => setAddingTasks(false)} className="rounded-lg px-3 py-2 text-sm font-semibold text-zinc-600">
+                        Anuluj
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <button type="button" onClick={() => setAddingTasks(true)} className="self-start rounded-lg bg-zinc-800 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-900">
+                    ➕ Dodaj zadania
+                  </button>
+                )
+              )}
+              {!suggestsTasks && linkedTasks.length === 0 && (
+                <p className="text-xs text-zinc-500">Dla tego formatu zadania dodajesz ręcznie w Zadaniach.</p>
+              )}
+            </div>
           </div>
         </Modal>
       )}
