@@ -1,3 +1,5 @@
+import { CLEANING_MODULE_ENABLED } from "@/lib/features";
+import { ModuleArchived } from "@/components/ModuleArchived";
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee } from "@/lib/session";
@@ -17,6 +19,7 @@ const FREQ_LABELS: Record<string, string> = {
 const FREQ_ORDER = ["daily", "3xweek", "2xweek", "weekly", "biweekly", "monthly", "quarterly"];
 
 export default async function CleaningPoolPage() {
+  if (!CLEANING_MODULE_ENABLED) return <ModuleArchived name="Pula zadań sprzątania" />;
   await requireEmployee();
   const today = toDateKey(new Date());
   const supabase = createServerSupabaseClient();

@@ -1,3 +1,5 @@
+import { CLEANING_MODULE_ENABLED } from "@/lib/features";
+import { ModuleArchived } from "@/components/ModuleArchived";
 import Link from "next/link";
 import { Fragment } from "react";
 import { createServerSupabaseClient } from "@/lib/supabase";
@@ -64,6 +66,7 @@ export default async function CleaningConfigPage({
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
+  if (!CLEANING_MODULE_ENABLED) return <ModuleArchived name="Konfiguracja sprzątania" />;
   const params = await searchParams;
   const tab: TabKey = (TABS.find((t) => t.key === params.tab)?.key ?? "strefy") as TabKey;
 

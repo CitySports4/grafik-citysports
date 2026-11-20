@@ -1,9 +1,12 @@
+import { CLEANING_MODULE_ENABLED } from "@/lib/features";
+import { ModuleArchived } from "@/components/ModuleArchived";
 import { getCleaningDayItems } from "@/lib/cleaning-day";
 import { toDateKey } from "@/lib/schedule-month";
 import { Card } from "@/components/Card";
 import { ColorDot } from "@/components/ColorDot";
 
 export default async function RecepcjaZadaniaPage() {
+  if (!CLEANING_MODULE_ENABLED) return <ModuleArchived name="Zadania sprzątania" />;
   const today = toDateKey(new Date());
   const { items: cleaningItems } = await getCleaningDayItems(today);
 

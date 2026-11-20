@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { CLEANING_MODULE_ENABLED } from "@/lib/features";
 import { getSessionEmployee, isPersonalTrainerOnly, canPreviewPersonalTraining, canAccessMarketing, canAccessKasa, isContentCreator } from "@/lib/session";
 import { MainContainer } from "@/components/MainContainer";
 import { AppNavTabs } from "./AppNavTabs";
@@ -53,7 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (zajeciaLinks.length > 1) navGroups.push({ label: "Zajęcia", links: zajeciaLinks });
 
   const trailingLinks: { href: string; label: string }[] = [];
-  if (!isTrainerOnly) trailingLinks.push({ href: "/zadania", label: "Sprzątanie" });
+  if (!isTrainerOnly && CLEANING_MODULE_ENABLED) trailingLinks.push({ href: "/zadania", label: "Sprzątanie" });
   if (zajeciaLinks.length === 1) trailingLinks.push(zajeciaLinks[0]);
   // content_creator (Sprint A) dostaje link do uproszczonego widoku
   // /marketing. Dawny osobny link "Wydarzenia" (/projekty) zniknął —

@@ -1,3 +1,5 @@
+import { CLEANING_MODULE_ENABLED } from "@/lib/features";
+import { ModuleArchived } from "@/components/ModuleArchived";
 import Link from "next/link";
 import { requireEmployee } from "@/lib/session";
 import { toDateKey } from "@/lib/schedule-month";
@@ -7,6 +9,7 @@ import { Card } from "@/components/Card";
 import { CleaningDayList } from "../sprzatanie/CleaningDayList";
 
 export default async function ZadaniaPage() {
+  if (!CLEANING_MODULE_ENABLED) return <ModuleArchived name="Zadania" />;
   await requireEmployee();
   const today = toDateKey(new Date());
   const weekday = new Date(today + "T00:00:00").getDay();
