@@ -1,3 +1,5 @@
+import { CLEANING_MODULE_ENABLED } from "@/lib/features";
+import { ModuleArchived } from "@/components/ModuleArchived";
 import Link from "next/link";
 import { requireEmployee } from "@/lib/session";
 import { toDateKey } from "@/lib/schedule-month";
@@ -12,6 +14,7 @@ export default async function CleaningDayPage({
 }: {
   searchParams: Promise<{ date?: string }>;
 }) {
+  if (!CLEANING_MODULE_ENABLED) return <ModuleArchived name="Sprzątanie" />;
   await requireEmployee();
   const params = await searchParams;
   const dateKey = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : toDateKey(new Date());

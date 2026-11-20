@@ -1,3 +1,5 @@
+import { CLEANING_MODULE_ENABLED } from "@/lib/features";
+import { ModuleArchived } from "@/components/ModuleArchived";
 import Link from "next/link";
 import { findScheduleMonth, nextMonth, monthLabel, daysInMonth, toDateKey } from "@/lib/schedule-month";
 import { getCleaningMonthPreview } from "@/lib/cleaning-day";
@@ -25,6 +27,7 @@ export default async function CleaningMonthPreviewPage({
 }: {
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
+  if (!CLEANING_MODULE_ENABLED) return <ModuleArchived name="Podgląd sprzątania" />;
   const params = await searchParams;
   const fallback = nextMonth();
   const year = Number(params.year) || fallback.year;

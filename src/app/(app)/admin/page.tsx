@@ -1,3 +1,4 @@
+import { CLEANING_MODULE_ENABLED } from "@/lib/features";
 import { CardLink } from "@/components/Card";
 
 const SECTION_LABEL = "mb-2 text-sm font-bold text-zinc-500";
@@ -41,15 +42,17 @@ export default function AdminHomePage() {
         </div>
       </div>
 
-      <div>
-        <h2 className={SECTION_LABEL}>Sprzątanie</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <CardLink href="/admin/sprzatanie">
-            <h2 className="font-semibold text-zinc-900">Konfiguracja sprzątania</h2>
-            <p className="mt-1 text-sm text-zinc-500">Strefy, zadania, checklisty, kompetencje sprzątania per osoba.</p>
-          </CardLink>
+      {CLEANING_MODULE_ENABLED && (
+        <div>
+          <h2 className={SECTION_LABEL}>Sprzątanie</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <CardLink href="/admin/sprzatanie">
+              <h2 className="font-semibold text-zinc-900">Konfiguracja sprzątania</h2>
+              <p className="mt-1 text-sm text-zinc-500">Strefy, zadania, checklisty, kompetencje sprzątania per osoba.</p>
+            </CardLink>
+          </div>
         </div>
-      </div>
+      )}
 
       <div>
         <h2 className={SECTION_LABEL}>Treningi personalne</h2>
