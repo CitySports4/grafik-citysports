@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, canAccessMarketing, isContentCreator } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
@@ -171,7 +172,22 @@ export async function setTaskStatus(formData: FormData) {
   if (isPublishTask && task.content_id) {
     const { data: content } = await supabase.from("marketing_content").select("status").eq("id", task.content_id).single();
     if (status === "done") {
-      if (!employee.roles.includes("admin")) await assertCanPublish(supabase, task.content_id);
+      if (!employee.roles.includes("admin")) {
+        const reason = await publishBlockReason(supabase, task.content_id);
+        if (reason) {
+          await setFlash("warn", reason);
+          revalidateMarketing();
+          return;
+        }
+      }
+      const { data: contentFull } = await supabase.from("marketing_content").select("title, status").eq("id", task.content_id).single();
+      const { data: others } = await supabase
+        .from("marketing_task")
+        .select("title")
+        .eq("content_id", task.content_id)
+        .eq("archived", false)
+        .neq("status", "done")
+        .neq("id", id);
       const { error } = await supabase.rpc("marketing_set_content_status_sync", {
         p_content_id: task.content_id,
         p_status: "opublikowane",
@@ -179,11 +195,15 @@ export async function setTaskStatus(formData: FormData) {
         p_task_status: "done",
       });
       if (error) throw new Error(dbErrorMessage(error));
+      if (contentFull && contentFull.status !== "opublikowane") {
+        await setFlash("ok", syncSummary(contentFull.title, "opublikowane", (others ?? []) as { title: string }[], "zrobione"));
+      }
       revalidateMarketing();
       return;
     }
     if (task.status === "done" && content?.status === "opublikowane") {
       // Cofnięcie zadania publikacji: wpis zawsze wraca do "gotowe".
+      const { data: contentBack } = await supabase.from("marketing_content").select("title").eq("id", task.content_id).single();
       const { error } = await supabase.rpc("marketing_set_content_status_sync", {
         p_content_id: task.content_id,
         p_status: "gotowe",
@@ -191,6 +211,7 @@ export async function setTaskStatus(formData: FormData) {
         p_task_status: status,
       });
       if (error) throw new Error(dbErrorMessage(error));
+      if (contentBack) await setFlash("ok", `Zaznaczono też: wpis »${contentBack.title}« → gotowe`);
       revalidateMarketing();
       return;
     }
@@ -266,8 +287,20 @@ export async function setContentStatus(formData: FormData) {
     }
   }
   if (status === "opublikowane" && !employee.roles.includes("admin")) {
-    await assertCanPublish(supabase, id);
+    const reason = await publishBlockReason(supabase, id);
+    if (reason) {
+      await setFlash("warn", reason);
+      revalidateMarketing();
+      return;
+    }
   }
+  const { data: contentNow } = await supabase.from("marketing_content").select("title, status").eq("id", id).single();
+  const { data: openTasks } = await supabase
+    .from("marketing_task")
+    .select("title")
+    .eq("content_id", id)
+    .eq("archived", false)
+    .neq("status", "done");
   const { error } = await supabase.rpc("marketing_set_content_status_sync", {
     p_content_id: id,
     p_status: status,
@@ -275,6 +308,9 @@ export async function setContentStatus(formData: FormData) {
     p_task_status: null,
   });
   if (error) throw new Error(dbErrorMessage(error));
+  if (contentNow && status === "opublikowane" && contentNow.status !== "opublikowane") {
+    await setFlash("ok", syncSummary(contentNow.title, "opublikowane", (openTasks ?? []) as { title: string }[], "zrobione"));
+  }
   revalidateMarketing();
 }
 
@@ -283,22 +319,45 @@ export async function setContentStatus(formData: FormData) {
 // cała reguła, w tym automatyczne zwolnienie w dniu scheduled_date, żeby
 // zwłoka admina nie blokowała pracy w nieskończoność). Admin może opublikować
 // zawsze — on sam jest osobą akceptującą.
-async function assertCanPublish(supabase: ReturnType<typeof createServerSupabaseClient>, contentId: string) {
+// Powód blokady publikacji (null = można publikować). Ta sama reguła dla
+// wpisu i dla zadania publikacji; administrator pomija blokadę (jak dotąd).
+async function publishBlockReason(supabase: ReturnType<typeof createServerSupabaseClient>, contentId: string): Promise<string | null> {
   const { data: current } = await supabase
     .from("marketing_content")
     .select("needs_review, approved, reviewed_at, scheduled_date")
     .eq("id", contentId)
     .single();
-  if (!current) throw new Error("Treść już nie istnieje — odśwież stronę.");
+  if (!current) return "Treść już nie istnieje — odśwież stronę.";
   const today = toDateKey(new Date());
-  // Krzysztof zostawił uwagę do poprawki — publikacja wstrzymana do czasu poprawy.
   if (current.needs_review && !current.approved && current.reviewed_at) {
-    throw new Error("Treść wymaga poprawki — nie można jej oznaczyć jako opublikowanej, dopóki nie zostanie zaakceptowana.");
+    return "Treść wymaga poprawki";
   }
-  // Brak reakcji do dnia publikacji = zatwierdzone automatycznie (jak dotąd).
   if (isApprovalPending(current, today)) {
-    throw new Error(`Treść czeka na akceptację Krzysztofa — zostanie dopuszczona automatycznie ${current.scheduled_date}, jeśli nikt wcześniej nie zareaguje.`);
+    return "Treść czeka na akceptację Krzysztofa";
   }
+  return null;
+}
+
+async function assertCanPublish(supabase: ReturnType<typeof createServerSupabaseClient>, contentId: string) {
+  const reason = await publishBlockReason(supabase, contentId);
+  if (reason) throw new Error(reason);
+}
+
+// Krótki komunikat po akcji (zielony / żółty), czytany przez baner na stronie.
+// Cookie żyje 8 s — po odświeżeniu znika samo.
+async function setFlash(kind: "ok" | "warn", text: string) {
+  const jar = await cookies();
+  jar.set("marketing_flash", encodeURIComponent(JSON.stringify({ kind, text })), { path: "/", maxAge: 8 });
+}
+
+// Lista tego, co zmieniło się automatycznie przy zmianie statusu.
+function syncSummary(contentTitle: string, contentLabel: string, others: { title: string }[], othersLabel: string) {
+  const parts = [`wpis »${contentTitle}« → ${contentLabel}`];
+  if (others.length > 0) {
+    const names = others.map((t) => `»${t.title.split(" — ")[0]}«`).join(", ");
+    parts.push(`${names} → ${othersLabel}`);
+  }
+  return `Zaznaczono też: ${parts.join(", ")}`;
 }
 
 export async function createContent(formData: FormData) {
