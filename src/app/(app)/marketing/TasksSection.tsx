@@ -304,7 +304,7 @@ export async function TasksSection({
                 <form action={setTaskStatus}>
                   <input type="hidden" name="id" value={t.id} />
                   <input type="hidden" name="status" value="in_progress" />
-                  <button type="submit" className={BTN_GHOST}>
+                  <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                     ▶ Rozpocznij
                   </button>
                 </form>
@@ -314,14 +314,14 @@ export async function TasksSection({
                   <form action={setTaskStatus}>
                     <input type="hidden" name="id" value={t.id} />
                     <input type="hidden" name="status" value="todo" />
-                    <button type="submit" className={BTN_GHOST}>
+                    <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                       ↺ Cofnij
                     </button>
                   </form>
                   <form action={setTaskStatus}>
                     <input type="hidden" name="id" value={t.id} />
                     <input type="hidden" name="status" value="gotowe" />
-                    <button type="submit" className={BTN_GHOST}>
+                    <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                       ✅ Gotowe
                     </button>
                   </form>
@@ -332,14 +332,14 @@ export async function TasksSection({
                   <form action={setTaskStatus}>
                     <input type="hidden" name="id" value={t.id} />
                     <input type="hidden" name="status" value="in_progress" />
-                    <button type="submit" className={BTN_GHOST}>
+                    <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                       ↺ Cofnij
                     </button>
                   </form>
                   <form action={setTaskStatus}>
                     <input type="hidden" name="id" value={t.id} />
                     <input type="hidden" name="status" value="opublikowane" />
-                    <button type="submit" className={BTN_GHOST}>
+                    <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                       📤 Opublikowane
                     </button>
                   </form>
@@ -349,13 +349,13 @@ export async function TasksSection({
                 <form action={setTaskStatus}>
                   <input type="hidden" name="id" value={t.id} />
                   <input type="hidden" name="status" value="gotowe" />
-                  <button type="submit" className={BTN_GHOST}>
+                  <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                     ↺ Cofnij
                   </button>
                 </form>
               )}
               <details className="inline-block">
-                <summary className={`${BTN_GHOST} cursor-pointer [&::-webkit-details-marker]:hidden`}>Edytuj</summary>
+                <summary className={`${BTN_GHOST} inline-flex min-h-11 items-center cursor-pointer [&::-webkit-details-marker]:hidden`}>Edytuj</summary>
                 <form action={updateTask} className="mt-2 flex flex-col gap-2 rounded-xl bg-zinc-50 p-3">
                   <input type="hidden" name="id" value={t.id} />
                   <input name="title" defaultValue={t.title} required className={INPUT_SM} placeholder="Tytuł" />
@@ -443,7 +443,7 @@ export async function TasksSection({
               <form action={setTaskArchived}>
                 <input type="hidden" name="id" value={t.id} />
                 <input type="hidden" name="archived" value={String(!t.archived)} />
-                <button type="submit" className={BTN_GHOST}>
+                <button type="submit" className={`${BTN_GHOST} inline-flex min-h-11 items-center`}>
                   {t.archived ? "↩ Przywróć" : "🗄 Archiwizuj"}
                 </button>
               </form>
@@ -493,25 +493,25 @@ export async function TasksSection({
       <div className="flex flex-wrap items-center gap-1.5">
         <Link
           href="/marketing?tab=zadania"
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!activeCalendarView ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${!activeCalendarView ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           📋 Kanban
         </Link>
         <Link
           href={`/marketing?tab=zadania&widokZadan=dzien&data=${calDate}`}
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeCalendarView === "dzien" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${activeCalendarView === "dzien" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Dzień
         </Link>
         <Link
           href={`/marketing?tab=zadania&widokZadan=tydzien&data=${calDate}`}
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeCalendarView === "tydzien" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${activeCalendarView === "tydzien" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Tydzień
         </Link>
         <Link
           href={`/marketing?tab=zadania&widokZadan=miesiac&data=${calDate}`}
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeCalendarView === "miesiac" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${activeCalendarView === "miesiac" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Miesiąc
         </Link>
@@ -525,13 +525,13 @@ export async function TasksSection({
         <div className="flex flex-wrap items-center gap-1.5">
           <Link
             href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}`}
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === currentEmployeeId ? "bg-brand-orange-cta text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+            className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${effectiveFilter === currentEmployeeId ? "bg-brand-orange-cta text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
           >
             Moje zadania
           </Link>
           <Link
             href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}&osoba=${ALL}`}
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${effectiveFilter === ALL ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+            className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${effectiveFilter === ALL ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
           >
             Wszyscy
           </Link>
@@ -551,7 +551,7 @@ export async function TasksSection({
             ))}
           <Link
             href={`/marketing?tab=zadania&widokZadan=${activeCalendarView}&data=${calDate}&osoba=${UNASSIGNED}`}
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+            className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${
               effectiveFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
             }`}
           >
@@ -583,7 +583,7 @@ export async function TasksSection({
             żadnego efektu (tydzień z definicji pokazuje tylko moje). */}
         <Link
           href="/marketing?tab=zadania"
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isWeekView ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${isWeekView ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
         >
           📅 Mój tydzień ({myWeekTasks.length})
         </Link>
@@ -592,7 +592,7 @@ export async function TasksSection({
           return (
             <Link
               href={`/marketing?tab=zadania&widok=${FULL_VIEW}${showAll ? "&zakres=wszystkie" : ""}`}
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!isWeekView && effectiveFilter === currentEmployeeId ? "bg-brand-orange-cta text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+              className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${!isWeekView && effectiveFilter === currentEmployeeId ? "bg-brand-orange-cta text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
             >
               Moje zadania ({myCount})
             </Link>
@@ -600,7 +600,7 @@ export async function TasksSection({
         })()}
         <Link
           href={`/marketing?tab=zadania&widok=${FULL_VIEW}&osoba=${ALL}${showAll ? "&zakres=wszystkie" : ""}`}
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!isWeekView && effectiveFilter === ALL ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${!isWeekView && effectiveFilter === ALL ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
         >
           Wszyscy ({allTasks.length})
         </Link>
@@ -626,7 +626,7 @@ export async function TasksSection({
           return unassignedCount > 0 ? (
             <Link
               href={`/marketing?tab=zadania&widok=${FULL_VIEW}&osoba=${UNASSIGNED}${showAll ? "&zakres=wszystkie" : ""}`}
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+              className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold ${
                 !isWeekView && effectiveFilter === UNASSIGNED ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
               }`}
             >

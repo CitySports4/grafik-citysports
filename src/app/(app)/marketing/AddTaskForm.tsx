@@ -54,7 +54,7 @@ export function AddTaskForm({
           zadanie nie wylądowało bez terminu i bez przypisania w "Do
           zrobienia". */}
       <details open>
-        <summary className="cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">
+        <summary className="inline-flex min-h-11 items-center cursor-pointer text-xs font-semibold text-zinc-500 marker:content-none">
           Więcej opcji (osoba, priorytet, termin, projekt) ▾
         </summary>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">

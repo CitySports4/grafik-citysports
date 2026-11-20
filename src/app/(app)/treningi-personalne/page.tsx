@@ -156,10 +156,10 @@ export default async function PersonalTrainingPage({
           <Link href={`/treningi-personalne/rozliczenia`} className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             Rozliczenia
           </Link>
-          <Link href={`?monday=${prevMonday}`} className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+          <Link href={`?monday=${prevMonday}`} aria-label="Poprzedni tydzień" className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             <span className="sm:hidden">←</span><span className="hidden sm:inline">← poprzedni tydzień</span>
           </Link>
-          <Link href={`?monday=${nextMonday}`} className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
+          <Link href={`?monday=${nextMonday}`} aria-label="Następny tydzień" className="inline-flex min-h-11 items-center rounded-lg px-2 py-1 font-semibold text-zinc-500 hover:bg-zinc-100">
             <span className="sm:hidden">→</span><span className="hidden sm:inline">następny tydzień →</span>
           </Link>
         </div>

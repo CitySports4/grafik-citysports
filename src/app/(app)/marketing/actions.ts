@@ -179,7 +179,11 @@ export async function postponeTask(formData: FormData) {
   const unit = String(formData.get("unit") ?? "");
   if (!id || !currentDueDate) throw new Error("Brak danych.");
 
-  const base = new Date(currentDueDate + "T00:00:00");
+  // Odłożenie liczy się od DZIŚ (strefa PL), a nie od starego terminu: zaległe
+  // zadanie przesunięte o tydzień od dawnego terminu dalej jest zaległe i wraca
+  // na listę codziennie, dopóki ktoś go nie zrobi.
+  const todayKey = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Warsaw" });
+  const base = new Date(todayKey + "T00:00:00");
   const next = new Date(base);
   if (unit === "week") next.setDate(next.getDate() + 7);
   else if (unit === "month") next.setMonth(next.getMonth() + 1);
