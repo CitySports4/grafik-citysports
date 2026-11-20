@@ -5,8 +5,10 @@
   --foreground: #1a1a1a;
 
   /* Paleta City Sports (z citysports.com.pl / logo). */
-  --brand-orange: #f06037;
-  --brand-orange-dark: #d94e28;
+  /* Pomarańcz przyciemniony z #f06037 (biały tekst 3,26:1 nie spełniał 4,5:1),
+     teraz 4,83:1 — WCAG 1.4.3. Hover ciemniejszy od bazowego. */
+  --brand-orange: #c44a22;
+  --brand-orange-dark: #a83f1d;
   --brand-navy: #0c2e64;
   --brand-blue: #234e93;
   --brand-blue-light: #4671b6;

@@ -83,9 +83,12 @@ export function ScheduleTable({
   // Wynik generatora przeżywa `window.location.reload()` (patrz
   // handleRunAiDraft) tylko dzięki sessionStorage — sam stan komponentu
   // znika przy przeładowaniu strony.
+  // Jednorazowy odczyt z sessionStorage po montowaniu (klient-only) — setState
+  // w efekcie jest tu celowe i nie kaskaduje renderów.
   useEffect(() => {
     const stored = window.sessionStorage.getItem("grafik_generate_message");
     if (stored) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGenerateMessage(stored);
       window.sessionStorage.removeItem("grafik_generate_message");
     }
