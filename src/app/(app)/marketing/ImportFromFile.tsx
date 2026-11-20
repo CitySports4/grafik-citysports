@@ -21,6 +21,8 @@ export function ImportFromFile() {
   useEffect(() => {
     const stored = window.sessionStorage.getItem("marketing_import_message");
     if (stored) {
+      // Jednorazowy odczyt z sessionStorage po montowaniu — setState celowe.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResultMessage(stored);
       window.sessionStorage.removeItem("marketing_import_message");
     }
