@@ -5,7 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { requireEmployee, canAccessMarketing, isContentCreator } from "@/lib/session";
 import { dbErrorMessage } from "@/lib/db-error";
 import { toDateKey } from "@/lib/schedule-month";
-import { isApprovalPending, type ProjectType } from "@/lib/marketing";
+import { isApprovalPending, contentTaskPlan, addDaysKey, type ProjectType } from "@/lib/marketing";
 import { extractMarketingImport } from "@/lib/marketing-import";
 
 // Bramka wspólna dla wszystkich akcji tego modułu — rola marketing albo
@@ -88,6 +88,7 @@ export async function createTask(formData: FormData) {
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
   const priority = String(formData.get("priority") ?? "normal");
   const due_date = String(formData.get("due_date") ?? "") || null;
+  const due_kind = String(formData.get("due_kind") ?? "") === "w_dniu" ? "w_dniu" : "do";
   if (!title) throw new Error("Podaj tytuł zadania.");
 
   const supabase = createServerSupabaseClient();
@@ -97,6 +98,7 @@ export async function createTask(formData: FormData) {
     assignee_employee_id,
     priority,
     due_date,
+    due_kind,
     created_by_employee_id: employee.id,
     ...(await resolveProjectFields(supabase, formData)),
     ...readRecordingFields(formData),
@@ -113,6 +115,7 @@ export async function updateTask(formData: FormData) {
   const assignee_employee_id = String(formData.get("assignee_employee_id") ?? "") || null;
   const priority = String(formData.get("priority") ?? "normal");
   const due_date = String(formData.get("due_date") ?? "") || null;
+  const due_kind = String(formData.get("due_kind") ?? "") === "w_dniu" ? "w_dniu" : "do";
   if (!id || !title) throw new Error("Podaj tytuł zadania.");
 
   const supabase = createServerSupabaseClient();
@@ -124,6 +127,7 @@ export async function updateTask(formData: FormData) {
       assignee_employee_id,
       priority,
       due_date,
+      due_kind,
       updated_at: new Date().toISOString(),
       ...(await resolveProjectFields(supabase, formData)),
       ...readRecordingFields(formData),
@@ -569,20 +573,12 @@ export async function importMarketingFile(formData: FormData): Promise<ImportRes
 // powstaje samo. Rolka: "Nagrać" (4 dni przed publikacją, nagrywający) i
 // "Opublikować" (w dniu publikacji, publikujący — zwykle Sasza). Relacja (cel):
 // jedno zadanie "Nagrać i opublikować" dla nagrywającego, w dniu publikacji.
-function addDaysKey(key: string, n: number): string {
-  const d = new Date(key + "T00:00:00");
-  d.setDate(d.getDate() + n);
-  return toDateKey(d);
-}
 
 export async function addContentTasks(formData: FormData) {
   await requireMarketingAccess();
   const employee = await requireEmployee();
   const contentId = String(formData.get("content_id") ?? "");
   const kind = String(formData.get("kind") ?? "");
-  const recorderId = String(formData.get("recorder_id") ?? "");
-  const publisherId = String(formData.get("publisher_id") ?? "");
-  const makerId = String(formData.get("maker_id") ?? "");
   if (!contentId) throw new Error("Brak wpisu kalendarza.");
   if (kind !== "film" && kind !== "animacja" && kind !== "foto") throw new Error("Wybierz rodzaj materiału.");
 
@@ -601,34 +597,36 @@ export async function addContentTasks(formData: FormData) {
     .eq("archived", false);
   if (count && count > 0) throw new Error("Do tej publikacji są już zadania.");
 
-  const base = {
-    description: "",
-    priority: "normal",
-    content_id: contentId,
-    project_id: content.project_id ?? null,
-    created_by_employee_id: employee.id,
-  };
-
-  let rows;
-  if (kind === "film" && content.format === "rolka") {
-    // Rolka filmowa: Oliwia nagrywa (4 dni przed), Sasza publikuje (w dniu).
-    if (!recorderId) throw new Error("Wybierz osobę, która nagrywa.");
-    if (!publisherId) throw new Error("Wybierz osobę, która publikuje.");
-    rows = [
-      { ...base, title: `Nagrać — ${content.title}`, assignee_employee_id: recorderId, due_date: addDaysKey(content.scheduled_date, -4) },
-      { ...base, title: `Opublikować — ${content.title}`, assignee_employee_id: publisherId, due_date: content.scheduled_date },
-    ];
-  } else if (kind === "film") {
-    // Film, który nie jest rolką: nagrywający nagrywa i publikuje w dniu publikacji.
-    if (!recorderId) throw new Error("Wybierz osobę, która nagrywa.");
-    rows = [{ ...base, title: `Nagrać i opublikować — ${content.title}`, assignee_employee_id: recorderId, due_date: content.scheduled_date }];
-  } else {
-    // Zdjęcie/grafika albo animacja: jedna osoba robi i publikuje.
-    if (!makerId) throw new Error("Wybierz osobę, która to robi.");
-    rows = [{ ...base, title: `Zrobić i opublikować — ${content.title}`, assignee_employee_id: makerId, due_date: content.scheduled_date }];
-  }
+  const plan = contentTaskPlan(kind, content.format);
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const rows = plan.map((def) => {
+    const field = def.who === "recorder" ? "recorder_id" : def.who === "publisher" ? "publisher_id" : "maker_id";
+    const personId = String(formData.get(field) ?? "");
+    if (!personId) throw new Error(`Wybierz osobę: ${def.who === "recorder" ? "nagrywa" : def.who === "publisher" ? "publikuje" : "robi"}.`);
+    const givenDue = String(formData.get(`due_${def.key}`) ?? "");
+    const due = DATE_RE.test(givenDue) ? givenDue : addDaysKey(content.scheduled_date, def.offset);
+    return {
+      title: `${def.title} — ${content.title}`,
+      description: "",
+      priority: "normal",
+      assignee_employee_id: personId,
+      due_date: due,
+      due_kind: def.dueKind,
+      content_id: contentId,
+      project_id: content.project_id ?? null,
+      created_by_employee_id: employee.id,
+    };
+  });
 
   const { error } = await supabase.from("marketing_task").insert(rows);
   if (error) throw new Error(dbErrorMessage(error));
   revalidateMarketing();
+}
+
+// Zrobione starsze niż 7 dni chowamy automatycznie. Idempotentne: wywoływane
+// przy wczytaniu listy zadań, nie wymaga crona.
+export async function archiveOldDoneTasks() {
+  const supabase = createServerSupabaseClient();
+  const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
+  await supabase.from("marketing_task").update({ archived: true }).eq("status", "done").eq("archived", false).lt("updated_at", cutoff);
 }

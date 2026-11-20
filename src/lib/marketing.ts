@@ -263,3 +263,32 @@ export function groupByProject<T>(items: T[], getProject: (item: T) => string): 
       return ra !== rb ? ra - rb : sa.localeCompare(sb);
     });
 }
+
+// Plan zadań przy wpisie kalendarza (wspólny dla serwera i formularza).
+// offset = dni względem publikacji (ujemne = przed). dueKind: 'do' = termin
+// graniczny, 'w_dniu' = konkretny dzień.
+export type ContentTaskWho = "recorder" | "publisher" | "maker";
+export type ContentTaskDef = { key: string; title: string; who: ContentTaskWho; offset: number; dueKind: "do" | "w_dniu" };
+export type ContentTaskKind = "film" | "animacja" | "foto";
+export function contentTaskPlan(kind: ContentTaskKind, format: string): ContentTaskDef[] {
+  if (kind === "film" && format === "rolka") {
+    return [
+      { key: "nagrac", title: "Nagrać", who: "recorder", offset: -4, dueKind: "do" },
+      { key: "zmontowac", title: "Zmontować i przekazać", who: "recorder", offset: -2, dueKind: "do" },
+      { key: "opublikowac", title: "Opublikować", who: "publisher", offset: 0, dueKind: "w_dniu" },
+    ];
+  }
+  if (kind === "film") {
+    return [{ key: "nagrac_opublikowac", title: "Nagrać i opublikować", who: "recorder", offset: 0, dueKind: "w_dniu" }];
+  }
+  if (kind === "animacja") {
+    return [{ key: "animacja", title: "Przygotować animację", who: "maker", offset: -2, dueKind: "do" }];
+  }
+  return [{ key: "przygotowac", title: "Przygotować zdjęcie/grafikę", who: "maker", offset: -2, dueKind: "do" }];
+}
+export function addDaysKey(key: string, n: number): string {
+  const d = new Date(key + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  const pad = (v: number) => String(v).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
