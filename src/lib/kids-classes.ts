@@ -190,11 +190,23 @@ export function hasGroupCapacity(group: KidsClassGroup, occupancy: Map<string, n
 // Wszystkie daty konkretnego dnia tygodnia w danym miesiącu (np. każdy
 // poniedziałek września) — do widoku frekwencji, gdzie sesje NIE są
 // przechowywane osobno, tylko wynikają wprost z dnia tygodnia grupy.
+// Dni bez zajęć dla dzieci (święta, ferie zimowe) — nie da się na nie umówić
+// zajęć próbnych ani ich wybrać w formularzu.
+export const NO_CLASS_DATES: ReadonlySet<string> = new Set([
+  "2026-12-24",
+  "2026-12-28",
+  "2026-12-31",
+  ...Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(2027, 0, 18 + i);
+    return toDateKeyLocal(d);
+  }),
+]);
+
 export function sessionDatesInMonth(weekday: number, year: number, month: number): string[] {
   const dates: string[] = [];
   const d = new Date(year, month - 1, 1);
   while (d.getMonth() === month - 1) {
-    if (d.getDay() === weekday) dates.push(toDateKeyLocal(d));
+    if (d.getDay() === weekday && !NO_CLASS_DATES.has(toDateKeyLocal(d))) dates.push(toDateKeyLocal(d));
     d.setDate(d.getDate() + 1);
   }
   return dates;
@@ -228,7 +240,7 @@ function weekdayDatesBetween(weekday: number, start: Date, end: Date): string[] 
   const dates: string[] = [];
   const d = new Date(start);
   while (d <= end) {
-    if (d.getDay() === weekday) dates.push(toDateKeyLocal(d));
+    if (d.getDay() === weekday && !NO_CLASS_DATES.has(toDateKeyLocal(d))) dates.push(toDateKeyLocal(d));
     d.setDate(d.getDate() + 1);
   }
   return dates;
