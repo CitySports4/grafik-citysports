@@ -209,7 +209,12 @@ export async function toggleMonthPayment(formData: FormData) {
     .maybeSingle();
 
   const months: boolean[] = existing?.months ?? new Array(SEASON_MONTHS.length).fill(false);
-  months[monthIndex] = value;
+  // Grudzień i styczeń to jedna opłata za dwa miesiące (przerwa świąteczna i ferie):
+  // płatność za jeden z tych miesięcy oznacza też drugi.
+  const GRUDZIEN = 3;
+  const STYCZEN = 4;
+  const linked = monthIndex === GRUDZIEN || monthIndex === STYCZEN ? [GRUDZIEN, STYCZEN] : [monthIndex];
+  for (const idx of linked) months[idx] = value;
 
   const { error } = await supabase
     .from("kids_class_payment")
